@@ -95,6 +95,41 @@ describe('captureNodeResult', () => {
     })
   })
 
+  it('fails closed on an absolute artifact path (workspace escape)', async () => {
+    await writeFile(join(workspaceRoot, reportPath), '{"summary":"ok"}', 'utf-8')
+    // process.execPath is a real file on disk; an absolute declared path must still fail closed.
+    const outcome = await capture({
+      declaredArtifacts: [{ path: process.execPath, required: true }]
+    })
+    expect(outcome).toEqual({
+      ok: false,
+      failureReason: 'artifact_missing',
+      result: { summary: 'ok' },
+      artifacts: [{ path: process.execPath, exists: false }]
+    })
+  })
+
+  it('fails closed on a .. artifact path (workspace escape)', async () => {
+    const siblingPath = join(workspaceRoot, '..', 'workflow-result-capture-escape-sibling.txt')
+    await writeFile(siblingPath, 'exists outside the workspace', 'utf-8')
+    try {
+      await writeFile(join(workspaceRoot, reportPath), '{"summary":"ok"}', 'utf-8')
+      const outcome = await capture({
+        declaredArtifacts: [
+          { path: '../workflow-result-capture-escape-sibling.txt', required: true }
+        ]
+      })
+      expect(outcome).toEqual({
+        ok: false,
+        failureReason: 'artifact_missing',
+        result: { summary: 'ok' },
+        artifacts: [{ path: '../workflow-result-capture-escape-sibling.txt', exists: false }]
+      })
+    } finally {
+      await rm(siblingPath, { force: true })
+    }
+  })
+
   it('does not fail artifact_missing for a missing optional artifact', async () => {
     await writeFile(join(workspaceRoot, reportPath), '{"summary":"ok"}', 'utf-8')
     const outcome = await capture({
@@ -107,15 +142,15 @@ describe('captureNodeResult', () => {
     })
   })
 
-  it('fails even with a valid result when the worker reports outcome failed', async () => {
+  it('fails worker_failed even with a valid result when the worker reports outcome failed', async () => {
     await writeFile(join(workspaceRoot, reportPath), '{"summary":"ok"}', 'utf-8')
     const outcome = await capture({ outcome: 'failed' })
     expect(outcome).toEqual({
       ok: false,
+      failureReason: 'worker_failed',
       result: { summary: 'ok' },
       artifacts: []
     })
-    expect(outcome).not.toHaveProperty('failureReason')
   })
 
   it('stores the valid result with its artifacts list on success', async () => {

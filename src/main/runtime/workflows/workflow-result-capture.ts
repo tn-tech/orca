@@ -14,7 +14,8 @@ import type { WorkflowFilesystem } from './workflow-file-store-filesystem'
 export const WORKFLOW_RESULT_FAILURE_REASONS = [
   'result_missing',
   'result_invalid',
-  'artifact_missing'
+  'artifact_missing',
+  'worker_failed'
 ] as const
 export type WorkflowResultFailureReason = (typeof WORKFLOW_RESULT_FAILURE_REASONS)[number]
 
@@ -34,14 +35,15 @@ export type CaptureResultArgs = {
 
 /**
  * `ok: true` only when the result validates, every required artifact exists, and the worker
- * reported `succeeded`. A validation/artifact failure carries `failureReason`; an otherwise-valid
- * result that the worker itself reported `failed` on does not, since it named no such problem.
+ * reported `succeeded`. Every failure carries a `failureReason`: `worker_failed` covers an
+ * otherwise-valid result whose worker reported `outcome: 'failed'` (contracts/agent-brief.md
+ * validation #4), even though no earlier validation step found a problem.
  */
 export type CaptureResultOutcome =
   | { ok: true; result: JsonValue; artifacts: WorkflowAttemptArtifact[] }
   | {
       ok: false
-      failureReason?: WorkflowResultFailureReason
+      failureReason: WorkflowResultFailureReason
       rawBody?: string
       result?: JsonValue
       artifacts?: WorkflowAttemptArtifact[]
@@ -170,13 +172,14 @@ export async function captureNodeResult(args: CaptureResultArgs): Promise<Captur
 
   const specs = mergeArtifactSpecs(args.declaredArtifacts, extraArtifactPaths(parsed))
   const artifacts = await resolveArtifacts(fs, workspaceRoot, specs)
-  const missingRequired = specs.some((spec, index) => spec.required && !artifacts[index]?.exists)
+  const existsByPath = new Map(artifacts.map((artifact) => [artifact.path, artifact.exists]))
+  const missingRequired = specs.some((spec) => spec.required && !existsByPath.get(spec.path))
   if (missingRequired) {
     return { ok: false, failureReason: 'artifact_missing', result, artifacts }
   }
 
   if (outcome === 'failed') {
-    return { ok: false, result, artifacts }
+    return { ok: false, failureReason: 'worker_failed', result, artifacts }
   }
 
   return { ok: true, result, artifacts }
