@@ -47,6 +47,25 @@ export const HANDLER_GROUPS: readonly HandlerGroup[] = [
     load: async () => (await import('./handlers/automations.js')).AUTOMATION_HANDLERS
   },
   {
+    name: 'workflows',
+    keys: [
+      'workflows list',
+      'workflows show',
+      'workflows validate',
+      'workflows run',
+      'workflows runs',
+      'workflows status',
+      'workflows answer',
+      'workflows send',
+      'workflows pause',
+      'workflows resume',
+      'workflows cancel',
+      'workflows rerun',
+      'workflows trust'
+    ],
+    load: async () => (await import('./handlers/workflows.js')).WORKFLOW_HANDLERS
+  },
+  {
     name: 'project',
     keys: [
       'project list',
