@@ -581,4 +581,33 @@ describe('OrchestrationDb version-skew migration', () => {
       ).sql
     ).toContain("mailbox_handle != ''")
   })
+
+  // Why: a database that already claims v42 but is missing a workflow column (a crash mid-migration,
+  // or an older binary's partial write) must not be read as complete — it needs the full repair chain.
+  it('repairs a v42 schema missing the workflow linkage columns', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'orca-db-version-skew-v42-workflow-'))
+    const dbPath = join(tempDir, 'orchestration.db')
+    db = new OrchestrationDb(dbPath)
+    db.close()
+    db = undefined
+
+    const raw = new Database(dbPath)
+    raw.exec(`
+      DROP INDEX IF EXISTS idx_tasks_workflow_run;
+      ALTER TABLE tasks DROP COLUMN workflow_run_id;
+      ALTER TABLE tasks DROP COLUMN workflow_node_id;
+      ALTER TABLE tasks DROP COLUMN workflow_iteration;
+      ALTER TABLE runs DROP COLUMN workflow_run_id;
+    `)
+    raw.pragma('user_version = 42')
+    expect(resolveOrchestrationMigrationStartVersion(raw, 42, SCHEMA_VERSION)).toBe(6)
+    raw.close()
+
+    db = new OrchestrationDb(dbPath)
+    expect(db.db.pragma('user_version', { simple: true })).toBe(SCHEMA_VERSION)
+    expect(db.hasColumn('tasks', 'workflow_run_id')).toBe(true)
+    expect(db.hasColumn('tasks', 'workflow_node_id')).toBe(true)
+    expect(db.hasColumn('tasks', 'workflow_iteration')).toBe(true)
+    expect(db.hasColumn('runs', 'workflow_run_id')).toBe(true)
+  })
 })

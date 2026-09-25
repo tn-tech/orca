@@ -12,7 +12,8 @@ const RUN_ROW: RunRow = {
   consumer_generation: 3,
   legacy: 0,
   created_at: '2026-09-04T18:53:07Z',
-  updated_at: '2026-09-04T18:53:09Z'
+  updated_at: '2026-09-04T18:53:09Z',
+  workflow_run_id: null
 }
 
 describe('exposeRun', () => {
@@ -26,7 +27,8 @@ describe('exposeRun', () => {
       'id',
       'legacy',
       'objective',
-      'updated_at'
+      'updated_at',
+      'workflow_run_id'
     ])
     expect(exposed).not.toHaveProperty('home_database')
     expect(exposed).not.toHaveProperty('coordinator_pane_key')
@@ -42,7 +44,8 @@ describe('exposeRun', () => {
       consumer_generation: 3,
       legacy: 0,
       created_at: '2026-09-04T18:53:07Z',
-      updated_at: '2026-09-04T18:53:09Z'
+      updated_at: '2026-09-04T18:53:09Z',
+      workflow_run_id: null
     })
   })
 

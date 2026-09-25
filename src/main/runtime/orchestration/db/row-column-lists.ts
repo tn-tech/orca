@@ -16,7 +16,8 @@ export const RUN_COLUMNS = [
   'consumer_generation',
   'legacy',
   'created_at',
-  'updated_at'
+  'updated_at',
+  'workflow_run_id'
 ] as const satisfies readonly (keyof RunRow)[]
 
 export const TASK_COLUMNS = [
@@ -34,7 +35,10 @@ export const TASK_COLUMNS = [
   'deps',
   'result',
   'created_at',
-  'completed_at'
+  'completed_at',
+  'workflow_run_id',
+  'workflow_node_id',
+  'workflow_iteration'
 ] as const satisfies readonly (keyof TaskRow)[]
 
 export const DISPATCH_CONTEXT_COLUMNS = [

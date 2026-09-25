@@ -50,6 +50,8 @@ export type RunRow = {
   legacy: number
   created_at: string
   updated_at: string
+  /** Owning workflow_runs.id; null for a Run not driven by a workflow. */
+  workflow_run_id: string | null
 }
 
 export type DeliveryStatus = 'outstanding' | 'acknowledged' | 'fenced'
@@ -268,6 +270,12 @@ export type TaskRow = {
   result: string | null
   created_at: string
   completed_at: string | null
+  /** Owning workflow_runs.id; null for a task not driven by a workflow. */
+  workflow_run_id: string | null
+  /** Workflow node id this task attempt implements; null outside a workflow. */
+  workflow_node_id: string | null
+  /** Loop iteration this task attempt belongs to; null outside a workflow. */
+  workflow_iteration: number | null
 }
 
 export type DispatchContextRow = {
