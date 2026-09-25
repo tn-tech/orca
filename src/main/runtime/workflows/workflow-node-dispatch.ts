@@ -1,6 +1,9 @@
 // Resolves a node's role + overrides, starts its worker through the engine principal, and
 // records what was requested vs what actually launched (FR-017, FR-024, FR-026, US1 AS4/AS5).
-import { getAgentSessionOptionCatalog } from '../../../shared/agent-session-option-catalog'
+import {
+  catalogSupportsWorkerLaunchPreferences,
+  getAgentSessionOptionCatalog
+} from '../../../shared/agent-session-option-catalog'
 import type { Workflow } from '../../../shared/workflows/workflow-definition-types'
 import type { WorkflowAttemptState } from '../../../shared/workflows/workflow-node-states'
 import type {
@@ -31,12 +34,6 @@ export function resolveNodeLaunch(node: BriefNode, roles: Workflow['roles']): Re
     effort: node.overrides?.effort ?? role?.effort,
     systemPrompt: node.overrides?.systemPrompt ?? role?.systemPrompt ?? ''
   }
-}
-
-/** Same gate as worker-launch-preferences.ts: no catalog or no launch-time model args, no support. */
-function agentSupportsLaunchModel(agent: string): boolean {
-  const catalog = getAgentSessionOptionCatalog(agent)
-  return Boolean(catalog?.supportsWorkerLaunchPreferences && catalog.modelApply.launchArgs)
 }
 
 type WorkerStartLaunchSelection = {
@@ -171,7 +168,9 @@ export async function dispatchWorkflowNode(
     return fail(error instanceof Error ? error.message : String(error))
   }
 
-  const supportsModel = agentSupportsLaunchModel(launch.agent)
+  const supportsModel = catalogSupportsWorkerLaunchPreferences(
+    getAgentSessionOptionCatalog(launch.agent)
+  )
   const params: Record<string, unknown> = {
     from: engineCoordinatorHandle(runId),
     task: taskId,

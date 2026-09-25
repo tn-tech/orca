@@ -1,5 +1,6 @@
 import type { AgentLaunchPreferences } from '../../../../../../shared/agent-session-host-authority'
 import {
+  catalogSupportsWorkerLaunchPreferences,
   findCatalogModel,
   findCatalogOption,
   getAgentSessionOptionCatalog
@@ -67,7 +68,7 @@ export function resolveWorkerLaunchPreferences(args: {
   }
 
   const catalog = getAgentSessionOptionCatalog(args.agent)
-  if (!catalog?.supportsWorkerLaunchPreferences || !catalog.modelApply.launchArgs) {
+  if (!catalog || !catalogSupportsWorkerLaunchPreferences(catalog)) {
     throw new OrchestrationError(
       'invalid_argument',
       `Agent ${args.agent} does not support launch-time model selection. Omit --model to run the model from its own config.`

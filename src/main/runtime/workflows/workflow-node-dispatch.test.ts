@@ -28,7 +28,9 @@ const roles: Workflow['roles'] = {
   scribe: {
     id: 'scribe',
     name: 'Scribe',
-    agent: 'omp', // no model catalog support
+    agent: 'omp', // no model catalog support (catalogSupportsWorkerLaunchPreferences(omp) === false)
+    model: 'omp-fast', // set deliberately so the gate has something real to strip
+    effort: 'thorough',
     systemPrompt: 'Write things down.',
     skills: []
   }
@@ -150,7 +152,21 @@ describe('dispatchWorkflowNode', () => {
   })
 
   it('omits requested model/effort for an agent without model support (US1 AS5)', async () => {
+    // The `scribe` role sets model/effort even though `omp` has no catalog support for them
+    // (resolveNodeLaunch itself has no opinion on support — it just merges fields). Dispatch must
+    // still strip both before calling workerStart: this is what actually exercises the gate at
+    // workflow-node-dispatch.ts (catalogSupportsWorkerLaunchPreferences check before the params
+    // object is built). Confirmed this test fails with that gate removed — see U18-report.md.
+    expect(resolveNodeLaunch({ ...baseNode, roleId: 'scribe' }, roles)).toEqual({
+      agent: 'omp',
+      model: 'omp-fast',
+      effort: 'thorough',
+      systemPrompt: 'Write things down.'
+    })
+
     const attemptStore = createAttemptStore()
+    // The server only ever sees what we actually sent (no model/effort), so a real server's
+    // receipt echoes that back as both the requested and effective launch.
     const call = vi.fn(async () => ({
       dispatchId: 'wdp_2',
       state: 'ready',
@@ -170,6 +186,8 @@ describe('dispatchWorkflowNode', () => {
       roles
     })
 
+    // Exact-object equality: this fails if `model`/`effort` leak into the call, since the role
+    // sets both above and `toHaveBeenCalledWith` rejects any extra key on the actual params.
     expect(call).toHaveBeenCalledWith('orchestration.workerStart', {
       from: engineCoordinatorHandle('wfr_1'),
       task: 'task_1',

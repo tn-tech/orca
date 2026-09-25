@@ -46,6 +46,16 @@ export function getAgentSessionOptionCatalog(agent: AgentType): AgentSessionOpti
   return CATALOGS[agent] ?? null
 }
 
+/** An agent needs both flags to accept a launch-time model/effort choice: the opt-in and the
+ *  means to apply it as launch args. Shared by worker-start's own preferences and workflow
+ *  node dispatch, which must agree on when a requested model/effort can be sent at all. Takes
+ *  the catalog (not the agent id) so a caller that already resolved it doesn't look it up twice. */
+export function catalogSupportsWorkerLaunchPreferences(
+  catalog: AgentSessionOptionCatalog | null
+): boolean {
+  return Boolean(catalog?.supportsWorkerLaunchPreferences && catalog.modelApply.launchArgs)
+}
+
 export function findCatalogModel(
   catalog: AgentSessionOptionCatalog,
   modelId: string
