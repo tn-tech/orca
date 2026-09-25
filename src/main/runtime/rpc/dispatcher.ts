@@ -23,6 +23,7 @@ import { mapDispatcherError } from './dispatcher-error-response'
 import { parseRpcRequestParams } from './dispatcher-request-parsing'
 import { RpcStreamingDispatcher } from './rpc-streaming-dispatcher'
 import { invokeDispatcherUnaryMethod } from './dispatcher-unary-method-invocation'
+import type { WorkflowEnginePrincipal } from '../workflows/workflow-engine-principal'
 
 export type DispatcherOptions = {
   runtime: OrcaRuntimeService
@@ -53,6 +54,23 @@ export class RpcDispatcher {
   }
 
   async dispatch(request: RpcRequest, options?: DispatchCallOptions): Promise<RpcResponse> {
+    return this.dispatchUnary(request, options, undefined)
+  }
+
+  // Why: a separate entry point keeps the engine principal out of every transport's options type.
+  async dispatchAsWorkflowEngine(
+    request: RpcRequest,
+    principal: WorkflowEnginePrincipal,
+    options?: DispatchCallOptions
+  ): Promise<RpcResponse> {
+    return this.dispatchUnary(request, options, principal)
+  }
+
+  private async dispatchUnary(
+    request: RpcRequest,
+    options: DispatchCallOptions | undefined,
+    principal: WorkflowEnginePrincipal | undefined
+  ): Promise<RpcResponse> {
     const meta = this.meta()
     const method = this.registry.get(request.method)
     if (!method) {
@@ -102,7 +120,8 @@ export class RpcDispatcher {
           clientCapabilities: options?.clientCapabilities,
           updateClientCapabilities: options?.updateClientCapabilities,
           orchestrationCapability: request.orchestrationCapability,
-          authenticatedCallerFingerprint: options?.authenticatedCallerFingerprint
+          authenticatedCallerFingerprint: options?.authenticatedCallerFingerprint,
+          ...(principal ? { principal } : {})
         },
         orchestrationMutations: this.orchestrationMutations,
         legacyOrchestration: this.legacyOrchestration

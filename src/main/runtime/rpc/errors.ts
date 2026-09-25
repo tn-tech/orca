@@ -89,6 +89,8 @@ const STRUCTURED_RUNTIME_PASSTHROUGH_CODES: ReadonlySet<string> = new Set([
   'run_required',
   'stable_pane_required',
   'consumer_fenced',
+  // Why: a terminal caller on an engine-owned Run must learn the workflow owns it, not a generic fence.
+  'workflow_owned_run',
   'task_not_found',
   'task_not_startable',
   'inject_rejected',

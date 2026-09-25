@@ -6,6 +6,15 @@ import type {
   OrcaRuntimeService,
   OrchestrationCompatibilityCallerAuthority
 } from '../../../../orca-runtime'
+import {
+  asWorkflowEnginePrincipal,
+  type OrchestrationPrincipal
+} from '../../../../workflows/workflow-engine-principal'
+import {
+  assertTerminalMayMutateRun,
+  resolveWorkflowEngineCallerPane,
+  resolveWorkflowEngineRunScope
+} from './workflow-engine-run-scope'
 
 export type RunScopeParams = {
   runId?: string
@@ -15,6 +24,8 @@ export type RunScopeParams = {
   legacyCoordinatorRunId?: string
   // Why: the caller's declared handle is a user param; this is the attested one to check it against.
   callerEvidence?: OrchestrationCompatibilityEvidence
+  // Why: only RpcContext.principal (in-process engine calls) may supply this, never user params.
+  principal?: OrchestrationPrincipal
 }
 
 // Why: declared handles select mutable Run bindings, so attested callers may only name themselves.
@@ -48,6 +59,8 @@ export type OrchestrationCallerParams = {
    * without asserting elsewhere reopens the hole this helper exists to close.
    */
   evidenceAssertedByCaller?: boolean
+  // Why: only RpcContext.principal (in-process engine calls) may supply this, never user params.
+  principal?: OrchestrationPrincipal
 }
 
 /** Resolve the caller's runtime pane and, by default, attest its declared handle. */
@@ -63,6 +76,10 @@ export function resolveOrchestrationCaller(
   runtime: OrcaRuntimeService,
   params: OrchestrationCallerParams
 ): string | null {
+  const engine = asWorkflowEnginePrincipal(params.principal)
+  if (engine) {
+    return resolveWorkflowEngineCallerPane(engine, params.callerTerminalHandle)
+  }
   if (!params.evidenceAssertedByCaller) {
     assertCallerHandleMatchesEvidence(runtime, params.callerTerminalHandle, params.callerEvidence)
   }
@@ -86,10 +103,18 @@ export function resolveRunScope(runtime: OrcaRuntimeService, params: RunScopePar
   if (params.runId && (!explicit || explicit.legacy === 1)) {
     throw new OrchestrationError('run_not_found', `Run ${params.runId} was not found.`)
   }
+  const engine = asWorkflowEnginePrincipal(params.principal)
+  if (engine) {
+    return resolveWorkflowEngineRunScope(db, engine, {
+      explicit,
+      callerTerminalHandle: params.callerTerminalHandle
+    })
+  }
 
   if (!params.requireCurrentConsumer && explicit) {
     return explicit
   }
+  assertTerminalMayMutateRun(explicit)
   if (!params.callerTerminalHandle) {
     throw new OrchestrationError(
       'run_required',
@@ -109,6 +134,7 @@ export function resolveRunScope(runtime: OrcaRuntimeService, params: RunScopePar
     )
   }
   const current = db.getCurrentRunForPane(paneKey)
+  assertTerminalMayMutateRun(current)
   if (!current) {
     if (explicit) {
       throw new OrchestrationError(

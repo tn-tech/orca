@@ -67,6 +67,7 @@ import type { StructuredPointerOperationStoreMethods } from './messages/structur
 import type { WorkerTerminalResourceStoreMethods } from './worker-terminal/worker-terminal-resource-store'
 import type { WorkerTerminalTransferMethods } from './worker-terminal/worker-terminal-transfer'
 import type { WorkflowAttemptStoreMethods } from './workflow-runs/workflow-attempt-store'
+import type { WorkflowEngineRunBindingMethods } from './workflow-runs/workflow-engine-run-binding'
 import type { WorkflowEventStoreMethods } from './workflow-runs/workflow-event-store'
 import type { WorkflowMessageStoreMethods } from './workflow-runs/workflow-message-store'
 import type { WorkflowTrustStoreMethods } from './workflow-runs/workflow-trust-store'
@@ -146,4 +147,5 @@ export type OrchestrationDbMethods = AttemptObservationStoreMethods &
   WorkflowEventStoreMethods &
   WorkflowQuestionStoreMethods &
   WorkflowMessageStoreMethods &
-  WorkflowTrustStoreMethods
+  WorkflowTrustStoreMethods &
+  WorkflowEngineRunBindingMethods

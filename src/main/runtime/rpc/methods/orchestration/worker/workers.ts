@@ -6,7 +6,10 @@ import {
   decideWorkerStartMode,
   readWorkerStartModeSettings
 } from '../../orchestration-worker-start-mode'
-import { resolveOrchestrationCaller } from '../runs/run-scope'
+import { resolveOrchestrationCaller, resolveRunScope } from '../runs/run-scope'
+import { assertTerminalMayMutateRun } from '../runs/workflow-engine-run-scope'
+import { asWorkflowEnginePrincipal } from '../../../../workflows/workflow-engine-principal'
+import { assertWorkflowEngineWorkerStart } from './workflow-engine-worker-start'
 import { WorkerStartParams } from './worker-start-schema'
 import {
   isWorkerStartTimeoutWithinTimerLimit,
@@ -20,7 +23,7 @@ export const ORCHESTRATION_WORKER_START_METHODS = [
     params: WorkerStartParams,
     handler: async (
       params,
-      { runtime, orchestrationMutation, orchestrationCompatibilityEvidence }
+      { runtime, orchestrationMutation, orchestrationCompatibilityEvidence, principal }
     ) => {
       if (!isWorkerStartTimeoutWithinTimerLimit(params.timeoutMs)) {
         throw new OrchestrationError(
@@ -30,11 +33,29 @@ export const ORCHESTRATION_WORKER_START_METHODS = [
       }
       const readinessTimeoutMs = resolveWorkerStartReadinessTimeoutMs(params.timeoutMs)
       const db = runtime.getOrchestrationDb()
+      const engine = asWorkflowEnginePrincipal(principal)
+      const workflowEngine = engine ? assertWorkflowEngineWorkerStart(params, engine) : undefined
       const coordinatorPane = resolveOrchestrationCaller(runtime, {
         callerTerminalHandle: params.from,
-        callerEvidence: orchestrationCompatibilityEvidence
+        callerEvidence: orchestrationCompatibilityEvidence,
+        principal
       })
-      const run = coordinatorPane ? db.getCurrentRunForPane(coordinatorPane) : undefined
+      if (!engine && params.run) {
+        assertTerminalMayMutateRun(db.getRun(params.run))
+      }
+      const run = engine
+        ? resolveRunScope(runtime, {
+            runId: params.run,
+            callerTerminalHandle: params.from,
+            requireCurrentConsumer: true,
+            principal
+          })
+        : coordinatorPane
+          ? db.getCurrentRunForPane(coordinatorPane)
+          : undefined
+      if (!engine) {
+        assertTerminalMayMutateRun(run)
+      }
       if (!run || (params.run && params.run !== run.id)) {
         throw new OrchestrationError(
           'consumer_fenced',
@@ -74,7 +95,8 @@ export const ORCHESTRATION_WORKER_START_METHODS = [
         coordinatorPane,
         existingTask,
         orchestrationMutation,
-        mode
+        mode,
+        workflowEngine
       })
     }
   })

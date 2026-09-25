@@ -43,13 +43,16 @@ export async function startLocalWorker(args: {
   orchestrationMutation?: WorkerStartMutation
   /** Settings-driven; the executing host still gets to refuse below. */
   mode: WorkerStartModeReceipt
+  /** Set only for the workflow engine, which has no terminal to derive placement or creator from. */
+  workflowEngine?: { worktreeId: string }
 }): Promise<unknown> {
   const { params, runtime, db, run, coordinatorPane, existingTask, orchestrationMutation } = args
   const requestedWorktree = params.worktree ?? 'current'
   const createsWorktree = requestedWorktree === 'new-child' || requestedWorktree === 'new-top-level'
   const { agent, launch } = prepareLocalWorkerStart({ params, createsWorktree, runtime })
 
-  const coordinatorWorktreeId = await resolveDispatchCallerWorktreeId(runtime, params.from)
+  const coordinatorWorktreeId =
+    args.workflowEngine?.worktreeId ?? (await resolveDispatchCallerWorktreeId(runtime, params.from))
   const creationWorktree = createsWorktree
     ? await runtime.showManagedWorktree(`id:${coordinatorWorktreeId}`)
     : undefined
@@ -95,7 +98,9 @@ export async function startLocalWorker(args: {
       : 'existing_worktree'
   }
   const started = db.createStartingWorkerDispatch({
-    creator: resolveDispatchCreator(runtime, params.from),
+    creator: args.workflowEngine
+      ? { kind: 'system' }
+      : resolveDispatchCreator(runtime, params.from),
     maxDepth: runtime.getNestedWorkerMaxDepth(),
     taskId: existingTask?.id,
     taskSpec: params.spec,

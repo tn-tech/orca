@@ -10,6 +10,7 @@ import type {
 } from '../../../shared/mobile-relay-credential-contract'
 import type { RuntimeCapability } from '../../../shared/protocol-version'
 import type { OrchestrationCompatibilityEvidence } from '../../../shared/orchestration-compatibility-evidence'
+import type { OrchestrationPrincipal } from '../workflows/workflow-engine-principal'
 
 export type PairingRpcContext = {
   getEndpoints(params: PairingGetEndpointsParams): Promise<PairingGetEndpointsResult>
@@ -103,6 +104,8 @@ export type RpcContext = {
   legacyCoordinatorAuthority?: LegacyCoordinatorAuthorityProof
   revalidateLegacyCoordinator?: () => string
   orchestrationCompatibilityCallerAuthority?: OrchestrationCompatibilityCallerAuthority
+  // Why: set only by RpcDispatcher.dispatchAsWorkflowEngine; no transport or params schema can carry it.
+  principal?: OrchestrationPrincipal
   // Why: federation pins the authenticated saved-environment caller without exposing its token to handlers or storage.
   authenticatedCallerFingerprint?: string
   pairing?: PairingRpcContext

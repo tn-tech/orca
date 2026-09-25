@@ -67,6 +67,7 @@ import { attachWorkerTerminalRelease } from './worker-terminal/worker-terminal-r
 import { attachWorkerTerminalResourceStore } from './worker-terminal/worker-terminal-resource-store'
 import { attachWorkerTerminalTransfer } from './worker-terminal/worker-terminal-transfer'
 import { attachWorkflowAttemptStore } from './workflow-runs/workflow-attempt-store'
+import { attachWorkflowEngineRunBinding } from './workflow-runs/workflow-engine-run-binding'
 import { attachWorkflowEventStore } from './workflow-runs/workflow-event-store'
 import { attachWorkflowMessageStore } from './workflow-runs/workflow-message-store'
 import { attachWorkflowTrustStore } from './workflow-runs/workflow-trust-store'
@@ -148,4 +149,5 @@ export function attachOrchestrationDbMethods(ctor: { prototype: object }): void 
   attachWorkflowQuestionStore(ctor)
   attachWorkflowMessageStore(ctor)
   attachWorkflowTrustStore(ctor)
+  attachWorkflowEngineRunBinding(ctor)
 }

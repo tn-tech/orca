@@ -1,6 +1,7 @@
 import { defineMethod } from '../../../core'
 import { OrchestrationError } from '../../../../orchestration/orchestration-error'
 import { assertCallerHandleMatchesEvidence, resolveOrchestrationCaller } from './run-scope'
+import { assertTerminalMayMutateRun } from './workflow-engine-run-scope'
 import { exposeRun } from './run-receipt'
 import {
   RunCreateParams,
@@ -65,6 +66,7 @@ export const ORCHESTRATION_RUN_METHODS = [
       }
       assertCallerHandleMatchesEvidence(runtime, params.from, orchestrationCompatibilityEvidence)
       const db = runtime.getOrchestrationDb()
+      assertTerminalMayMutateRun(db.getRun(params.id))
       const priorRun = db.getCurrentRunForPane(paneKey)
       const run = db.bindRun({
         runId: params.id,
