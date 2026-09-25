@@ -78,13 +78,18 @@ export function classifyIncomingEdge(
   return edgeOutcome(edge, latestAttemptByNode(attempts).get(edge.from), false)
 }
 
+function isBlocked(outcome: IncomingEdgeOutcome): boolean {
+  return outcome !== 'fired' && outcome !== 'unresolved'
+}
+
 function loopBodyNodeIds(nodes: readonly Node[]): Set<string> {
   return new Set(nodes.flatMap((node) => (node.type === 'loop' ? node.body.nodeIds : [])))
 }
 
 /**
- * Nodes without an attempt that may start now, and nodes that can never run. A non-Join node needs
- * every incoming edge fired, so one blocked edge skips it; skips cascade to a fixpoint.
+ * Nodes without an attempt that may start now, and nodes that can never run. Several incoming edges
+ * merge like the default Join: eligible once none is unresolved and one fired; skipped only when
+ * every edge is blocked. Skips cascade to a fixpoint.
  */
 export function computeFrontier(
   definition: Workflow,
@@ -107,7 +112,8 @@ export function computeFrontier(
       if (node.type === 'start' || skipped.has(node.id)) {
         continue
       }
-      if (outcomesFor(node.id).some((outcome) => outcome !== 'fired' && outcome !== 'unresolved')) {
+      const outcomes = outcomesFor(node.id)
+      if (outcomes.length > 0 && outcomes.every(isBlocked)) {
         skipped.add(node.id)
         changed = true
       }
@@ -122,8 +128,8 @@ export function computeFrontier(
       const outcomes = outcomesFor(node.id)
       return (
         !skipped.has(node.id) &&
-        outcomes.length > 0 &&
-        outcomes.every((outcome) => outcome === 'fired')
+        outcomes.some((outcome) => outcome === 'fired') &&
+        !outcomes.includes('unresolved')
       )
     })
     .map((node) => node.id)

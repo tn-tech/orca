@@ -82,23 +82,73 @@ describe('computeFrontier', () => {
     ).toEqual(['b', 'end'])
   })
 
-  it('skips on a blocked edge even while another upstream is still running', () => {
-    const def = workflow(
+  describe('implicit merge on a node with several incoming edges', () => {
+    // start -> a; a -> b if go; a -> c if !go; b -> end; c -> end
+    const branching = workflow(
       [start, agent('a'), agent('b'), agent('c'), end],
       [
         { id: 'e1', from: 'start', to: 'a' },
-        { id: 'e2', from: 'start', to: 'b' },
-        { id: 'e3', from: 'a', to: 'c' },
-        { id: 'e4', from: 'b', to: 'c' },
+        { id: 'e2', from: 'a', to: 'b', condition: { path: 'go', op: 'truthy' } },
+        { id: 'e3', from: 'a', to: 'c', condition: { path: 'go', op: 'falsy' } },
+        { id: 'e4', from: 'b', to: 'end' },
         { id: 'e5', from: 'c', to: 'end' }
       ]
     )
-    const attempts = [
-      attempt('start', 'completed'),
-      attempt('a', 'failed'),
-      attempt('b', 'running')
-    ]
-    expect(computeFrontier(def, attempts)).toEqual({ eligible: [], skipped: ['c', 'end'] })
+
+    it('runs End when one conditional branch was not taken', () => {
+      const attempts = [
+        attempt('start', 'completed'),
+        attempt('a', 'completed', { resultJson: { go: true } }),
+        attempt('b', 'completed')
+      ]
+      expect(computeFrontier(branching, attempts)).toEqual({ eligible: ['end'], skipped: ['c'] })
+    })
+
+    it('skips End when every incoming edge is blocked', () => {
+      const attempts = [
+        attempt('start', 'completed'),
+        attempt('a', 'completed', { resultJson: { go: true } }),
+        attempt('b', 'failed')
+      ]
+      expect(computeFrontier(branching, attempts)).toEqual({
+        eligible: [],
+        skipped: ['c', 'end']
+      })
+    })
+
+    it('keeps End pending while an incoming edge is still unresolved', () => {
+      const attempts = [
+        attempt('start', 'completed'),
+        attempt('a', 'completed', { resultJson: { go: true } }),
+        attempt('b', 'running')
+      ]
+      expect(computeFrontier(branching, attempts)).toEqual({ eligible: [], skipped: ['c'] })
+    })
+
+    it('keeps a merge node pending when one upstream failed and another is still running', () => {
+      const def = workflow(
+        [start, agent('a'), agent('b'), agent('c'), end],
+        [
+          { id: 'e1', from: 'start', to: 'a' },
+          { id: 'e2', from: 'start', to: 'b' },
+          { id: 'e3', from: 'a', to: 'c' },
+          { id: 'e4', from: 'b', to: 'c' },
+          { id: 'e5', from: 'c', to: 'end' }
+        ]
+      )
+      const running = [
+        attempt('start', 'completed'),
+        attempt('a', 'failed'),
+        attempt('b', 'running')
+      ]
+      expect(computeFrontier(def, running)).toEqual({ eligible: [], skipped: [] })
+      const done = [
+        attempt('start', 'completed'),
+        attempt('a', 'failed'),
+        attempt('b', 'completed')
+      ]
+      expect(computeFrontier(def, done)).toEqual({ eligible: ['c'], skipped: [] })
+    })
   })
 
   it('reads the latest attempt of a node', () => {
