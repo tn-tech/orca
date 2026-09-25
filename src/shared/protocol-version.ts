@@ -249,6 +249,8 @@ export const AUTOMATION_CREATE_IDEMPOTENCY_RUNTIME_CAPABILITY =
   'automation.create-idempotency.v1' as const
 // Hosts without this capability have no notifications.registerPush RPC.
 export const NOTIFICATIONS_REMOTE_PUSH_RUNTIME_CAPABILITY = 'notifications.remote-push.v1' as const
+// Signals the host can run visual DAG workflows (workflow.* RPCs).
+export const WORKFLOW_ENGINE_RUNTIME_CAPABILITY = 'workflow.engine.v1' as const
 
 /**
  * `agent.launch` exists: one host-side method that decides structured-vs-terminal and creates the
@@ -391,7 +393,8 @@ export const RUNTIME_CAPABILITIES = [
   NOTIFICATIONS_REMOTE_PUSH_RUNTIME_CAPABILITY,
   AGENT_LAUNCH_RUNTIME_CAPABILITY,
   AGENT_LAUNCH_REPLAY_RUNTIME_CAPABILITY,
-  AGENT_LAUNCH_REPLAY_REQUIRED_RUNTIME_CAPABILITY
+  AGENT_LAUNCH_REPLAY_REQUIRED_RUNTIME_CAPABILITY,
+  WORKFLOW_ENGINE_RUNTIME_CAPABILITY
 ] as const
 
 export type RuntimeCapability = (typeof RUNTIME_CAPABILITIES)[number] | (string & {})

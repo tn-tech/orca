@@ -1,6 +1,5 @@
 ---
-
-description: "Task list for Visual DAG Workflows"
+description: 'Task list for Visual DAG Workflows'
 ---
 
 # Tasks: Visual DAG Workflows
@@ -38,9 +37,9 @@ Monorepo per plan.md: shared types `src/shared/workflows/`, engine `src/main/run
 
 **Purpose**: Dependencies, fixtures, flags and the stub agent every later phase relies on.
 
-- [ ] T001 Add `@xyflow/react@12.11.6` and `@dagrejs/dagre@3.1.1` to `package.json` dependencies with `pnpm add`, record the justified Zustand 4 duplication (research R10) in `docs/reference/visual-dag-workflows.md` (create with a "Dependencies" section only)
-- [ ] T002 [P] Add `WORKFLOW_ENGINE_RUNTIME_CAPABILITY = 'workflow.engine.v1'` to `src/shared/protocol-version.ts` and append it to `RUNTIME_CAPABILITIES`
-- [ ] T003 [P] Add `experimentalWorkflows: boolean` (default `false`) and `showWorkflowsButton: boolean` (default `true`) to `src/shared/global-settings-types.ts` and `src/shared/default-global-settings.ts`, and expose both in `src/main/ipc/settings.ts` following `showAutomationsButton`
+- [x] T001 Add `@xyflow/react@12.11.6` and `@dagrejs/dagre@3.1.1` to `package.json` dependencies with `pnpm add`, record the justified Zustand 4 duplication (research R10) in `docs/reference/visual-dag-workflows.md` (create with a "Dependencies" section only)
+- [x] T002 [P] Add `WORKFLOW_ENGINE_RUNTIME_CAPABILITY = 'workflow.engine.v1'` to `src/shared/protocol-version.ts` and append it to `RUNTIME_CAPABILITIES`
+- [x] T003 [P] Add `experimentalWorkflows: boolean` (default `false`) and `showWorkflowsButton: boolean` (default `true`) to `src/shared/global-settings-types.ts` and `src/shared/default-global-settings.ts`, and expose both in `src/main/ipc/settings.ts` following `showAutomationsButton`
 - [ ] T004 [P] Create the sample repository fixture `tests/fixtures/workflows/sample-repo/` (README.md, `orca.yaml` with `workflows.allowedSources: [https://github.com/github/spec-kit]`, an empty `orca-workflows/` directory) and a helper `tests/fixtures/workflows/create-sample-repo.ts` that copies it into a temp git repo with one commit
 - [ ] T005 [P] Copy the example from `specs/001-visual-dag-workflows/contracts/workflow-file.md` to `tests/fixtures/workflows/feature-with-qa.workflow.yaml` and add `tests/fixtures/workflows/two-node.workflow.yaml` (start → implement → review → end, no loop)
 - [ ] T006 [P] Create the deterministic stub agent `config/scripts/workflow-stub-agent.mjs`: reads the brief path from its argv/stdin, looks up a scripted response table in `WORKFLOW_STUB_SCRIPT` (JSON env var keyed by node id and iteration), writes `result.json`, then runs `orca orchestration send --type worker_done --report-path <result.json> --outcome <succeeded|failed>` using the `ORCA` executable from env; document its protocol in a header comment

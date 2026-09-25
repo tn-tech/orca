@@ -836,6 +836,21 @@ describe('registerSettingsHandlers', () => {
     expect(rebuildAppMenuMock).toHaveBeenCalledTimes(1)
   })
 
+  it('rebuilds the app menu after Workflows sidebar visibility changes', async () => {
+    store.getSettings.mockReturnValue({ showWorkflowsButton: true })
+    store.updateSettings.mockReturnValue({ showWorkflowsButton: false })
+    registerSettingsHandlers(store as never)
+
+    const handler = handleMock.mock.calls.find((call) => call[0] === 'settings:set')?.[1] as (
+      _event: unknown,
+      args: unknown
+    ) => Promise<unknown>
+
+    await handler(settingsInvokeEvent, { showWorkflowsButton: false })
+
+    expect(rebuildAppMenuMock).toHaveBeenCalledTimes(1)
+  })
+
   // 3b stores the two booleans and nothing else; the consent copy and the
   // history picker are PR 8's. A profile that has never opted in has no key.
   it('normalizes an agent-session-search write and hands the change to the index', async () => {

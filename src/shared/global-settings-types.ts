@@ -252,6 +252,10 @@ export type GlobalSettings = {
   showTasksButton: boolean
   /** Only toggles the sidebar shortcut; Automations stay reachable from Settings/View menu. */
   showAutomationsButton?: boolean
+  /** Experimental visual DAG workflows surface; off by default. */
+  experimentalWorkflows?: boolean
+  /** Only toggles the sidebar shortcut; Workflows stay reachable from Settings/View menu. */
+  showWorkflowsButton?: boolean
   /** Deprecated: Artifacts are always available. Use showArtifactsButton for sidebar visibility. */
   artifactsEnabled?: boolean
   /** Capability gate for agent-driven publishing; off until granted, enforced in main, not just the UI. */
