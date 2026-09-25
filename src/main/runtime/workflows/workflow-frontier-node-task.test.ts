@@ -36,6 +36,33 @@ describe('createNodeTask', () => {
     })
   })
 
+  it('records only upstreams whose edge fired, so a merge after a failed branch stays dispatchable', async () => {
+    const def = workflow(
+      [start, agent('a'), agent('b'), agent('c'), end],
+      [
+        { id: 'e1', from: 'start', to: 'a' },
+        { id: 'e2', from: 'start', to: 'b' },
+        { id: 'e3', from: 'a', to: 'c' },
+        { id: 'e4', from: 'b', to: 'c' },
+        { id: 'e5', from: 'c', to: 'end' }
+      ]
+    )
+    const attempts = [
+      attempt('start', 'completed'),
+      attempt('a', 'failed', { taskId: 'task_a' }),
+      attempt('b', 'completed', { taskId: 'task_b' })
+    ]
+    const call = vi.fn(async () => ({ task: { id: 'task_c' } }))
+    await createNodeTask(
+      { call },
+      { definition: def, attempts, nodeId: 'c', iteration: 0, spec: 'brief' }
+    )
+    expect(call).toHaveBeenCalledWith(
+      'orchestration.taskCreate',
+      expect.objectContaining({ deps: JSON.stringify(['task_b']) })
+    )
+  })
+
   it('omits start (task-less) upstreams from deps', async () => {
     const call = vi.fn(async () => ({ task: { id: 'task_a' } }))
     await createNodeTask(

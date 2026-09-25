@@ -232,4 +232,10 @@ describe('classifyIncomingEdge', () => {
     expect(outcome('open')).toBe('unresolved')
     expect(outcome('not-taken')).toBe('not-taken')
   })
+
+  it('reads skips only from persisted attempts (the controller records every frontier skip)', () => {
+    const edge = linear.edges[1]
+    expect(classifyIncomingEdge(edge, [attempt('a', 'skipped')])).toBe('source-skipped')
+    expect(classifyIncomingEdge(edge, [])).toBe('unresolved')
+  })
 })

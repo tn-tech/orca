@@ -70,7 +70,11 @@ function edgeOutcome(
   }
 }
 
-/** Outcome of one incoming edge; conditions read only the source attempt's result (FR-027). */
+/**
+ * Outcome of one incoming edge; conditions read only the source attempt's result (FR-027).
+ * Contract: the controller persists a `skipped` attempt for every `computeFrontier(...).skipped`
+ * node (the run view shows Skipped), so skips are read from attempts, never from frontier state.
+ */
 export function classifyIncomingEdge(
   edge: Edge,
   attempts: readonly FrontierAttempt[]
@@ -172,8 +176,10 @@ export async function createNodeTask(
     throw new Error(`Workflow node ${args.nodeId} is not in the run's definition.`)
   }
   const latest = latestAttemptByNode(args.attempts)
+  // Why: taskCreate leaves a Task pending while any dep is not completed, and only ready Tasks dispatch.
   const deps = args.definition.edges
     .filter((edge) => edge.to === node.id)
+    .filter((edge) => edgeOutcome(edge, latest.get(edge.from), false) === 'fired')
     .map((edge) => latest.get(edge.from)?.taskId)
     .filter((taskId): taskId is string => taskId !== undefined)
   const result = await port.call('orchestration.taskCreate', {

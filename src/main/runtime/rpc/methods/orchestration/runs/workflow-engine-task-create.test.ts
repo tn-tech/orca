@@ -4,6 +4,14 @@ import { OrchestrationDb } from '../../../../orchestration/db'
 import { eraseRpcMethods, type RpcContext } from '../../../core'
 import { ORCHESTRATION_METHODS } from '../../orchestration'
 import type { WorkflowEnginePrincipal } from '../../../../workflows/workflow-engine-principal'
+import { createNodeTask } from '../../../../workflows/workflow-frontier'
+import {
+  agent,
+  attempt,
+  end,
+  start,
+  workflow
+} from '../../../../workflows/workflow-frontier-test-fixtures'
 
 describe('orchestration.taskCreate workflow link', () => {
   let db: OrchestrationDb
@@ -69,6 +77,58 @@ describe('orchestration.taskCreate workflow link', () => {
       workflow_run_id: engine.workflowRunId,
       workflow_node_id: 'review',
       workflow_iteration: 2
+    })
+  })
+
+  it('defaults the iteration to 0 when the engine omits it', async () => {
+    await taskCreate({ spec: 'work', workflowNodeId: 'implement' }, { principal: engine })
+    expect(db.listTasks({ runId: engineRunId })[0]).toMatchObject({
+      workflow_node_id: 'implement',
+      workflow_iteration: 0
+    })
+  })
+
+  it('refuses an iteration without a node id, even from the engine', async () => {
+    await expect(
+      taskCreate({ spec: 'work', workflowIteration: 1 }, { principal: engine })
+    ).rejects.toMatchObject({ code: 'invalid_argument' })
+    expect(db.listTasks({ runId: engineRunId })).toEqual([])
+  })
+
+  it('creates a ready merge Task when one upstream failed and the other completed', async () => {
+    const port = {
+      call: (_method: string, params: Record<string, unknown>) =>
+        taskCreate(params, { principal: engine })
+    }
+    const failed = db.createTask({ spec: 'a', runId: engineRunId })
+    const completed = db.createTask({ spec: 'b', runId: engineRunId })
+    db.updateTaskStatus(failed.id, 'failed')
+    db.updateTaskStatus(completed.id, 'completed')
+    const definition = workflow(
+      [start, agent('a'), agent('b'), agent('c'), end],
+      [
+        { id: 'e1', from: 'start', to: 'a' },
+        { id: 'e2', from: 'start', to: 'b' },
+        { id: 'e3', from: 'a', to: 'c' },
+        { id: 'e4', from: 'b', to: 'c' },
+        { id: 'e5', from: 'c', to: 'end' }
+      ]
+    )
+    const attempts = [
+      attempt('start', 'completed'),
+      attempt('a', 'failed', { taskId: failed.id }),
+      attempt('b', 'completed', { taskId: completed.id })
+    ]
+    const taskId = await createNodeTask(port, {
+      definition,
+      attempts,
+      nodeId: 'c',
+      iteration: 0,
+      spec: 'brief'
+    })
+    expect(db.getTask(taskId)).toMatchObject({
+      status: 'ready',
+      deps: JSON.stringify([completed.id])
     })
   })
 
