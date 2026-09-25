@@ -117,7 +117,7 @@ async function readRemoteShared(
   }
 }
 
-async function ensureRemoteOrcaDirIgnored(
+export async function ensureRemoteOrcaDirIgnored(
   fsProvider: IFilesystemProvider,
   repoPath: string
 ): Promise<void> {
