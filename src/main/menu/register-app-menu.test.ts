@@ -52,6 +52,7 @@ function buildMenuOptions() {
     getAppearanceState: vi.fn(() => ({
       showTasksButton: true,
       showAutomationsButton: true,
+      showWorkflowsButton: true,
       showMobileButton: true,
       showTitlebarAppName: true,
       statusBarVisible: true
@@ -470,6 +471,7 @@ describe('registerAppMenu', () => {
     options.getAppearanceState.mockReturnValue({
       showTasksButton: false,
       showAutomationsButton: false,
+      showWorkflowsButton: false,
       showMobileButton: true,
       showTitlebarAppName: true,
       statusBarVisible: true
@@ -491,6 +493,10 @@ describe('registerAppMenu', () => {
     )
     expect(automationsItem?.type).toBe('checkbox')
     expect(automationsItem?.checked).toBe(false)
+
+    const workflowsItem = appearanceSubmenu.find((item) => item.label === 'Show Workflows Button')
+    expect(workflowsItem?.type).toBe('checkbox')
+    expect(workflowsItem?.checked).toBe(false)
 
     const mobileItem = appearanceSubmenu.find((item) => item.label === 'Show Orca Mobile Button')
     expect(mobileItem?.type).toBe('checkbox')
@@ -518,6 +524,9 @@ describe('registerAppMenu', () => {
       .find((item) => item.label === 'Show Automations Button')
       ?.click?.({} as never, {} as never, {} as never)
     appearanceSubmenu
+      .find((item) => item.label === 'Show Workflows Button')
+      ?.click?.({} as never, {} as never, {} as never)
+    appearanceSubmenu
       .find((item) => item.label === 'Show Orca Mobile Button')
       ?.click?.({} as never, {} as never, {} as never)
     appearanceSubmenu
@@ -526,6 +535,7 @@ describe('registerAppMenu', () => {
 
     expect(options.onToggleAppearance).toHaveBeenCalledWith('showTasksButton')
     expect(options.onToggleAppearance).toHaveBeenCalledWith('showAutomationsButton')
+    expect(options.onToggleAppearance).toHaveBeenCalledWith('showWorkflowsButton')
     expect(options.onToggleAppearance).toHaveBeenCalledWith('showMobileButton')
     expect(options.onToggleAppearance).toHaveBeenCalledWith('showTitlebarAppName')
   })

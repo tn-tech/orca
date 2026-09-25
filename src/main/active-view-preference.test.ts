@@ -78,6 +78,19 @@ describe('ActiveViewPreference', () => {
     expect(preference.get()).toBe('terminal')
   })
 
+  it('accepts the workflows view', async () => {
+    vi.useFakeTimers()
+    const preference = new ActiveViewPreference(dataFile, 'terminal')
+
+    expect(preference.set('workflows')).toBe(true)
+    vi.advanceTimersByTime(100)
+    await preference.waitForPendingWrite()
+
+    expect(JSON.parse(readFileSync(getActiveViewPreferenceFile(dataFile), 'utf-8'))).toEqual({
+      activeView: 'workflows'
+    })
+  })
+
   it('rejects inherited object keys from a corrupt sidecar', () => {
     // Why: `constructor`/`__proto__` are truthy under `in`; the sidecar must not
     // treat them as a valid view and leave the main surface blank.

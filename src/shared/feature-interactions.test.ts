@@ -50,6 +50,7 @@ describe('feature interactions', () => {
       'linear-tasks',
       'jira-tasks',
       'automations',
+      'workflows',
       'automation-created',
       'automation-run',
       'browser-annotations',

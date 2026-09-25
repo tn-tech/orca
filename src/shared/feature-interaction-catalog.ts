@@ -17,6 +17,7 @@ export type FeatureInteractionId =
   | 'linear-tasks'
   | 'jira-tasks'
   | 'automations'
+  | 'workflows'
   | 'automation-created'
   | 'automation-run'
   | 'browser-annotations'
@@ -87,6 +88,7 @@ export const FEATURE_INTERACTIONS = [
   { id: 'linear-tasks', interaction: 'Linear task item workflow used' },
   { id: 'jira-tasks', interaction: 'Jira task item workflow used' },
   { id: 'automations', interaction: 'Automations page opened' },
+  { id: 'workflows', interaction: 'Workflows page opened' },
   { id: 'automation-created', interaction: 'automation created' },
   { id: 'automation-run', interaction: 'automation run queued' },
   { id: 'browser-annotations', interaction: 'browser annotation added, copied, or cleared' },

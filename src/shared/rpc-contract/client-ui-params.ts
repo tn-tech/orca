@@ -14,6 +14,7 @@ import { ClientUiWorkspaceFilterFields } from './client-ui-workspace-filter-fiel
 import { TaskResumeState } from './task-resume-state-params'
 import { WorkspaceCleanup } from './workspace-cleanup-ui-params'
 import { omitUndefinedValues, tolerateUnknownValues } from './ui-update-value-tolerance-params'
+import { openEnum } from '../zod-salvage'
 
 export const NullableString = z.string().nullable()
 
@@ -106,17 +107,24 @@ export const FeatureInteractionIdParam = z.custom<FeatureInteractionId>(isFeatur
   message: 'Unknown feature interaction id'
 })
 
-export const TopLevelViewSchema = z.enum([
-  'terminal',
-  'settings',
-  'tasks',
-  'activity',
-  'automations',
-  'space',
-  'skills',
-  'artifacts',
-  'mobile'
-])
+// Why openEnum: activeView is a wire surface (remote-wire-compatibility.md Rule 4) — an older host
+// parsing a newer client's ui.set param degrades an unknown view to 'terminal' instead of
+// rejecting the whole payload.
+export const TopLevelViewSchema = openEnum(
+  [
+    'terminal',
+    'settings',
+    'tasks',
+    'activity',
+    'automations',
+    'workflows',
+    'space',
+    'skills',
+    'artifacts',
+    'mobile'
+  ] as const,
+  'terminal'
+)
 
 export const UiUpdateFields = z
   .object({

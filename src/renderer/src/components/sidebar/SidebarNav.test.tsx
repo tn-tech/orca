@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   state: {} as Record<string, unknown>,
   openTaskPage: vi.fn(),
   openAutomationsPage: vi.fn(),
+  openWorkflowsPage: vi.fn(),
   openActivityPage: vi.fn(),
   openMobilePage: vi.fn(),
   openArtifactsPage: vi.fn(),
@@ -90,6 +91,7 @@ vi.mock('@/components/ui/context-menu', () => ({
 import SidebarNav, {
   getSetupGuideSidebarEntryReady,
   shouldShowAutomationsButton,
+  shouldShowWorkflowsButton,
   shouldShowArtifactsButton,
   shouldShowMobileButton,
   shouldShowSetupGuideEntry
@@ -130,6 +132,7 @@ function setSidebarState({
     activeView: 'worktrees',
     openTaskPage: mocks.openTaskPage,
     openAutomationsPage: mocks.openAutomationsPage,
+    openWorkflowsPage: mocks.openWorkflowsPage,
     openActivityPage: mocks.openActivityPage,
     openMobilePage: mocks.openMobilePage,
     openArtifactsPage: mocks.openArtifactsPage,
@@ -384,6 +387,60 @@ describe('SidebarNav', () => {
     await clickButton(getHideButton(automationsMenu as HTMLElement))
 
     expect(mocks.updateSettings).toHaveBeenCalledWith({ showAutomationsButton: false })
+  })
+
+  it('hides the Workflows entry by default for older settings', () => {
+    expect(shouldShowWorkflowsButton(null)).toBe(false)
+    expect(shouldShowWorkflowsButton({})).toBe(false)
+    expect(shouldShowWorkflowsButton({ experimentalWorkflows: true })).toBe(true)
+    expect(
+      shouldShowWorkflowsButton({ experimentalWorkflows: true, showWorkflowsButton: false })
+    ).toBe(false)
+    expect(
+      shouldShowWorkflowsButton({ experimentalWorkflows: false, showWorkflowsButton: true })
+    ).toBe(false)
+  })
+
+  it('omits the Workflows row while the experiment is off', async () => {
+    setSidebarState({
+      settings: {
+        ...getDefaultSettings('/tmp'),
+        showWorkflowsButton: true
+      }
+    })
+
+    const container = await renderSidebarNav()
+
+    expect(queryButtonByText(container, 'Workflows')).toBeNull()
+  })
+
+  it('opens Workflows from the sidebar once the experiment is on', async () => {
+    setSidebarState({
+      settings: { ...getDefaultSettings('/tmp'), experimentalWorkflows: true }
+    })
+    const container = await renderSidebarNav()
+
+    await clickButton(getButtonByText(container, 'Workflows'))
+
+    expect(mocks.openWorkflowsPage).toHaveBeenCalledOnce()
+  })
+
+  it('hides Workflows from its sidebar context menu', async () => {
+    setSidebarState({
+      settings: { ...getDefaultSettings('/tmp'), experimentalWorkflows: true }
+    })
+    const container = await renderSidebarNav()
+
+    const workflowsMenu = getButtonByText(container, 'Workflows').closest(
+      '[data-testid="context-menu"]'
+    )
+    if (!workflowsMenu) {
+      throw new Error('Workflows context menu not found')
+    }
+
+    await clickButton(getHideButton(workflowsMenu))
+
+    expect(mocks.updateSettings).toHaveBeenCalledWith({ showWorkflowsButton: false })
   })
 
   it('hides Mobile from its sidebar context menu', async () => {

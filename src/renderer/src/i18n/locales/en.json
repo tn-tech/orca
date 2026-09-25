@@ -236,7 +236,8 @@
     "help": "Help",
     "paste": "Paste",
     "copy": "Copy",
-    "selectAll": "Select All"
+    "selectAll": "Select All",
+    "showWorkflowsButton": "Show Workflows Button"
   },
   "tray": {
     "openOrca": "Open Orca",
@@ -5405,7 +5406,8 @@
           "fee535205b": "Tasks",
           "d599269755": "Hide from sidebar",
           "artifacts": "Artifacts",
-          "skills": "Skills"
+          "skills": "Skills",
+          "workflows": "Workflows"
         },
         "SidebarRepositoryFilterSection": {
           "d3a9c4cea1": "Clear",
@@ -9273,7 +9275,12 @@
               "close": "close",
               "notification": "notification area",
               "background": "background"
-            }
+            },
+            "workflowsButtonTitle": "Show Workflows Button",
+            "workflowsButtonDescription": "Show the Workflows button at the top of the left sidebar.",
+            "workflowsButtonWorkflows": "workflows",
+            "workflowsButtonWorkflow": "workflow",
+            "workflowsButtonDag": "dag"
           }
         },
         "auto": {
@@ -11261,7 +11268,8 @@
         },
         "AppearanceWindowSidebarSection": {
           "usagePercentageDisplayUsed": "Used",
-          "usagePercentageDisplayRemaining": "Remaining"
+          "usagePercentageDisplayRemaining": "Remaining",
+          "workflowsButtonTitle": "Show Workflows Button"
         },
         "TerminalInteractionSection": {
           "567633ff50": "Right-click pastes the clipboard into the terminal. Control-click to open the context menu.",

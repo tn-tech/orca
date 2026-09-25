@@ -600,6 +600,60 @@ describe('createUISlice page navigation history', () => {
     expect(store.getState().activeView).toBe('terminal')
     expect(store.getState().worktreeNavHistoryIndex).toBe(0)
   })
+
+  it('records and rewinds Workflows visits on close', () => {
+    const store = createUIStore()
+    store.setState({ worktreesByRepo: { 'repo-1': [makeWorktree('a')] } })
+
+    store.getState().recordWorktreeVisit('a')
+    store.getState().openWorkflowsPage()
+    expect(store.getState().worktreeNavHistory).toEqual(['a', 'workflows'])
+    expect(store.getState().worktreeNavHistoryIndex).toBe(1)
+
+    store.getState().closeWorkflowsPage()
+    expect(store.getState().activeView).toBe('terminal')
+    expect(store.getState().worktreeNavHistoryIndex).toBe(0)
+  })
+
+  it('dedupes repeated Workflows opens against the current history entry', () => {
+    const store = createUIStore()
+    store.setState({ worktreesByRepo: { 'repo-1': [makeWorktree('a')] } })
+
+    store.getState().recordWorktreeVisit('a')
+    store.getState().openWorkflowsPage()
+    store.getState().openWorkflowsPage()
+
+    expect(store.getState().activeView).toBe('workflows')
+    expect(store.getState().worktreeNavHistory).toEqual(['a', 'workflows'])
+    expect(store.getState().worktreeNavHistoryIndex).toBe(1)
+  })
+
+  it('keeps the Workflows history index when Workflows is the only entry', () => {
+    const store = createUIStore()
+
+    store.getState().openWorkflowsPage()
+    expect(store.getState().worktreeNavHistory).toEqual(['workflows'])
+    expect(store.getState().worktreeNavHistoryIndex).toBe(0)
+
+    store.getState().closeWorkflowsPage()
+    expect(store.getState().activeView).toBe('terminal')
+    expect(store.getState().worktreeNavHistoryIndex).toBe(0)
+  })
+
+  it('skips deleted prior worktrees when closing Workflows', () => {
+    const store = createUIStore()
+    store.setState({
+      activeView: 'workflows',
+      previousViewBeforeWorkflows: 'terminal',
+      worktreesByRepo: { 'repo-1': [makeWorktree('c')] },
+      worktreeNavHistory: ['c', 'a', 'workflows'],
+      worktreeNavHistoryIndex: 2
+    })
+
+    store.getState().closeWorkflowsPage()
+    expect(store.getState().activeView).toBe('terminal')
+    expect(store.getState().worktreeNavHistoryIndex).toBe(0)
+  })
 })
 
 describe('createUISlice space navigation', () => {
