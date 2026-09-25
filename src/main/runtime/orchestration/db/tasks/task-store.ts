@@ -22,6 +22,7 @@ export function createTask(
     createdByProcessIncarnation?: string
     createdByRunGeneration?: number
     runId?: string
+    workflow?: { runId: string; nodeId: string; iteration: number }
   }
 ): TaskRow {
   const runId = task.runId
@@ -53,7 +54,8 @@ export function createTask(
       `INSERT INTO tasks (
          id, run_id, parent_id, created_by_terminal_handle, created_by_pane_key,
          created_by_process_incarnation, created_by_run_generation,
-         task_title, display_name, spec, status, deps
+         task_title, display_name, spec, status, deps,
+         workflow_run_id, workflow_node_id, workflow_iteration
        ) VALUES (
          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
          CASE WHEN EXISTS (
@@ -64,7 +66,7 @@ export function createTask(
               OR dependency.run_id <> ?
               OR dependency.status <> 'completed'
          ) THEN 'pending' ELSE 'ready' END,
-         ?
+         ?, ?, ?, ?
        )`
     )
     .run(
@@ -80,7 +82,10 @@ export function createTask(
       task.spec,
       depsJson,
       runId,
-      depsJson
+      depsJson,
+      task.workflow?.runId ?? null,
+      task.workflow?.nodeId ?? null,
+      task.workflow?.iteration ?? null
     )
   return this.db.prepare(`SELECT ${TASK_COLUMN_LIST} FROM tasks WHERE id = ?`).get(id) as TaskRow
 }

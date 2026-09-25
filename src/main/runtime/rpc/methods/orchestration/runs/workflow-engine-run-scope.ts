@@ -107,3 +107,31 @@ export function assertNoActiveWorkflowEngineRuns(db: OrchestrationDb): void {
     )
   }
 }
+
+/** Only the engine may link a Task to a workflow node; the run id comes from its principal. */
+export function resolveWorkflowTaskLink(
+  principal: OrchestrationPrincipal | undefined,
+  params: { workflowNodeId?: string; workflowIteration?: number }
+): { runId: string; nodeId: string; iteration: number } | undefined {
+  const engine = asWorkflowEnginePrincipal(principal)
+  if (params.workflowNodeId === undefined) {
+    if (params.workflowIteration !== undefined) {
+      throw new OrchestrationError(
+        'invalid_argument',
+        'workflowIteration requires workflowNodeId. No effects were applied.'
+      )
+    }
+    return undefined
+  }
+  if (!engine) {
+    throw new OrchestrationError(
+      'invalid_argument',
+      'Only the workflow engine can link a Task to a workflow node. No effects were applied.'
+    )
+  }
+  return {
+    runId: engine.workflowRunId,
+    nodeId: params.workflowNodeId,
+    iteration: params.workflowIteration ?? 0
+  }
+}

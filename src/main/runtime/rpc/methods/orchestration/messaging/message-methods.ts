@@ -5,6 +5,7 @@ import { ORCHESTRATION_LEGACY_RUN_ID } from '../../../../../../shared/orchestrat
 import { abbreviateOrchestrationTasks } from '../../../../../../shared/orchestration-task-summary'
 import { parseOrchestrationTaskDepsFlag } from '../../../../orchestration/task-deps-flag'
 import { resolveRunScope } from '../runs/run-scope'
+import { resolveWorkflowTaskLink } from '../runs/workflow-engine-run-scope'
 import {
   readMutationReplayNudge,
   stripMutationReplayNudge
@@ -151,6 +152,7 @@ export const ORCHESTRATION_MESSAGE_METHODS = [
       { orchestrationCompatibilityEvidence, runtime, legacyCoordinatorRunId, principal }
     ) => {
       const db = runtime.getOrchestrationDb()
+      const workflow = resolveWorkflowTaskLink(principal, params)
       const deps = params.deps ? parseOrchestrationTaskDepsFlag(params.deps) : undefined
       const run = resolveRunScope(runtime, {
         runId: params.run,
@@ -177,7 +179,8 @@ export const ORCHESTRATION_MESSAGE_METHODS = [
               createdByRunGeneration: run.consumer_generation
             }
           : {}),
-        runId: run.id
+        runId: run.id,
+        workflow
       })
       return { task }
     }

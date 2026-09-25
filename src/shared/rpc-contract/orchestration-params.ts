@@ -82,7 +82,10 @@ export const TaskCreateParams = z.object({
   deps: OptionalString,
   parent: OptionalString,
   callerTerminalHandle: OptionalString,
-  run: OptionalString
+  run: OptionalString,
+  // Workflow engine only: the host stamps workflow_run_id from the engine principal.
+  workflowNodeId: OptionalString,
+  workflowIteration: z.number().int().min(0).optional()
 })
 
 export const TaskListParams = z.object({
