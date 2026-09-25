@@ -66,6 +66,12 @@ import type { WorkerTerminalReleaseMethods } from './worker-terminal/worker-term
 import type { StructuredPointerOperationStoreMethods } from './messages/structured-pointer-operation-store'
 import type { WorkerTerminalResourceStoreMethods } from './worker-terminal/worker-terminal-resource-store'
 import type { WorkerTerminalTransferMethods } from './worker-terminal/worker-terminal-transfer'
+import type { WorkflowAttemptStoreMethods } from './workflow-runs/workflow-attempt-store'
+import type { WorkflowEventStoreMethods } from './workflow-runs/workflow-event-store'
+import type { WorkflowMessageStoreMethods } from './workflow-runs/workflow-message-store'
+import type { WorkflowTrustStoreMethods } from './workflow-runs/workflow-trust-store'
+import type { WorkflowQuestionStoreMethods } from './workflow-runs/workflow-question-store'
+import type { WorkflowRunStoreMethods } from './workflow-runs/workflow-run-store'
 
 export type OrchestrationDbMethods = AttemptObservationStoreMethods &
   CreateTablesMethods &
@@ -134,4 +140,10 @@ export type OrchestrationDbMethods = AttemptObservationStoreMethods &
   WorkerReportSettlementMethods &
   DecisionGateStoreMethods &
   CoordinatorRunStoreMethods &
-  OrchestrationResetMethods
+  OrchestrationResetMethods &
+  WorkflowRunStoreMethods &
+  WorkflowAttemptStoreMethods &
+  WorkflowEventStoreMethods &
+  WorkflowQuestionStoreMethods &
+  WorkflowMessageStoreMethods &
+  WorkflowTrustStoreMethods

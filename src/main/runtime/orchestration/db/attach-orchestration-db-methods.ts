@@ -66,6 +66,12 @@ import { attachWorkerTerminalListing } from './worker-terminal/worker-terminal-l
 import { attachWorkerTerminalRelease } from './worker-terminal/worker-terminal-release'
 import { attachWorkerTerminalResourceStore } from './worker-terminal/worker-terminal-resource-store'
 import { attachWorkerTerminalTransfer } from './worker-terminal/worker-terminal-transfer'
+import { attachWorkflowAttemptStore } from './workflow-runs/workflow-attempt-store'
+import { attachWorkflowEventStore } from './workflow-runs/workflow-event-store'
+import { attachWorkflowMessageStore } from './workflow-runs/workflow-message-store'
+import { attachWorkflowTrustStore } from './workflow-runs/workflow-trust-store'
+import { attachWorkflowQuestionStore } from './workflow-runs/workflow-question-store'
+import { attachWorkflowRunStore } from './workflow-runs/workflow-run-store'
 
 export function attachOrchestrationDbMethods(ctor: { prototype: object }): void {
   attachAttemptObservationStore(ctor)
@@ -136,4 +142,10 @@ export function attachOrchestrationDbMethods(ctor: { prototype: object }): void 
   attachDecisionGateStore(ctor)
   attachCoordinatorRunStore(ctor)
   attachOrchestrationReset(ctor)
+  attachWorkflowRunStore(ctor)
+  attachWorkflowAttemptStore(ctor)
+  attachWorkflowEventStore(ctor)
+  attachWorkflowQuestionStore(ctor)
+  attachWorkflowMessageStore(ctor)
+  attachWorkflowTrustStore(ctor)
 }

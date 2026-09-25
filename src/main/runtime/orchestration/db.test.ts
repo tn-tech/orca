@@ -179,6 +179,37 @@ describe('OrchestrationDb', () => {
     })
   })
 
+  describe('workflow columns (v42)', () => {
+    it('round-trips Task and Run rows with the new workflow columns left unset', () => {
+      const d = createDb()
+      const task = d.createTask({ runId, spec: 'no workflow' })
+
+      expect(task.workflow_run_id).toBeNull()
+      expect(task.workflow_node_id).toBeNull()
+      expect(task.workflow_iteration).toBeNull()
+      expect(d.getTask(task.id)?.workflow_run_id).toBeNull()
+      expect(d.getRun(runId)?.workflow_run_id).toBeNull()
+    })
+
+    it('round-trips Task and Run rows once the workflow columns are set', () => {
+      const d = createDb()
+      const task = d.createTask({ runId, spec: 'workflow-driven' })
+
+      d.db
+        .prepare(
+          'UPDATE tasks SET workflow_run_id = ?, workflow_node_id = ?, workflow_iteration = ? WHERE id = ?'
+        )
+        .run('wfr_abc123', 'node_a', 2, task.id)
+      d.db.prepare('UPDATE runs SET workflow_run_id = ? WHERE id = ?').run('wfr_abc123', runId)
+
+      const reloadedTask = d.getTask(task.id)
+      expect(reloadedTask?.workflow_run_id).toBe('wfr_abc123')
+      expect(reloadedTask?.workflow_node_id).toBe('node_a')
+      expect(reloadedTask?.workflow_iteration).toBe(2)
+      expect(d.getRun(runId)?.workflow_run_id).toBe('wfr_abc123')
+    })
+  })
+
   describe('dispatch contexts', () => {
     it('creates a dispatch context and marks task as dispatched', () => {
       const d = createDb()
