@@ -143,6 +143,29 @@ conforming diffs keep the fork cheap to maintain.
   remote SSH, mobile, backwards compatibility, and performance.
 - Worktree safety: all reads and edits use the primary working directory; absolute paths
   from subagent output that point at the main repo MUST NOT be followed.
+- Worktree workflow for multi-agent development:
+  - Every feature is implemented in a dedicated git worktree created from a freshly fetched
+    `origin/main` (`git fetch origin` then `git worktree add <dir> -b <branch> origin/main`),
+    never from a local `main` that may be stale.
+  - The branch is named after the Spec Kit feature id (for example `001-visual-dag-workflows`)
+    so Spec Kit resolves the feature folder without per-checkout state.
+  - Worktrees are sibling directories of the primary checkout, never a `.worktrees/` folder
+    inside the project. Agents and skills that create worktrees MUST follow this.
+  - `main` receives changes only through merged pull requests. Direct commits to `main` are
+    prohibited.
+  - Before opening or updating a pull request the author MUST `git fetch origin`, rebase the
+    branch onto `origin/main`, resolve conflicts, and then rerun typecheck, tests, the
+    changed-file quality gate and the feature's own verification steps on the rebased tree.
+    A pull request whose last verification predates its last rebase is not ready. Rewritten
+    branches are pushed with `--force-with-lease`, never `--force`.
+  - If `main` moves while a pull request is open, the same rebase-and-verify cycle MUST run
+    again before merge.
+  - After merge the worktree is removed and the branch is deleted locally and on `origin`.
+  - Git-ignored per-checkout tooling (`.claude/skills/`, `.agents/skills/`,
+    `.specify/feature.json`) is regenerated in each new worktree per the feature quickstart and
+    is never committed.
+  - This rebase rule applies to feature branches only. Upstream `stablyai/orca` is still merged,
+    never rebased, into `main` per the upstream sync rule above.
 - Modified launch-policy code MUST be rebuilt before running an app; stale build wrappers
   are not safe.
 - Upstream sync: `stablyai/orca` MUST be merged (not rebased) into `main` on a regular
@@ -174,4 +197,4 @@ quality gates above. Complexity that violates a principle MUST be justified in t
 "Why" section; unjustified violations block merge. Spec, plan, and task artifacts produced
 under `.specify/` MUST include a constitution check that cites the principles they touch.
 
-**Version**: 1.1.0 | **Ratified**: 2026-09-23 | **Last Amended**: 2026-09-23
+**Version**: 1.2.0 | **Ratified**: 2026-09-23 | **Last Amended**: 2026-09-25

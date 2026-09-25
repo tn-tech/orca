@@ -7,3 +7,7 @@ feature.json
 
 # Per-machine extension config overrides.
 extensions/*/local-config.yml
+
+# Bridge machine-local state (the handoff file itself is committed)
+bridge-events.jsonl
+bridge-snapshots/
