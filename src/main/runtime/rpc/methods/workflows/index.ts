@@ -1,0 +1,11 @@
+import { WORKFLOW_DEFINITION_METHODS } from './definitions'
+import { WORKFLOW_RUN_METHODS } from './runs'
+import { WORKFLOW_INTERACTION_METHODS } from './interaction'
+import { WORKFLOW_TRUST_METHODS } from './trust'
+
+export const WORKFLOW_METHODS = [
+  ...WORKFLOW_DEFINITION_METHODS,
+  ...WORKFLOW_RUN_METHODS,
+  ...WORKFLOW_INTERACTION_METHODS,
+  ...WORKFLOW_TRUST_METHODS
+]

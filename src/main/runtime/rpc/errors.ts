@@ -77,6 +77,8 @@ const RUNTIME_PASSTHROUGH_CODES: ReadonlySet<string> = new Set([
   'remote_update_manual_required',
   'remote_update_not_available',
   'remote_update_not_downloaded',
+  // Why: U10 registers workflow.* handler skeletons; later units replace this with real logic.
+  'workflow_not_implemented',
   ...AGENT_SESSION_RPC_ERROR_CODES
 ])
 

@@ -516,6 +516,29 @@ import {
   TerminalUpdateViewport
 } from './terminal-viewport-schemas-params'
 import { UpdaterCheckParams } from './updater-params'
+import {
+  WorkflowDelete,
+  WorkflowDraft,
+  WorkflowDuplicate,
+  WorkflowImportRole,
+  WorkflowList,
+  WorkflowRead,
+  WorkflowValidate,
+  WorkflowWrite
+} from './workflow-params'
+import {
+  WorkflowProposalAction,
+  WorkflowRunAnswer,
+  WorkflowRunControl,
+  WorkflowRunEvents,
+  WorkflowRunList,
+  WorkflowRunReadNodeOutput,
+  WorkflowRunRerun,
+  WorkflowRunSendMessage,
+  WorkflowRunShow,
+  WorkflowRunStart,
+  WorkflowTrustDecide
+} from './workflow-run-params'
 import { WorkspacePortKillParams, WorkspacePortScanParams } from './workspace-ports-params'
 import { WorktreeCreate, WorktreePrefetchCreateBase } from './worktree-create-params'
 import {
@@ -1157,6 +1180,29 @@ export const RPC_PARAMS_BY_METHOD = {
   'updater.download': null,
   'updater.getStatus': null,
   'updater.install': null,
+  'workflow.delete': WorkflowDelete,
+  'workflow.draft': WorkflowDraft,
+  'workflow.duplicate': WorkflowDuplicate,
+  'workflow.importRole': WorkflowImportRole,
+  'workflow.list': WorkflowList,
+  'workflow.proposal.accept': WorkflowProposalAction,
+  'workflow.proposal.export': WorkflowProposalAction,
+  'workflow.read': WorkflowRead,
+  'workflow.run.answer': WorkflowRunAnswer,
+  'workflow.run.cancel': WorkflowRunControl,
+  'workflow.run.events': WorkflowRunEvents,
+  'workflow.run.list': WorkflowRunList,
+  'workflow.run.pause': WorkflowRunControl,
+  'workflow.run.readNodeOutput': WorkflowRunReadNodeOutput,
+  'workflow.run.rerun': WorkflowRunRerun,
+  'workflow.run.resume': WorkflowRunControl,
+  'workflow.run.sendMessage': WorkflowRunSendMessage,
+  'workflow.run.show': WorkflowRunShow,
+  'workflow.run.start': WorkflowRunStart,
+  'workflow.trust.decide': WorkflowTrustDecide,
+  'workflow.trust.list': null,
+  'workflow.validate': WorkflowValidate,
+  'workflow.write': WorkflowWrite,
   'workspacePorts.kill': WorkspacePortKillParams,
   'workspacePorts.scan': WorkspacePortScanParams,
   'worktree.activate': WorktreeActivate,
