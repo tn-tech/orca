@@ -110,6 +110,51 @@ describe('subscribeRuntimeClientEvents', () => {
     expect(onError).not.toHaveBeenCalled()
   })
 
+  it('forwards workflowRunChanged, degrading an unknown reason instead of rejecting it', async () => {
+    let capturedOnResponse: ((response: unknown) => void) | undefined
+    const subscribe = vi.fn(async (_args, nextCallbacks) => {
+      capturedOnResponse = (nextCallbacks as { onResponse: (response: unknown) => void }).onResponse
+      return { unsubscribe: vi.fn(), sendBinary: vi.fn() }
+    })
+    const onEvent = vi.fn()
+    const onError = vi.fn()
+    vi.stubGlobal('window', { api: { runtimeEnvironments: { subscribe } } })
+
+    await subscribeRuntimeClientEvents('env-1', onEvent, onError)
+    if (!capturedOnResponse) {
+      throw new Error('Expected subscription callbacks')
+    }
+
+    capturedOnResponse({
+      ok: true,
+      result: { type: 'workflowRunChanged', runId: 'run-1', reason: 'attempt' }
+    })
+    // Why: a host that later ships a reason arm this build has never heard of must not have
+    // the whole event dropped (remote-wire-compatibility.md Rule 4).
+    capturedOnResponse({
+      ok: true,
+      result: { type: 'workflowRunChanged', runId: 'run-2', reason: 'artifact' }
+    })
+    // A workflowRunChanged with no runId cannot be admitted and is reported, not forwarded.
+    capturedOnResponse({ ok: true, result: { type: 'workflowRunChanged', reason: 'state' } })
+    // Why: the same allowlist is what makes this event additive for old clients.
+    capturedOnResponse({ ok: true, result: { type: 'workflowRunFromTheFuture' } })
+
+    expect(onEvent).toHaveBeenCalledTimes(2)
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'workflowRunChanged',
+      runId: 'run-1',
+      reason: 'attempt'
+    })
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'workflowRunChanged',
+      runId: 'run-2',
+      reason: 'state'
+    })
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onError).toHaveBeenCalledWith(expect.any(Error))
+  })
+
   it('signals a replay-tagged response so event-derived state can resync after a reconnect', async () => {
     let capturedOnResponse: ((response: unknown) => void) | undefined
     const subscribe = vi.fn(async (_args, nextCallbacks) => {

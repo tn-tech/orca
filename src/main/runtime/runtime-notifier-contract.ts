@@ -25,6 +25,10 @@ export type RuntimeNotifier = {
     selector?: { kind: 'self' } | { kind: 'ssh'; targetId: string } | { kind: 'orphan' }
     reason?: 'definition' | 'run' | 'usage'
   }): void
+  workflowRunChanged?(payload: {
+    runId: string
+    reason: 'state' | 'attempt' | 'question' | 'message'
+  }): void
   worktreesChanged(repoId: string, renamed?: { oldWorktreeId: string; newWorktreeId: string }): void
   worktreeBaseStatus?(event: WorktreeBaseStatusEvent): void
   worktreeRemoteBranchConflict?(event: WorktreeRemoteBranchConflictEvent): void

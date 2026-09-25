@@ -80,6 +80,7 @@ import { minimaxCredentialsApi } from './api/minimax-credentials-bridge'
 import { grokAccountsApi } from './api/grok-accounts-bridge'
 import { sshApi } from './api/ssh-bridge'
 import { automationsApi } from './api/automations-bridge'
+import { workflowsApi } from './api/workflows-bridge'
 import { e2eApi } from './api/e2e-bridge'
 import { mobileApi } from './api/mobile-bridge'
 import { agentStatusApi } from './api/agent-status-bridge'
@@ -179,6 +180,7 @@ const api = {
   grokAccounts: grokAccountsApi,
   ssh: sshApi,
   automations: automationsApi,
+  workflows: workflowsApi,
   e2e: e2eApi,
   mobile: mobileApi,
   agentStatus: agentStatusApi,

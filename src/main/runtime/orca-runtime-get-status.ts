@@ -31,7 +31,8 @@ import type { RuntimePtyController } from './runtime-pty-controller-contract'
 import type { RuntimeNotifier } from './runtime-notifier-contract'
 import type {
   AutomationsChangedPayload,
-  RuntimeClientEvent
+  RuntimeClientEvent,
+  WorkflowRunChangedPayload
 } from '../../shared/runtime-client-events'
 import { parsePaneKey } from '../../shared/stable-pane-id'
 import { wakeFolderRepoGitUpgradeWatch } from '../ipc/folder-repo-git-upgrade-wake'
@@ -256,5 +257,13 @@ export class OrcaRuntimeWithGetStatus extends OrcaRuntimeWithGetRuntimeId {
   notifyAutomationsChanged(payload: AutomationsChangedPayload = {}): void {
     this.notifier?.automationsChanged?.(payload)
     this.emitClientEvent({ type: 'automationsChanged', ...payload })
+  }
+
+  // Why: workflow runs are engine-owned, so like automations they need a public
+  // entry point onto the client-event stream. Old clients drop the unknown
+  // event type; nothing is negotiated for it.
+  notifyWorkflowRunChanged(payload: WorkflowRunChangedPayload): void {
+    this.notifier?.workflowRunChanged?.(payload)
+    this.emitClientEvent({ type: 'workflowRunChanged', ...payload })
   }
 }

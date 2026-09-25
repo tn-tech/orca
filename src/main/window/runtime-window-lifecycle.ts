@@ -45,6 +45,7 @@ export function registerRuntimeWindowLifecycle(
     worktreeRemoteBranchConflict: (event) => send('worktree:remoteBranchConflict', event),
     reposChanged: () => send('repos:changed'),
     automationsChanged: (payload) => send('automations:changed', payload),
+    workflowRunChanged: (payload) => send('workflows:changed', payload),
     activateWorktree: (
       repoId,
       worktreeId,

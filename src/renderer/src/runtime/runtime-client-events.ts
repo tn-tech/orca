@@ -2,6 +2,7 @@ import type {
   RuntimeClientEvent,
   RuntimeClientEventStreamMessage
 } from '../../../shared/runtime-client-events'
+import { admitWorkflowRunChangedEvent } from '../../../shared/runtime-client-events'
 import type { RuntimeRpcResponse } from '../../../shared/runtime-rpc-envelope'
 import { isRuntimeSubscriptionReplayResponse } from '../../../shared/runtime-subscription-replay'
 import { admitSshConnectionState } from '../../../shared/ssh-retained-payload-admission'
@@ -75,6 +76,15 @@ function handleRuntimeClientEventResponse(
     }
     return
   }
+  if (message.type === 'workflowRunChanged') {
+    const event = admitWorkflowRunChangedEvent(message)
+    if (event) {
+      onEvent(event)
+    } else {
+      onError(new Error('Invalid workflowRunChanged event'))
+    }
+    return
+  }
   if (isRuntimeClientEvent(message)) {
     onEvent(message)
   }
@@ -90,6 +100,7 @@ function isRuntimeClientEvent(
     message.type === 'terminalSideEffects' ||
     message.type === 'sshStateChanged' ||
     message.type === 'automationsChanged' ||
+    message.type === 'workflowRunChanged' ||
     message.type === 'linearLinkedIssueUpdated' ||
     message.type === 'activateWorktree' ||
     message.type === 'worktreeTerminalSleepState'
