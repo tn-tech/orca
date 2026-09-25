@@ -1,6 +1,7 @@
 import { applyHostWorktreeTerminalSleepState } from '@/components/terminal-pane/pty-shutdown-exit-deferral'
 import { dispatchTerminalSideEffectBatch } from '@/components/terminal-pane/terminal-side-effect-facts-handler'
 import { emitAutomationsChangedWindowEvent } from '@/lib/automations-changed-window-event'
+import { emitWorkflowsChangedWindowEvent } from '@/lib/workflows-changed-window-event'
 import { applyNativeChatLaunchDraftResolved } from '@/runtime/native-chat-launch-draft-runtime-resolution'
 import { getRuntimeEnvironmentRevision } from '@/runtime/runtime-environment-revision'
 import {
@@ -103,6 +104,12 @@ export function registerRuntimeClientIpcBridge(
         ...(event.selector ? { selector: event.selector } : {}),
         ...(event.reason ? { reason: event.reason } : {})
       })
+      return
+    }
+    if (event.type === 'workflowRunChanged') {
+      // Why: without the environment the subscriber cannot attribute which runtime authority
+      // changed — same attribution automationsChanged carries.
+      emitWorkflowsChangedWindowEvent({ environmentId, runId: event.runId, reason: event.reason })
       return
     }
     if (event.type === 'sshStateChanged') {
