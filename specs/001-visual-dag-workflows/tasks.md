@@ -131,7 +131,7 @@ Monorepo per plan.md: shared types `src/shared/workflows/`, engine `src/main/run
 
 ### Implementation for User Story 1
 
-- [ ] T056 [US1] Create `src/main/runtime/workflows/workflow-run-workspace.ts`: `createRunWorkspace(run)` via the existing `worktree.create` path (name `<workflow>-<runId>`, base = project default branch, `runHooks` inherited), and `resolveInPlaceWorkspace` for folder workspaces; test `workflow-run-workspace.test.ts`
+- [X] T056 [US1] Create `src/main/runtime/workflows/workflow-run-workspace.ts`: `createRunWorkspace(run)` via the existing `worktree.create` path (name `<workflow>-<runId>`, base = project default branch, `runHooks` inherited), and `resolveInPlaceWorkspace` for folder workspaces; test `workflow-run-workspace.test.ts`
 - [X] T057 [US1] Create `src/main/runtime/workflows/workflow-frontier.ts` implementing eligibility, skip propagation, and just-in-time Task creation (`deps` = upstream task ids; set `tasks.workflow_run_id/workflow_node_id/workflow_iteration`)
 - [X] T058 [US1] Create `src/main/runtime/workflows/workflow-brief-builder.ts` writing `brief.md` and `inputs.json` under `.orca/workflow-runs/<runId>/<attemptId>/` through the run workspace filesystem provider, and `buildTaskSpec()`; ensure `.orca` is git-ignored by reusing `ensureOrcaDirIgnored` / `ensureRemoteOrcaDirIgnored`
 - [ ] T059 [US1] Create `src/main/runtime/workflows/workflow-node-dispatch.ts`: resolve role/overrides to `{agent, model, effort}`, call `workflow-orchestration-client` `workerStart` with placement, record `requested_launch`/`effective_launch` from the receipt, transition attempt `provisioning → running`
