@@ -374,6 +374,89 @@ describe('parseOrcaYaml', () => {
     expect(result?.scripts.setup).toBe('pnpm install')
     expect(result?.worktree?.sharedDirectories).toEqual(['.cache'])
   })
+
+  it('parses workflows.directory and workflows.allowedSources from orca.yaml', () => {
+    const yaml = [
+      'workflows:',
+      '  directory: my-workflows',
+      '  allowedSources:',
+      '    - https://github.com/github/spec-kit',
+      '    - https://github.com/acme-consulting/orca-roles'
+    ].join('\n')
+
+    expect(parseOrcaYaml(yaml)).toEqual({
+      scripts: {},
+      workflows: {
+        directory: 'my-workflows',
+        allowedSources: [
+          'https://github.com/github/spec-kit',
+          'https://github.com/acme-consulting/orca-roles'
+        ]
+      }
+    })
+  })
+
+  it('parses workflows.allowedSources with no directory override', () => {
+    const yaml = [
+      'workflows:',
+      '  allowedSources:',
+      '    - https://github.com/github/spec-kit'
+    ].join('\n')
+
+    expect(parseOrcaYaml(yaml)).toEqual({
+      scripts: {},
+      workflows: { allowedSources: ['https://github.com/github/spec-kit'] }
+    })
+  })
+
+  it('drops an invalid workflows.directory and an invalid allowedSources entry', () => {
+    const yaml = [
+      'workflows:',
+      '  directory: ../escape',
+      '  allowedSources:',
+      '    - https://github.com/github/spec-kit',
+      '    - 42',
+      '    - ""'
+    ].join('\n')
+
+    expect(parseOrcaYaml(yaml)).toEqual({
+      scripts: {},
+      workflows: { allowedSources: ['https://github.com/github/spec-kit'] }
+    })
+  })
+
+  it('dedupes workflows.allowedSources entries', () => {
+    const yaml = [
+      'workflows:',
+      '  allowedSources:',
+      '    - https://github.com/github/spec-kit',
+      '    - https://github.com/github/spec-kit'
+    ].join('\n')
+
+    expect(parseOrcaYaml(yaml)?.workflows?.allowedSources).toEqual([
+      'https://github.com/github/spec-kit'
+    ])
+  })
+
+  it('returns null when workflows is the only key and holds nothing usable', () => {
+    expect(parseOrcaYaml('workflows:\n  directory: ../escape\n')).toBeNull()
+    expect(parseOrcaYaml('workflows:\n  allowedSources: []\n')).toBeNull()
+  })
+
+  it('keeps workflows alongside other orca.yaml keys', () => {
+    const result = parseOrcaYaml(
+      [
+        'scripts:',
+        '  setup: pnpm install',
+        'workflows:',
+        '  allowedSources:',
+        '    - https://github.com/github/spec-kit'
+      ].join('\n')
+    )
+
+    expect(result?.scripts.setup).toBe('pnpm install')
+    expect(result?.workflows?.allowedSources).toEqual(['https://github.com/github/spec-kit'])
+  })
 })
 
 describe('hasUnrecognizedOrcaYamlKeys', () => {
@@ -420,7 +503,10 @@ describe('hasUnrecognizedOrcaYamlKeys', () => {
         '    create: ./scripts/orca-vm/start-cloud-sandbox.sh',
         'worktree:',
         '  sharedDirectories:',
-        '    - node_modules'
+        '    - node_modules',
+        'workflows:',
+        '  allowedSources:',
+        '    - https://github.com/github/spec-kit'
       ].join('\n')
     )
 

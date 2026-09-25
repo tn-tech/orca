@@ -92,10 +92,10 @@ Monorepo per plan.md: shared types `src/shared/workflows/`, engine `src/main/run
 
 ### Workflow file store and project config
 
-- [ ] T036 [P] Add `workflows` to `RECOGNIZED_ORCA_YAML_KEYS` in `src/main/hooks.ts` and parse `workflows.directory` (default `orca-workflows`) and `workflows.allowedSources: string[]` in `src/shared/orca-yaml.ts`; extend `src/shared/orca-yaml.test.ts` for both keys and for an invalid `allowedSources` entry
-- [ ] T037 [P] Write `src/main/runtime/workflows/workflow-file-store.test.ts`: list project and personal files, project wins on clash, read returns `{definition, raw, revision}` (revision = content hash), write with matching revision succeeds, mismatched revision fails `workflow_file_conflict`, delete, personal location `~/.orca/workflows/`
-- [ ] T038 Create `src/main/runtime/workflows/workflow-file-store.ts` using the same filesystem provider path as `runtime-repository-hooks-commands.ts` (local `node:fs`, SSH via `getSshFilesystemProvider(repo.connectionId)`), exporting `listWorkflows`, `readWorkflow`, `writeWorkflow`, `deleteWorkflow`; YAML via the `yaml` package
-- [ ] T039 [P] Create `src/main/runtime/workflows/workflow-source-allowlist.ts` reading `workflows.allowedSources` from the repo's `orca.yaml` on the execution host and exporting `assertSourceAllowed(source, allowlist)` throwing `workflow_source_not_allowed`; test `workflow-source-allowlist.test.ts` including empty/missing allowlist permitting nothing
+- [X] T036 [P] Add `workflows` to `RECOGNIZED_ORCA_YAML_KEYS` in `src/main/hooks.ts` and parse `workflows.directory` (default `orca-workflows`) and `workflows.allowedSources: string[]` in `src/shared/orca-yaml.ts`; extend `src/shared/orca-yaml.test.ts` for both keys and for an invalid `allowedSources` entry
+- [X] T037 [P] Write `src/main/runtime/workflows/workflow-file-store.test.ts`: list project and personal files, project wins on clash, read returns `{definition, raw, revision}` (revision = content hash), write with matching revision succeeds, mismatched revision fails `workflow_file_conflict`, delete, personal location `~/.orca/workflows/`
+- [X] T038 Create `src/main/runtime/workflows/workflow-file-store.ts` using the same filesystem provider path as `runtime-repository-hooks-commands.ts` (local `node:fs`, SSH via `getSshFilesystemProvider(repo.connectionId)`), exporting `listWorkflows`, `readWorkflow`, `writeWorkflow`, `deleteWorkflow`; YAML via the `yaml` package
+- [X] T039 [P] Create `src/main/runtime/workflows/workflow-source-allowlist.ts` reading `workflows.allowedSources` from the repo's `orca.yaml` on the execution host and exporting `assertSourceAllowed(source, allowlist)` throwing `workflow_source_not_allowed`; test `workflow-source-allowlist.test.ts` including empty/missing allowlist permitting nothing
 
 ### RPC family skeleton, events, view registration
 

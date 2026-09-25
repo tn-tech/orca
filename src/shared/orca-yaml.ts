@@ -3,7 +3,8 @@ import type {
   OrcaDefaultTabTemplate,
   OrcaHooks,
   OrcaVmRecipe,
-  OrcaVmRecipeDiagnostic
+  OrcaVmRecipeDiagnostic,
+  OrcaWorkflowsConfig
 } from './orca-yaml-hook-types'
 import {
   isOrcaYamlFieldWithinLimit,
@@ -69,6 +70,57 @@ function normalizeSharedDirectories(value: unknown): string[] {
     seen.add(normalized)
   }
   return Array.from(seen)
+}
+
+// Why: same traversal/absolute-path guard as normalizeSharedDirectories, for a single directory.
+function normalizeWorkflowsDirectory(value: unknown): string | undefined {
+  const raw = asTrimmedString(value)
+  if (!raw) {
+    return undefined
+  }
+  const normalized = raw.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '')
+  const segments = normalized.split('/')
+  if (
+    !normalized ||
+    normalized.startsWith('/') ||
+    /^[a-zA-Z]:/.test(normalized) ||
+    segments.includes('..') ||
+    segments.includes('.') ||
+    segments.includes('')
+  ) {
+    return undefined
+  }
+  return normalized
+}
+
+function normalizeAllowedSources(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  const seen = new Set<string>()
+  for (const entry of value.slice(0, MAX_ORCA_YAML_COLLECTION_ENTRIES)) {
+    const raw = asTrimmedString(entry)
+    if (raw) {
+      seen.add(raw)
+    }
+  }
+  return Array.from(seen)
+}
+
+function normalizeWorkflowsConfig(value: unknown): OrcaWorkflowsConfig | undefined {
+  const record = asRecord(value)
+  if (!record) {
+    return undefined
+  }
+  const directory = normalizeWorkflowsDirectory(record.directory)
+  const allowedSources = normalizeAllowedSources(record.allowedSources)
+  if (!directory && allowedSources.length === 0) {
+    return undefined
+  }
+  return {
+    ...(directory ? { directory } : {}),
+    allowedSources
+  }
 }
 
 function normalizeDefaultTabs(value: unknown): OrcaDefaultTabTemplate[] {
@@ -239,6 +291,7 @@ export function parseOrcaYaml(content: string): OrcaHooks | null {
   const sharedDirectories = worktreeRecord
     ? normalizeSharedDirectories(worktreeRecord.sharedDirectories)
     : []
+  const workflows = normalizeWorkflowsConfig(record.workflows)
 
   if (
     !setup &&
@@ -248,7 +301,8 @@ export function parseOrcaYaml(content: string): OrcaHooks | null {
     defaultTabs.length === 0 &&
     environmentRecipes.length === 0 &&
     environmentRecipeDiagnostics.length === 0 &&
-    sharedDirectories.length === 0
+    sharedDirectories.length === 0 &&
+    !workflows
   ) {
     return null
   }
@@ -263,6 +317,7 @@ export function parseOrcaYaml(content: string): OrcaHooks | null {
     ...(defaultTabs.length > 0 ? { defaultTabs } : {}),
     ...(environmentRecipes.length > 0 ? { environmentRecipes } : {}),
     ...(environmentRecipeDiagnostics.length > 0 ? { environmentRecipeDiagnostics } : {}),
-    ...(sharedDirectories.length > 0 ? { worktree: { sharedDirectories } } : {})
+    ...(sharedDirectories.length > 0 ? { worktree: { sharedDirectories } } : {}),
+    ...(workflows ? { workflows } : {})
   }
 }

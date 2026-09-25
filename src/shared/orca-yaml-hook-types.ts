@@ -14,6 +14,12 @@ export type OrcaHooks = {
   environmentRecipes?: OrcaVmRecipe[] // Project-scoped per-workspace environment recipes
   environmentRecipeDiagnostics?: OrcaVmRecipeDiagnostic[] // Non-fatal validation issues from environmentRecipes
   worktree?: OrcaWorktreeDefaults // Project-scoped defaults applied when a worktree is created
+  workflows?: OrcaWorkflowsConfig // Visual DAG workflow file directory and role/skill source allowlist
+}
+
+export type OrcaWorkflowsConfig = {
+  directory?: string // project-relative; default 'orca-workflows' applied by consumers
+  allowedSources: string[] // repository locations approved for workflow roles/skills (FR-015a)
 }
 
 export type OrcaWorktreeDefaults = {
