@@ -45,12 +45,16 @@ const RUN_TRANSITIONS: Record<string, readonly WorkflowRunState[]> = {
  * Attempt transitions (data-model.md §4). `unverifiable` is non-terminal: it only follows
  * `running` and only resolves to `running` (recovered) or `failed` (positive proof of exit).
  * Terminal states (completed/failed/skipped/cancelled) have no outgoing edges.
+ *
+ * Controller-ruled additions: `provisioning -> failed` (spec US4 AS4: a provisioning failure
+ * fails the node before launch) and `provisioning <-> waiting` (FR-018a: a trust question
+ * pauses a provisioning node in Waiting, then provisioning resumes).
  */
 const ATTEMPT_TRANSITIONS: Record<string, readonly WorkflowAttemptState[]> = {
   pending: ['provisioning', 'skipped', 'cancelled'],
-  provisioning: ['running', 'cancelled'],
+  provisioning: ['running', 'failed', 'waiting', 'cancelled'],
   running: ['waiting', 'completed', 'failed', 'unverifiable', 'cancelled'],
-  waiting: ['running', 'cancelled'],
+  waiting: ['running', 'provisioning', 'cancelled'],
   unverifiable: ['running', 'failed', 'cancelled'],
   completed: [],
   failed: [],

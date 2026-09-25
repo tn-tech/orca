@@ -35,6 +35,11 @@ function compareNumeric(
 
 function evaluateLeaf(condition: Extract<Condition, { path: string }>, value: unknown): boolean {
   const resolved = getResultPath(value, condition.path)
+  // A missing path evaluates every op to false uniformly (JsonValue never contains undefined,
+  // so this only fires for absent data, never for an explicit null/0/false/'' at the path).
+  if (resolved === undefined) {
+    return false
+  }
   const target = condition.value
   switch (condition.op) {
     case 'eq':

@@ -55,12 +55,17 @@ describe('evaluateCondition — leaf ops', () => {
     expect(evaluateCondition({ path: 's', op: 'lengthGt', value: 2 }, { s: 'abcd' })).toBe(true)
   })
 
-  it('missing paths evaluate false for value-comparing ops', () => {
+  it('missing paths evaluate false uniformly, for every op including neq and falsy', () => {
     expect(evaluateCondition({ path: 'missing.x', op: 'eq', value: 'y' }, {})).toBe(false)
+    expect(evaluateCondition({ path: 'missing.x', op: 'neq', value: 'y' }, {})).toBe(false)
     expect(evaluateCondition({ path: 'missing.x', op: 'gt', value: 1 }, {})).toBe(false)
+    expect(evaluateCondition({ path: 'missing.x', op: 'gte', value: 1 }, {})).toBe(false)
+    expect(evaluateCondition({ path: 'missing.x', op: 'lt', value: 1 }, {})).toBe(false)
+    expect(evaluateCondition({ path: 'missing.x', op: 'lte', value: 1 }, {})).toBe(false)
+    expect(evaluateCondition({ path: 'missing.x', op: 'truthy' }, {})).toBe(false)
+    expect(evaluateCondition({ path: 'missing.x', op: 'falsy' }, {})).toBe(false)
     expect(evaluateCondition({ path: 'missing.x', op: 'contains', value: 'y' }, {})).toBe(false)
     expect(evaluateCondition({ path: 'missing.x', op: 'lengthGt', value: 0 }, {})).toBe(false)
-    expect(evaluateCondition({ path: 'missing.x', op: 'truthy' }, {})).toBe(false)
   })
 })
 

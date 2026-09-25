@@ -84,6 +84,15 @@ describe('canTransition — attempt', () => {
     expect(canTransition('attempt', 'provisioning', 'skipped')).toBe(false)
   })
 
+  it('provisioning -> failed (US4 AS4: a provisioning failure fails the node before launch)', () => {
+    expect(canTransition('attempt', 'provisioning', 'failed')).toBe(true)
+  })
+
+  it('provisioning <-> waiting (FR-018a: a trust question pauses provisioning, then resumes)', () => {
+    expect(canTransition('attempt', 'provisioning', 'waiting')).toBe(true)
+    expect(canTransition('attempt', 'waiting', 'provisioning')).toBe(true)
+  })
+
   it('any non-terminal -> cancelled', () => {
     for (const from of ['pending', 'provisioning', 'running', 'waiting', 'unverifiable'] as const) {
       expect(canTransition('attempt', from, 'cancelled')).toBe(true)
