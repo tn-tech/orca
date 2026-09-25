@@ -1,6 +1,7 @@
 import { contextOnlyAbandonWarning } from '../../../../orchestration/context-only-dispatch-release'
 import { OrchestrationError } from '../../../../orchestration/orchestration-error'
 import { defineMethod } from '../../../core'
+import { assertCallerMayMutateDispatch } from '../runs/workflow-engine-run-scope'
 import {
   exposeDispatchContext,
   exposeObservation,
@@ -199,7 +200,8 @@ export const ORCHESTRATION_WORKER_CONTROL_METHODS = [
   defineMethod({
     name: 'orchestration.workerAbandon',
     params: WorkerDispatchParams,
-    handler: (params, { runtime }) => {
+    handler: (params, { runtime, principal }) => {
+      assertCallerMayMutateDispatch(runtime.getOrchestrationDb(), params.dispatch, principal)
       const abandoned = runtime.getOrchestrationDb().abandonWorkerDispatch(params.dispatch)
       if (abandoned.disposition === 'context_only') {
         if (!abandoned.alreadySettled) {

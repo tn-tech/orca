@@ -93,18 +93,34 @@ describe('workflow orchestration client', () => {
       expect(created).toMatchObject({ task: { run_id: engineRunId, spec: 'node spec' } })
     })
 
+    // Transports JSON-parse the frame, so extra keys ride along untyped.
+    function forgedRequest(id: string): RpcRequest {
+      return JSON.parse(
+        JSON.stringify({
+          id,
+          authToken: 'token',
+          method: 'orchestration.taskCreate',
+          orchestrationContractVersion: ORCHESTRATION_CONTRACT_VERSION,
+          orchestrationRequestId: `${id}-request`,
+          principal: PRINCIPAL,
+          params: { spec: 'forged', run: engineRunId, principal: PRINCIPAL }
+        })
+      )
+    }
+
+    it('never honours a principal claimed through the streaming transport', async () => {
+      const replies: string[] = []
+      await dispatcher.dispatchStreaming(forgedRequest('forged-stream'), (r) => replies.push(r), {
+        clientKind: 'runtime'
+      })
+      expect(replies.map((reply) => JSON.parse(reply))).toMatchObject([
+        { ok: false, error: { code: 'workflow_owned_run' } }
+      ])
+      expect(db.listTasks({ runId: engineRunId })).toEqual([])
+    })
+
     it('never honours a principal claimed in the envelope or params', async () => {
-      const forged = {
-        id: 'forged-1',
-        authToken: 'token',
-        method: 'orchestration.taskCreate',
-        orchestrationContractVersion: ORCHESTRATION_CONTRACT_VERSION,
-        orchestrationRequestId: 'forged-request-1',
-        principal: PRINCIPAL,
-        params: { spec: 'forged', run: engineRunId, principal: PRINCIPAL }
-      }
-      // Transports JSON-parse the frame, so extra keys ride along untyped.
-      const response = await dispatcher.dispatch(JSON.parse(JSON.stringify(forged)), {
+      const response = await dispatcher.dispatch(forgedRequest('forged-1'), {
         clientKind: 'runtime'
       })
       expect(response).toMatchObject({ ok: false, error: { code: 'workflow_owned_run' } })

@@ -1,5 +1,6 @@
 import { OrchestrationError } from '../../../../orchestration/orchestration-error'
 import { defineMethod } from '../../../core'
+import { assertCallerMayMutateDispatch } from '../runs/workflow-engine-run-scope'
 import { describeUnconfirmedAgentStop } from '../../../../../../shared/pty-liveness-verdict'
 import { ORCHESTRATION_WORKER_STOP_VERDICT_RUNTIME_CAPABILITY } from '../../../../../../shared/protocol-version'
 import type { RuntimeStatus } from '../../../../../../shared/runtime-types'
@@ -16,8 +17,9 @@ export const ORCHESTRATION_WORKER_STOP_METHODS = [
   defineMethod({
     name: 'orchestration.workerStop',
     params: WorkerDispatchParams,
-    handler: (params, { runtime, orchestrationMutation }) =>
-      dedupeWorkerStop(runtime, params.dispatch, async () => {
+    handler: async (params, { runtime, orchestrationMutation, principal }) => {
+      assertCallerMayMutateDispatch(runtime.getOrchestrationDb(), params.dispatch, principal)
+      return dedupeWorkerStop(runtime, params.dispatch, async () => {
         const db = runtime.getOrchestrationDb()
         const federated = db.getFederatedDispatch(params.dispatch)
         if (federated) {
@@ -238,6 +240,7 @@ export const ORCHESTRATION_WORKER_STOP_METHODS = [
           ...('close' in closed ? { close: closed.close } : {})
         }
       })
+    }
   })
 ]
 

@@ -1,5 +1,6 @@
 import { OrchestrationError } from '../../../../orchestration/orchestration-error'
 import { defineMethod } from '../../../core'
+import { assertCallerMayMutateDispatch } from '../runs/workflow-engine-run-scope'
 import { releaseFederatedWorker } from '../federation/federated-worker-release'
 import { ORCHESTRATION_WORKER_LIST_METHOD } from './worker-list-method'
 import { resolvePinnedFederatedServer } from './worker-observation'
@@ -15,8 +16,12 @@ export const ORCHESTRATION_WORKER_RELEASE_METHODS = [
   defineMethod({
     name: 'orchestration.workerRelease',
     params: WorkerDispatchParams,
-    handler: async (params, { runtime, orchestrationMutation }): Promise<WorkerReleaseReceipt> => {
+    handler: async (
+      params,
+      { runtime, orchestrationMutation, principal }
+    ): Promise<WorkerReleaseReceipt> => {
       const db = runtime.getOrchestrationDb()
+      assertCallerMayMutateDispatch(db, params.dispatch, principal)
       const federated = db.getFederatedDispatch(params.dispatch)
       if (federated) {
         if (!orchestrationMutation) {
@@ -86,8 +91,9 @@ export const ORCHESTRATION_WORKER_RELEASE_METHODS = [
   defineMethod({
     name: 'orchestration.workerRetain',
     params: WorkerRetainParams,
-    handler: (params, { runtime }) => {
+    handler: (params, { runtime, principal }) => {
       const db = runtime.getOrchestrationDb()
+      assertCallerMayMutateDispatch(db, params.dispatch, principal)
       const retained = db.retainWorkerTerminalResource(params.dispatch)
       if (retained.disposition === 'already_released') {
         return {

@@ -2,8 +2,10 @@ import type { OrchestrationDb } from '../../../../orchestration/db'
 import { OrchestrationError } from '../../../../orchestration/orchestration-error'
 import type { RunRow } from '../../../../orchestration/types'
 import {
+  asWorkflowEnginePrincipal,
   engineCoordinatorHandle,
   engineCoordinatorPaneKey,
+  type OrchestrationPrincipal,
   type WorkflowEnginePrincipal
 } from '../../../../workflows/workflow-engine-principal'
 
@@ -70,4 +72,40 @@ export function resolveWorkflowEngineRunScope(
     )
   }
   return bound
+}
+
+/** Dispatch-keyed verbs: terminals may not touch an engine-owned Run; the engine only its own. */
+export function assertCallerMayMutateDispatch(
+  db: OrchestrationDb,
+  dispatchId: string,
+  principal: OrchestrationPrincipal | undefined
+): void {
+  // Why: some federated handler tests drive these verbs with partial DB fakes lacking this lookup.
+  const lookup: OrchestrationDb['getDispatchContextById'] | undefined = db.getDispatchContextById
+  const runId = lookup?.call(db, dispatchId)?.run_id
+  const run = runId ? db.getRun(runId) : undefined
+  const engine = asWorkflowEnginePrincipal(principal)
+  if (!engine) {
+    assertTerminalMayMutateRun(run)
+    return
+  }
+  if (run && run.workflow_run_id !== engine.workflowRunId) {
+    throw new OrchestrationError(
+      'consumer_fenced',
+      `Dispatch ${dispatchId} is not in the Run owned by workflow run ${engine.workflowRunId}.`,
+      { effectsApplied: false }
+    )
+  }
+}
+
+// Why: reset wipes Runs, Tasks and mailboxes an active workflow run is still driving.
+export function assertNoActiveWorkflowEngineRuns(db: OrchestrationDb): void {
+  const active = db.listActiveWorkflowRuns().find((run) => db.getRunForWorkflowRun(run.id))
+  if (active) {
+    throw new OrchestrationError(
+      'workflow_owned_run',
+      `Workflow run ${active.id} is still active and owns orchestration state. Stop it with \`orca workflows cancel ${active.id}\` before resetting. No effects were applied.`,
+      { effectsApplied: false, workflowRunId: active.id }
+    )
+  }
 }
