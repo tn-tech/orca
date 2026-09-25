@@ -1,0 +1,3 @@
+workflows:
+  allowedSources:
+    - https://github.com/github/spec-kit

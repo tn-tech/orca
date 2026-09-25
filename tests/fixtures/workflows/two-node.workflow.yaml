@@ -1,0 +1,63 @@
+# Minimal linear workflow (no loop): start -> implement -> review -> end.
+version: 1
+name: two-node
+description: Implement then review, with no QA loop
+workspacePolicy: run-workspace
+concurrencyLimit: 2
+
+roles:
+  developer:
+    name: Developer
+    agent: claude
+    model: opus
+    effort: high
+    systemPrompt: Implement exactly what the objective describes. Commit as you go.
+    skills: []
+  reviewer:
+    name: Reviewer
+    agent: codex
+    model: gpt-5.6-terra
+    effort: high
+    systemPrompt: Review the diff against the objective. Be adversarial.
+    skills: []
+
+nodes:
+  - { id: start, type: start, title: Start }
+  - id: implement
+    type: agent
+    title: Implement
+    roleId: developer
+    prompt: "Implement: ${objective}."
+    workspace: run
+    resultContract:
+      type: object
+      required: [summary]
+      properties: { summary: { type: string } }
+    artifacts: []
+    question: { timeoutMs: 600000, escalationGraceMs: 300000 }
+  - id: review
+    type: agent
+    title: Review
+    roleId: reviewer
+    prompt: Review the implementation of ${objective}. Return approved and findings.
+    workspace: run
+    resultContract:
+      type: object
+      required: [approved, findings]
+      properties:
+        approved: { type: boolean }
+        findings: { type: array, items: { type: string } }
+    artifacts: []
+    question: { timeoutMs: 600000, escalationGraceMs: 300000 }
+  - { id: end, type: end, title: Done }
+
+edges:
+  - { id: e1, from: start, to: implement }
+  - { id: e2, from: implement, to: review }
+  - { id: e3, from: review, to: end }
+
+layout:
+  start: { x: 0, y: 0 }
+  implement: { x: 240, y: 0 }
+  review: { x: 480, y: 0 }
+  end: { x: 720, y: 0 }
