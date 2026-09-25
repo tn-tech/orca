@@ -20,6 +20,7 @@ describe('federated worker stop capability', () => {
       beginWorkerStop: vi.fn(() => ({ disposition: 'started' })),
       markWorkerStopUnknown
     } as unknown as OrchestrationDb
+    Object.assign(db, { getDispatchContextById: vi.fn(() => undefined) })
     const callOrchestrationWorkerServer = vi.fn(async (_environmentId, method) => {
       if (method === 'status.get') {
         return { capabilities: [ORCHESTRATION_CONTRACT_RUNTIME_CAPABILITY] }

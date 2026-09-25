@@ -80,9 +80,7 @@ export function assertCallerMayMutateDispatch(
   dispatchId: string,
   principal: OrchestrationPrincipal | undefined
 ): void {
-  // Why: some federated handler tests drive these verbs with partial DB fakes lacking this lookup.
-  const lookup: OrchestrationDb['getDispatchContextById'] | undefined = db.getDispatchContextById
-  const runId = lookup?.call(db, dispatchId)?.run_id
+  const runId = db.getDispatchContextById(dispatchId)?.run_id
   const run = runId ? db.getRun(runId) : undefined
   const engine = asWorkflowEnginePrincipal(principal)
   if (!engine) {
