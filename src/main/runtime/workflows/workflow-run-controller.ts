@@ -1,7 +1,10 @@
 // Per-run deterministic loop (research R1–R3): rehydrate from the DB, drain the engine Run's
 // mailbox backlog, then sleep on the exclusive Run-mailbox waiter. worker_done drives result
 // capture and the frontier; every change is recorded and announced (WorkflowRunRecorder).
-import type { WorkflowRunState } from '../../../shared/workflows/workflow-node-states'
+import {
+  ACTIVE_ATTEMPT_STATES,
+  type WorkflowRunState
+} from '../../../shared/workflows/workflow-node-states'
 import type { NodeAttemptView, RunSnapshot } from '../../../shared/workflows/workflow-run-types'
 import type { OrchestrationDb } from '../orchestration/db'
 import type { MessageRow } from '../orchestration/types'
@@ -38,14 +41,6 @@ export type WorkflowRunControllerDeps = {
 }
 
 const TERMINAL_RUN_STATES = new Set<WorkflowRunState>(['completed', 'failed', 'cancelled'])
-const ACTIVE_ATTEMPT_STATES = new Set<NodeAttemptView['state']>([
-  'pending',
-  'provisioning',
-  'running',
-  'waiting',
-  'unverifiable'
-])
-
 type ControllerSession = {
   engineRunId: string
   consumerGeneration: number

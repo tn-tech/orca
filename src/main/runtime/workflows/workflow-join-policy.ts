@@ -8,6 +8,9 @@ import type { WorkflowResultFailureReason } from './workflow-result-capture'
 /** One incoming edge of a node, keyed by the node that settles it (a Loop for `exit` edges). */
 export type IncomingBranch = { sourceId: string; outcome: IncomingEdgeOutcome }
 
+/** `failureReason` of a Waiting Join cancelled because every branch ended skipped. */
+export const JOIN_SKIPPED_REASON = 'join_skipped'
+
 export type JoinBranchOutcome = 'completed' | 'failed' | 'skipped' | 'pending'
 
 /** `${join.branches}`: per-branch outcome keyed by source node id. */

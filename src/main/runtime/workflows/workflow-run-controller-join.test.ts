@@ -2,13 +2,29 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Node } from '../../../shared/workflows/workflow-definition-types'
 import {
+  branchAgent,
   fanOutWorkflow,
   joinDriver,
   joinNode,
   joinWorkflow
 } from './workflow-run-controller-join-fixtures'
-import { createControllerHarness, waitUntil } from './workflow-run-controller-test-harness'
+import {
+  createControllerHarness,
+  TWO_NODE_WORKFLOW,
+  waitUntil
+} from './workflow-run-controller-test-harness'
+
+const gate: Node = {
+  id: 'gate',
+  type: 'approval',
+  title: 'Gate',
+  question: 'ok?',
+  options: ['yes'],
+  timeoutMs: 1000,
+  escalationGraceMs: 1000
+}
 
 describe('WorkflowRunController Join execution', () => {
   let workspaceRoot: string
@@ -134,19 +150,92 @@ describe('WorkflowRunController Join execution', () => {
       ],
       joinNode('all', 'fail')
     )
-    workflow.nodes.push({
-      id: 'gate',
-      type: 'approval',
-      title: 'Gate',
-      question: 'ok?',
-      options: ['yes'],
-      timeoutMs: 1000,
-      escalationGraceMs: 1000
-    })
+    workflow.nodes.push(gate)
     const run = h.createRun(workflow)
     const finished = h.createController(run.id).run()
     await d.report(run.id, 'a', 'succeeded')
     await expect(finished).resolves.toBe('failed')
     expect(d.attempt(run.id, 'join')?.state).toBe('cancelled')
+  })
+
+  it('fails a Loop whose body Join is left Waiting on a branch nothing can settle', async () => {
+    const run = h.createRun({
+      ...TWO_NODE_WORKFLOW,
+      name: 'loop-join',
+      nodes: [
+        { id: 'start', type: 'start', title: 'Start' },
+        {
+          id: 'qa',
+          type: 'loop',
+          title: 'QA',
+          body: { nodeIds: ['a', 'gate', 'join'] },
+          entryNodeId: 'a',
+          exitNodeId: 'join',
+          maxIterations: 2,
+          exitCondition: { path: 'branches.a', op: 'eq', value: 'completed' },
+          onCapReached: 'fail'
+        },
+        branchAgent('a'),
+        gate,
+        joinNode('all', 'fail'),
+        { id: 'end', type: 'end', title: 'Done' }
+      ],
+      edges: [
+        { id: 'e1', from: 'start', to: 'qa' },
+        { id: 'e2', from: 'a', to: 'join' },
+        { id: 'e3', from: 'a', to: 'gate' },
+        { id: 'e4', from: 'gate', to: 'join', fromPort: 'yes' },
+        { id: 'e5', from: 'qa', to: 'end', fromPort: 'exit' }
+      ]
+    })
+    const finished = h.createController(run.id).run()
+    await d.report(run.id, 'a', 'succeeded')
+    await expect(finished).resolves.toBe('failed')
+    expect(d.attempt(run.id, 'qa')).toMatchObject({
+      state: 'failed',
+      failureReason: 'loop_exit_unreached'
+    })
+    expect(d.attempt(run.id, 'join')?.state).toBe('cancelled')
+  })
+
+  it('reads a Join cancelled because every branch was skipped as skipped downstream', async () => {
+    // start -> a -(go)-> x -> inner; start -> b -(go)-> z -> inner; inner|c -> outer(all, fail)
+    const go = { path: 'go', op: 'eq', value: true } as const
+    const run = h.createRun({
+      ...TWO_NODE_WORKFLOW,
+      name: 'nested-join',
+      nodes: [
+        { id: 'start', type: 'start', title: 'Start' },
+        ...['a', 'b', 'c', 'x', 'z'].map((id) => branchAgent(id)),
+        { ...joinNode('any', 'partial'), id: 'inner' },
+        { ...joinNode('all', 'fail'), id: 'outer' },
+        { id: 'end', type: 'end', title: 'Done' }
+      ],
+      edges: [
+        { id: 'e1', from: 'start', to: 'a' },
+        { id: 'e2', from: 'start', to: 'b' },
+        { id: 'e3', from: 'start', to: 'c' },
+        { id: 'e4', from: 'a', to: 'x', condition: go },
+        { id: 'e5', from: 'b', to: 'z', condition: go },
+        { id: 'e6', from: 'x', to: 'inner' },
+        { id: 'e7', from: 'z', to: 'inner' },
+        { id: 'e8', from: 'inner', to: 'outer' },
+        { id: 'e9', from: 'c', to: 'outer' },
+        { id: 'e10', from: 'outer', to: 'end' }
+      ]
+    })
+    const finished = h.createController(run.id).run()
+    await d.report(run.id, 'a', 'succeeded', { go: false })
+    await d.reached(run.id, 'inner', ['waiting'])
+    await d.report(run.id, 'b', 'succeeded', { go: false })
+    await d.reached(run.id, 'inner', ['cancelled'])
+    await d.report(run.id, 'c', 'succeeded')
+    await expect(finished).resolves.toBe('completed')
+
+    expect(d.attempt(run.id, 'inner')?.failureReason).toBe('join_skipped')
+    expect(d.attempt(run.id, 'outer')).toMatchObject({
+      state: 'completed',
+      resultJson: { branches: { inner: 'skipped', c: 'completed' } }
+    })
   })
 })

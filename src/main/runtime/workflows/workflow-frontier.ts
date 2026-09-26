@@ -1,12 +1,12 @@
 import type { Edge, Node, Workflow } from '../../../shared/workflows/workflow-definition-types'
 import { evaluateCondition } from '../../../shared/workflows/workflow-condition-evaluation'
 import type { NodeAttemptView } from '../../../shared/workflows/workflow-run-types'
-import { decideJoin, type IncomingBranch } from './workflow-join-policy'
+import { decideJoin, JOIN_SKIPPED_REASON, type IncomingBranch } from './workflow-join-policy'
 import type { WorkflowOrchestrationClient } from './workflow-orchestration-client'
 
 export type FrontierAttempt = Pick<
   NodeAttemptView,
-  'nodeId' | 'iteration' | 'attemptIndex' | 'state' | 'resultJson' | 'taskId'
+  'nodeId' | 'iteration' | 'attemptIndex' | 'state' | 'resultJson' | 'taskId' | 'failureReason'
 >
 
 /**
@@ -68,8 +68,10 @@ export function incomingEdgeOutcome(
       return !edge.condition || evaluateCondition(edge.condition, source.resultJson)
         ? 'fired'
         : 'not-taken'
-    case 'failed':
     case 'cancelled':
+      // A Waiting Join whose branches all ended skipped is cancelled, but reads as skipped.
+      return source.failureReason === JOIN_SKIPPED_REASON ? 'source-skipped' : 'source-failed'
+    case 'failed':
       return 'source-failed'
     case 'skipped':
       return 'source-skipped'

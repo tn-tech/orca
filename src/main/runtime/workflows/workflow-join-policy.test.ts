@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { JoinNode, Node } from '../../../shared/workflows/workflow-definition-types'
-import { computeFrontier } from './workflow-frontier'
+import { computeFrontier, incomingBranches } from './workflow-frontier'
 import { agent, attempt, end, start, workflow } from './workflow-frontier-test-fixtures'
 import { decideJoin, type IncomingBranch } from './workflow-join-policy'
 import { computeLoopProgress } from './workflow-loop-unrolling'
@@ -184,6 +184,25 @@ describe('computeFrontier with a Join', () => {
       attempt('c', 'cancelled')
     ]
     expect(computeFrontier(def, attempts)).toEqual({ eligible: [], skipped: ['join', 'end'] })
+  })
+
+  it('reads a Join cancelled as join_skipped as a skipped branch', () => {
+    const def = fanOut(join('all', 'fail'))
+    const settled = [
+      attempt('start', 'completed'),
+      attempt('a', 'completed'),
+      attempt('b', 'completed'),
+      attempt('c', 'completed')
+    ]
+    const skipped = { ...attempt('join', 'cancelled'), failureReason: 'join_skipped' }
+    expect(computeFrontier(def, [...settled, skipped]).skipped).toEqual(['end'])
+    expect(incomingBranches(def, new Map([['join', skipped]]), 'end')).toEqual([
+      { sourceId: 'join', outcome: 'source-skipped' }
+    ])
+    const cancelled = attempt('join', 'cancelled')
+    expect(incomingBranches(def, new Map([['join', cancelled]]), 'end')).toEqual([
+      { sourceId: 'join', outcome: 'source-failed' }
+    ])
   })
 
   it('fires the Join edge only when the Join attempt completed', () => {

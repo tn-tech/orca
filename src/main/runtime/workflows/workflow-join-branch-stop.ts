@@ -6,18 +6,11 @@ import type {
   LoopNode,
   Workflow
 } from '../../../shared/workflows/workflow-definition-types'
+import { ACTIVE_ATTEMPT_STATES } from '../../../shared/workflows/workflow-node-states'
 import type { NodeAttemptView } from '../../../shared/workflows/workflow-run-types'
 import { latestAttemptByNode, loopExitSourceId } from './workflow-frontier'
 import type { IncomingBranch } from './workflow-join-policy'
 import type { WorkflowNodeLaunchContext } from './workflow-run-node-launch'
-
-const ACTIVE_STATES = new Set<NodeAttemptView['state']>([
-  'pending',
-  'provisioning',
-  'running',
-  'waiting',
-  'unverifiable'
-])
 
 export function containingLoop(definition: Workflow, nodeId: string): LoopNode | undefined {
   return definition.nodes.find(
@@ -53,7 +46,7 @@ export function remainingBranchNodes(
     visited.add(nodeId)
     const attempt = latest.get(nodeId)
     if (attempt) {
-      if (ACTIVE_STATES.has(attempt.state)) {
+      if (ACTIVE_ATTEMPT_STATES.has(attempt.state)) {
         active.push(attempt)
       }
       continue

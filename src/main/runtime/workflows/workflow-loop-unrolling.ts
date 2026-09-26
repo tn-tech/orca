@@ -2,7 +2,6 @@
 // attempt at iteration 0: `running` while it iterates, `completed` when the exit condition holds,
 // `failed` with `loop_cap_reached`, `loop_body_failed` or `loop_exit_unreached`. Body nodes get one attempt per
 // iteration, tagged with that iteration; bookkeeping is derived from persisted attempts only.
-import type { BriefReferenceInputs } from '../../../shared/workflows/workflow-brief-references'
 import { evaluateCondition } from '../../../shared/workflows/workflow-condition-evaluation'
 import type { JsonValue } from '../../../shared/workflows/workflow-condition-schema'
 import type { LoopNode, Workflow } from '../../../shared/workflows/workflow-definition-types'
@@ -140,6 +139,11 @@ function iterationFrontier(
   )
 }
 
+function isWaitingJoinAttempt(definition: Workflow, attempt: FrontierAttempt): boolean {
+  const node = definition.nodes.find((candidate) => candidate.id === attempt.nodeId)
+  return node !== undefined && isWaitingJoin(node, attempt)
+}
+
 function isActive(attempt: FrontierAttempt | undefined): boolean {
   return attempt !== undefined && !TERMINAL_STATES.has(attempt.state)
 }
@@ -159,7 +163,7 @@ function mayStillResolve(
   const waitingOnOutside = definition.edges.some(
     (edge) =>
       body.has(edge.to) &&
-      !inIteration.has(edge.to) &&
+      (!inIteration.has(edge.to) || inIteration.get(edge.to)?.state === 'waiting') &&
       !body.has(edge.from) &&
       (latest.get(edge.from) === undefined || isActive(latest.get(edge.from)))
   )
@@ -168,7 +172,10 @@ function mayStillResolve(
   }
   const loopIds = new Set(loops(definition).map((candidate) => candidate.id))
   const runMoving = [...latest.values()].some(
-    (attempt) => !loopIds.has(attempt.nodeId) && isActive(attempt)
+    (attempt) =>
+      !loopIds.has(attempt.nodeId) &&
+      isActive(attempt) &&
+      !isWaitingJoinAttempt(definition, attempt)
   )
   return runMoving || computeFrontier(definition, attempts).eligible.length > 0
 }
@@ -212,7 +219,16 @@ function loopProgress(
     }
     return
   }
-  if ([...inIteration.values()].some((attempt) => !TERMINAL_STATES.has(attempt.state))) {
+  const unsettled = [...inIteration.values()].filter((a) => !TERMINAL_STATES.has(a.state))
+  if (unsettled.some((attempt) => !isWaitingJoinAttempt(definition, attempt))) {
+    return
+  }
+  if (unsettled.length > 0) {
+    // Only Waiting Joins remain; once nothing can settle their branches the iteration is over.
+    // The controller cancels those Joins when the run goes quiet.
+    if (!mayStillResolve(definition, loop, attempts, inIteration)) {
+      progress.settlements.push(settle(loop, loopAttemptId, 'exit_unreached', iteration, null))
+    }
     return
   }
   const exit = inIteration.get(loop.exitNodeId)
@@ -267,34 +283,4 @@ export function computeLoopProgress(
   return progress
 }
 
-/**
- * `${loop.previous.<nodeId>}` data for a body node: every body node's completed result from the
- * previous iteration (FR-028). Empty on iteration 0; undefined outside any Loop body.
- */
-export function loopPreviousInputs(
-  definition: Workflow,
-  attempts: readonly FrontierAttempt[],
-  nodeId: string,
-  iteration: number
-): BriefReferenceInputs['loopPrevious'] {
-  const loop = loops(definition).find((candidate) => candidate.body.nodeIds.includes(nodeId))
-  if (!loop) {
-    return undefined
-  }
-  const body = new Set(loop.body.nodeIds)
-  const previous = latestAttemptByNode(
-    attempts.filter(
-      (attempt) =>
-        body.has(attempt.nodeId) &&
-        attempt.iteration === iteration - 1 &&
-        attempt.state === 'completed' &&
-        attempt.resultJson !== undefined
-    )
-  )
-  return Object.fromEntries(
-    [...previous].map(([bodyNodeId, attempt]) => [
-      bodyNodeId,
-      { result: attempt.resultJson ?? null }
-    ])
-  )
-}
+export { loopPreviousInputs } from './workflow-loop-previous-inputs'

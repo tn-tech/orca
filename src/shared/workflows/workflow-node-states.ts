@@ -24,6 +24,15 @@ export const WORKFLOW_ATTEMPT_STATES = [
 ] as const
 export type WorkflowAttemptState = (typeof WORKFLOW_ATTEMPT_STATES)[number]
 
+/** Non-terminal attempt states: the attempt may still change. */
+export const ACTIVE_ATTEMPT_STATES: ReadonlySet<WorkflowAttemptState> = new Set([
+  'pending',
+  'provisioning',
+  'running',
+  'waiting',
+  'unverifiable'
+])
+
 export type WorkflowStateMachineKind = 'run' | 'attempt'
 
 /**

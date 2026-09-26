@@ -5,7 +5,12 @@ import type { JoinNode, Workflow } from '../../../shared/workflows/workflow-defi
 import type { NodeAttemptView } from '../../../shared/workflows/workflow-run-types'
 import { incomingBranches, latestAttemptByNode } from './workflow-frontier'
 import { containingLoop, stopRemainingBranches } from './workflow-join-branch-stop'
-import { decideJoin, joinBranchOutcomes, type IncomingBranch } from './workflow-join-policy'
+import {
+  decideJoin,
+  JOIN_SKIPPED_REASON,
+  joinBranchOutcomes,
+  type IncomingBranch
+} from './workflow-join-policy'
 import { bodyIncomingBranches } from './workflow-loop-unrolling'
 import type { WorkflowNodeLaunchContext } from './workflow-run-node-launch'
 
@@ -42,7 +47,8 @@ export async function settleJoin(
     if (!waiting) {
       throw new Error(`Join ${node.id} was offered while its policy says skip.`)
     }
-    ctx.recorder.transitionAttempt(waiting.id, 'cancelled', { reason: 'join_skipped' })
+    ctx.db.updateWorkflowAttempt(waiting.id, { failureReason: JOIN_SKIPPED_REASON })
+    ctx.recorder.transitionAttempt(waiting.id, 'cancelled', { reason: JOIN_SKIPPED_REASON })
     return
   }
   let attemptId = waiting?.id
@@ -107,7 +113,8 @@ export function joinBranchesInput(
   )
   const latest = latestAttemptByNode(attempts)
   for (const edge of definition.edges) {
-    const join = edge.to === nodeId && joinIds.has(edge.from) ? latest.get(edge.from) : undefined
+    const fromJoin = edge.to === nodeId && edge.fromPort !== 'body' && joinIds.has(edge.from)
+    const join = fromJoin ? latest.get(edge.from) : undefined
     const result = join?.state === 'completed' ? join.resultJson : undefined
     if (typeof result === 'object' && result !== null && !Array.isArray(result)) {
       return result.branches
