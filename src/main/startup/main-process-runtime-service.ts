@@ -162,9 +162,10 @@ export function initializeMainProcessRuntime(): OrcaRuntimeService {
   browserManager.setBrowserGuestStateChangedListener((worktreeId) => {
     runtime.notifyMobileSessionTabsChanged(worktreeId)
   })
-  // Why here and not lazily on first RPC call: a workflow run on this host must resume with no
-  // client connected (FR-039), so rehydration cannot wait for one to ask.
-  runtime.startWorkflowEngine()
+  // Why registered here but started elsewhere: this is where `runtime` exists to close over, but
+  // starting the engine this early would race PTY-provider readiness and legacy-worker recovery
+  // (both settle later, in launchServeMode / the recoverLegacyWorkerTerminalsForRendererStartup
+  // reconcile step) with an empty SSH/PTY provider map on a fresh boot.
   app.once('will-quit', () => {
     void runtime.stopWorkflowEngine()
   })

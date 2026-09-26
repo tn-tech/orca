@@ -148,6 +148,10 @@ async function launchServeMode(
   )
   await runtime.refreshRestoredOrchestrationAuthority()
   await runtime.reconcileLegacyWorkerTerminals()
+  // Why here and not at runtime construction: a workflow run on this host must resume with no
+  // client connected (FR-039), but only once PTY-provider readiness and legacy-worker recovery
+  // have settled — starting earlier raced an empty SSH/PTY provider map on a fresh boot.
+  runtime.startWorkflowEngine()
   // Why: headless servers can't mount <webview> panes; use offscreen WebContents, gated on a real display so browser.headless.v1 stays honest.
   if (state.headlessBrowserDisplayAvailable) {
     runtime.setOffscreenBrowserBackend(

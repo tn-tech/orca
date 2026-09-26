@@ -2,6 +2,11 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { IFilesystemProvider } from '../../providers/types'
+import {
+  registerSshFilesystemProvider,
+  unregisterSshFilesystemProvider
+} from '../../providers/ssh-filesystem-dispatch'
 import type { Repo } from '../../../shared/repo-types'
 import type { Workflow } from '../../../shared/workflows/workflow-definition-types'
 import type { NodeAttemptView } from '../../../shared/workflows/workflow-run-types'
@@ -11,9 +16,29 @@ import {
   TWO_NODE_WORKFLOW,
   waitUntil
 } from './workflow-run-controller-test-harness'
-import { WorkflowEngine, WorkflowGraphValidationError } from './workflow-engine'
+import { WorkflowRunController } from './workflow-run-controller'
+import {
+  WorkflowEngine,
+  WorkflowGraphValidationError,
+  type WorkflowEngineDeps
+} from './workflow-engine'
 
 const ALWAYS_SUPPORTED = { agentSupportsModel: () => true }
+
+// Start -> End only: settles with no worker dispatch, so SSH/host-unreachable tests don't need
+// the PTY/dispatcher fakes an agent-node run requires.
+const TRIVIAL_WORKFLOW: Workflow = {
+  version: 1,
+  name: 'trivial',
+  workspacePolicy: 'in-place',
+  roles: {},
+  nodes: [
+    { id: 'start', type: 'start', title: 'Start' },
+    { id: 'end', type: 'end', title: 'Done' }
+  ],
+  edges: [{ id: 'e1', from: 'start', to: 'end' }],
+  layout: {}
+}
 
 function repoFixture(path: string, overrides: Partial<Repo> = {}): Repo {
   return {
@@ -23,6 +48,32 @@ function repoFixture(path: string, overrides: Partial<Repo> = {}): Repo {
     badgeColor: '#000',
     addedAt: 0,
     ...overrides
+  }
+}
+
+/** Every member throws: this test never exercises the provider, only that one is registered. */
+function unusedFilesystemProvider(): IFilesystemProvider {
+  const notUsed = (name: string) => (): never => {
+    throw new Error(`${name} is not used by this test`)
+  }
+  return {
+    readDir: notUsed('readDir'),
+    readFile: notUsed('readFile'),
+    writeFile: notUsed('writeFile'),
+    writeFileBase64: notUsed('writeFileBase64'),
+    writeFileBase64Chunk: notUsed('writeFileBase64Chunk'),
+    stat: notUsed('stat'),
+    deletePath: notUsed('deletePath'),
+    createFile: notUsed('createFile'),
+    createDir: notUsed('createDir'),
+    createDirNoClobber: notUsed('createDirNoClobber'),
+    rename: notUsed('rename'),
+    renameNoClobber: notUsed('renameNoClobber'),
+    copy: notUsed('copy'),
+    realpath: notUsed('realpath'),
+    search: notUsed('search'),
+    listFiles: notUsed('listFiles'),
+    watch: notUsed('watch')
   }
 }
 
@@ -58,12 +109,13 @@ describe('WorkflowEngine', () => {
     await rm(workspaceRoot, { recursive: true, force: true })
   })
 
-  function createEngine(): WorkflowEngine {
+  function createEngine(overrides: Partial<WorkflowEngineDeps> = {}): WorkflowEngine {
     const engine = new WorkflowEngine({
       db: h.db,
       runtime: h.runtime,
       dispatcher: h.dispatcher,
-      getRepo: (repoId) => (repoId === repo.id ? repo : undefined)
+      getRepo: (repoId) => (repoId === repo.id ? repo : undefined),
+      ...overrides
     })
     engines.push(engine)
     return engine
@@ -179,5 +231,120 @@ describe('WorkflowEngine', () => {
     await completeNode(run.id, 'review', 'term_worker_2', { verdict: 'approved' })
     await waitUntil(() => second.getSnapshot(run.id)?.state === 'completed')
     expect(second.getSnapshot(run.id)?.state).toBe('completed')
+  })
+
+  it('rehydrates an SSH-repo run without failing it while unreachable, then completes it once the provider registers', async () => {
+    const connectionId = `conn-ssh-${Math.random().toString(36).slice(2)}`
+    const sshRepo = repoFixture(workspaceRoot, { id: 'ssh-repo', connectionId })
+    const engine = createEngine({
+      getRepo: (repoId) => (repoId === sshRepo.id ? sshRepo : undefined),
+      hostUnreachableRetryDelayMs: 20
+    })
+    const run = h.db.createWorkflowRun({
+      workflowName: TRIVIAL_WORKFLOW.name,
+      workflowSource: 'project',
+      workflowSnapshot: TRIVIAL_WORKFLOW,
+      workflowVersion: 'v1',
+      objective: 'ssh host unreachable at boot',
+      repoId: sshRepo.id,
+      worktreeId: sshRepo.id
+    })
+
+    engine.rehydrateActiveRuns()
+    // The failure is pure microtask chaining (no timers, no real I/O) so one real tick settles it.
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(h.db.getWorkflowRun(run.id)?.state).toBe('queued')
+    expect(h.db.listWorkflowEvents(run.id).some((event) => event.kind === 'run_engine_error')).toBe(
+      false
+    )
+
+    try {
+      registerSshFilesystemProvider(connectionId, unusedFilesystemProvider())
+      await waitUntil(() => h.db.getWorkflowRun(run.id)?.state === 'completed')
+    } finally {
+      unregisterSshFilesystemProvider(connectionId)
+    }
+  })
+
+  it('refuses startRun once stopped', async () => {
+    const engine = createEngine()
+    await engine.stop()
+
+    await expect(
+      engine.startRun({
+        workflow: TRIVIAL_WORKFLOW,
+        workflowSource: 'project',
+        workflowVersion: 'v1',
+        objective: 'too late',
+        repo,
+        validation: ALWAYS_SUPPORTED
+      })
+    ).rejects.toThrow('workflow_engine_stopped')
+  })
+
+  it('does not launch a controller for a startRun already in flight when stop() runs first', async () => {
+    const engine = createEngine()
+    const startPromise = engine.startRun({
+      workflow: TRIVIAL_WORKFLOW,
+      workflowSource: 'project',
+      workflowVersion: 'v1',
+      objective: 'race with stop',
+      repo,
+      validation: ALWAYS_SUPPORTED
+    })
+
+    // engine.stop() sets its `stopped` flag synchronously, before startRun's own async work
+    // (allowlist read, workspace creation, row insert) can resume and reach launch().
+    await engine.stop()
+    const run = await startPromise
+
+    // The row exists (workspace-then-row already happened), but nothing ever drove it forward.
+    expect(h.db.getWorkflowRun(run.id)?.state).toBe('queued')
+  })
+
+  it('removes the just-created worktree if inserting the run row fails', async () => {
+    const engine = createEngine()
+    vi.spyOn(h.db, 'createWorkflowRun').mockImplementationOnce(() => {
+      throw new Error('simulated insert failure')
+    })
+    const removeManagedWorktree = vi.fn(async () => ({}))
+    Object.assign(h.runtime, { removeManagedWorktree })
+
+    await expect(
+      engine.startRun({
+        workflow: TWO_NODE_WORKFLOW,
+        workflowSource: 'project',
+        workflowVersion: 'v1',
+        objective: 'row insert fails',
+        repo,
+        validation: ALWAYS_SUPPORTED
+      })
+    ).rejects.toThrow('simulated insert failure')
+
+    expect(h.runtime.createManagedWorktree).toHaveBeenCalledTimes(1)
+    expect(removeManagedWorktree).toHaveBeenCalledWith(`id:${RUN_WORKTREE_ID}`)
+  })
+
+  it('bounds stop() with a deadline so a controller stuck mid-tick cannot hang shutdown', async () => {
+    const engine = createEngine({ shutdownDeadlineMs: 10 })
+    const run = await engine.startRun({
+      workflow: TWO_NODE_WORKFLOW,
+      workflowSource: 'project',
+      workflowVersion: 'v1',
+      objective: 'stuck controller',
+      repo,
+      validation: ALWAYS_SUPPORTED
+    })
+    await waitUntil(() => attempt(run.id, 'implement')?.state === 'running')
+    // Simulates a controller whose abort didn't make its current tick yield in time.
+    vi.spyOn(WorkflowRunController.prototype, 'stop').mockImplementation(() => {})
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const stopPromise = engine.stop()
+    await vi.advanceTimersByTimeAsync(50)
+    await stopPromise
+
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0]?.[0]).toContain('exceeded its 10ms deadline')
   })
 })

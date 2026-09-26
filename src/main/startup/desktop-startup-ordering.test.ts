@@ -167,6 +167,11 @@ describe('startup ordering', () => {
     expect(serveStartup.indexOf('await state.managedWslCliStartupBarrierReady')).toBeLessThan(
       serveStartup.indexOf('await runtimeRpc.start()')
     )
+    // Same ordering constraint as the desktop reconcile barrier above, for `orca serve`.
+    expect(serveStartup).toContain('runtime.startWorkflowEngine()')
+    expect(serveStartup.indexOf('await runtime.reconcileLegacyWorkerTerminals()')).toBeLessThan(
+      serveStartup.indexOf('runtime.startWorkflowEngine()')
+    )
     expect(desktopStartup).not.toContain('await state.managedWslCliReconciliationReady')
     expect(desktopStartup).toContain(
       "process.platform === 'win32' && app.isPackaged && !serveOptions"
@@ -183,9 +188,18 @@ describe('startup ordering', () => {
     expect(barrier).toContain('recoverLegacyWorkerTerminalsForRendererStartup({')
     expect(barrier).toContain('localPtyProviderStartupReady,')
     expect(barrier).toContain('await state.runtime?.refreshRestoredOrchestrationAuthority()')
-    expect(barrier).toContain(
-      'return state.runtime?.reconcileLegacyWorkerTerminals({ materializeRenderer: true })'
+    expect(barrier).toContain('state.runtime?.reconcileLegacyWorkerTerminals({')
+    // Why ordering and not just presence: starting the workflow engine before PTY-provider
+    // readiness and legacy-worker recovery settle races an empty SSH/PTY provider map on a
+    // fresh boot (FR-038/FR-039) — see workflow-engine.ts's rehydrate-retry handling for hosts
+    // that are still unreachable when this fires.
+    const authorityIndex = barrier.indexOf(
+      'await state.runtime?.refreshRestoredOrchestrationAuthority()'
     )
+    const reconcileIndex = barrier.indexOf('state.runtime?.reconcileLegacyWorkerTerminals({')
+    const startEngineIndex = barrier.indexOf('state.runtime?.startWorkflowEngine()')
+    expect(startEngineIndex).toBeGreaterThan(authorityIndex)
+    expect(startEngineIndex).toBeGreaterThan(reconcileIndex)
   })
 
   it('keeps the git-environment barrier off the PTY startup services', () => {

@@ -32,7 +32,15 @@ export function registerMainProcessIpcHandlers(): void {
       localPtyProviderStartupReady: state.localPtyProviderStartupReady,
       reconcile: async () => {
         await state.runtime?.refreshRestoredOrchestrationAuthority()
-        return state.runtime?.reconcileLegacyWorkerTerminals({ materializeRenderer: true })
+        const result = await state.runtime?.reconcileLegacyWorkerTerminals({
+          materializeRenderer: true
+        })
+        // Why here and not at runtime construction: a workflow run on this host must resume
+        // with no client connected (FR-039), but only once PTY-provider readiness and legacy-
+        // worker recovery have settled — starting earlier raced an empty SSH/PTY provider map
+        // on a fresh boot. Idempotent, so this renderer-triggered barrier firing twice is safe.
+        state.runtime?.startWorkflowEngine()
+        return result
       },
       onDeferredRecoveryError: (error) => {
         console.warn('[orchestration] legacy worker provider-ready recovery failed', error)

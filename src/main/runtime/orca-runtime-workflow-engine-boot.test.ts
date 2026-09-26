@@ -2,12 +2,13 @@
 // rehydration must fire at boot, not only when a client first asks for the engine.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Repo } from '../../shared/repo-types'
 import type { Workflow } from '../../shared/workflows/workflow-definition-types'
 import { OrchestrationDb } from './orchestration/db'
 import { OrcaRuntimeService } from './orca-runtime'
 import type { RuntimeStore } from './runtime-store-contract'
+import { WorkflowEngine } from './workflows/workflow-engine'
 
 const REPO: Repo = {
   id: 'repo-1',
@@ -100,29 +101,60 @@ describe('OrcaRuntimeService.startWorkflowEngine', () => {
     db.close()
   })
 
-  it('is idempotent: a second call does not rebuild or re-rehydrate the engine', () => {
+  it('is idempotent: a second call rehydrates and launches a controller exactly once', async () => {
     const db = new OrchestrationDb(':memory:')
     const runtime = new OrcaRuntimeService(storeFixture())
     runtime.setOrchestrationDb(db)
+    const rehydrateSpy = vi.spyOn(WorkflowEngine.prototype, 'rehydrateActiveRuns')
+    const run = db.createWorkflowRun({
+      workflowName: TRIVIAL_WORKFLOW.name,
+      workflowSource: 'project',
+      workflowSnapshot: TRIVIAL_WORKFLOW,
+      workflowVersion: 'v1',
+      objective: 'idempotency check',
+      repoId: REPO.id,
+      worktreeId: REPO.id
+    })
 
     runtime.startWorkflowEngine()
     const engine = runtime.getWorkflowEngine()
     runtime.startWorkflowEngine()
+    runtime.startWorkflowEngine()
 
+    // Why waited on: a stray second launch would race this same run to completion twice,
+    // failing on the DB's own once-only state transitions rather than looking like a no-op.
+    await waitForRunState(db, run.id, 'completed')
     expect(runtime.getWorkflowEngine()).toBe(engine)
+    expect(rehydrateSpy).toHaveBeenCalledTimes(1)
+
+    await runtime.stopWorkflowEngine()
     db.close()
   })
 })
 
 const MAIN_ROOT = join(import.meta.dirname, '..')
 
-describe('every host that starts workflows wires the engine at its own boot', () => {
-  it.each([['orcad/orcad-entry.ts'], ['startup/main-process-runtime-service.ts']])(
-    '%s calls startWorkflowEngine at startup and stopWorkflowEngine at shutdown',
+function sourceOf(relativePath: string): string {
+  return readFileSync(join(MAIN_ROOT, relativePath), 'utf8')
+}
+
+describe('every host that starts workflows wires the engine into its own boot and shutdown', () => {
+  // Why not the constructor of the runtime itself: starting there would create an orchestration
+  // DB for every runtime instance in the test suite. Each of these call sites is only reached
+  // from that host's actual startup/shutdown path. Ordering relative to PTY/authority readiness
+  // is asserted in desktop-startup-ordering.test.ts, not here — this is presence only.
+  it.each([
+    ['startup/main-process-runtime-launch.ts'],
+    ['startup/main-process-ipc-bootstrap.ts'],
+    ['orcad/orcad-entry.ts']
+  ])('%s calls startWorkflowEngine', (relativePath) => {
+    expect(sourceOf(relativePath)).toContain('.startWorkflowEngine()')
+  })
+
+  it.each([['startup/main-process-runtime-service.ts'], ['orcad/orcad-entry.ts']])(
+    '%s calls stopWorkflowEngine on shutdown',
     (relativePath) => {
-      const source = readFileSync(join(MAIN_ROOT, relativePath), 'utf8')
-      expect(source).toContain('.startWorkflowEngine()')
-      expect(source).toContain('.stopWorkflowEngine()')
+      expect(sourceOf(relativePath)).toContain('.stopWorkflowEngine()')
     }
   )
 })

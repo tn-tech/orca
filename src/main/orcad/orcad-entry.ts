@@ -164,9 +164,13 @@ async function startOrcadRuntime(
   let rpc: InstanceType<typeof OrcaRuntimeRpcServer> | null = null
   let uninstallHookStatusRepublish = (): void => {}
   let uninstallObservedStatusIdentity = (): void => {}
+  // Why a holder rather than referencing `runtime` directly: `runtime` is declared later as a
+  // `const`, and a startup failure before that line would run this cleanup while it's still in
+  // its temporal dead zone — a ReferenceError, not the harmless no-op every other step here has.
+  let stopWorkflowEngine = async (): Promise<void> => {}
   registerCleanup(async () => {
     try {
-      await runtime?.stopWorkflowEngine()
+      await stopWorkflowEngine()
     } finally {
       try {
         await rpc?.stop()
@@ -302,6 +306,7 @@ async function startOrcadRuntime(
   // Why here and not lazily on first RPC call: a workflow run on this host must resume with no
   // client connected (FR-039), so rehydration cannot wait for one to ask.
   runtime.startWorkflowEngine()
+  stopWorkflowEngine = () => runtime.stopWorkflowEngine()
 
   const bindHost = resolveOrcadBindHost(options.bind)
   rpc = new OrcaRuntimeRpcServer({
