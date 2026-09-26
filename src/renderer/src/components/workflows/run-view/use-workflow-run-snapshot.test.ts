@@ -32,9 +32,9 @@ function attempt(patch: Partial<NodeAttemptView> = {}): NodeAttemptView {
   }
 }
 
-function snapshotFixture(attempts: NodeAttemptView[] = []) {
+function snapshotFixture(attempts: NodeAttemptView[] = [], id = 'run-1') {
   return {
-    id: 'run-1',
+    id,
     workflowName: 'wf',
     workflowSource: 'project' as const,
     workflowSnapshot: {
@@ -58,6 +58,22 @@ function snapshotFixture(attempts: NodeAttemptView[] = []) {
     events: []
   }
 }
+
+function createDeferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((res) => {
+    resolve = res
+  })
+  return { promise, resolve }
+}
+
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
+type RunIdProps = { runId: string | null }
+const runARunIdProps: RunIdProps = { runId: 'run-a' }
 
 beforeEach(() => {
   workflowRunShowMock.mockReset()
@@ -128,6 +144,55 @@ describe('useWorkflowRunSnapshot', () => {
     await act(() => result.current.refresh())
 
     expect(workflowRunShowMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops a stale response for a run the user has since left (switched to no active run)', async () => {
+    const deferredA = createDeferred<ReturnType<typeof snapshotFixture>>()
+    workflowRunShowMock.mockImplementation((_settings: unknown, runId: string) =>
+      runId === 'run-a' ? deferredA.promise : Promise.reject(new Error('unexpected runId'))
+    )
+
+    const { result, rerender } = renderHook(
+      ({ runId }: RunIdProps) => useWorkflowRunSnapshot({ settings, runId }),
+      { initialProps: runARunIdProps }
+    )
+    await waitFor(() => expect(workflowRunShowMock).toHaveBeenCalledWith(settings, 'run-a'))
+
+    // The user switches away before run-a's slow response ever arrives.
+    rerender({ runId: null })
+    expect(result.current.snapshot).toBeNull()
+
+    await act(async () => {
+      deferredA.resolve(snapshotFixture([], 'run-a'))
+      await flushMicrotasks()
+    })
+
+    expect(result.current.snapshot).toBeNull()
+  })
+
+  it('drops a stale response for a run the user has since left (switched to a different run)', async () => {
+    const deferredA = createDeferred<ReturnType<typeof snapshotFixture>>()
+    const snapshotB = snapshotFixture([], 'run-b')
+    workflowRunShowMock.mockImplementation((_settings: unknown, runId: string) =>
+      runId === 'run-a' ? deferredA.promise : Promise.resolve(snapshotB)
+    )
+
+    const { result, rerender } = renderHook(
+      ({ runId }: RunIdProps) => useWorkflowRunSnapshot({ settings, runId }),
+      { initialProps: runARunIdProps }
+    )
+    await waitFor(() => expect(workflowRunShowMock).toHaveBeenCalledWith(settings, 'run-a'))
+
+    // The user starts a second run before run-a's slow response ever arrives.
+    rerender({ runId: 'run-b' })
+    await waitFor(() => expect(result.current.snapshot).toEqual(snapshotB))
+
+    await act(async () => {
+      deferredA.resolve(snapshotFixture([], 'run-a'))
+      await flushMicrotasks()
+    })
+
+    expect(result.current.snapshot).toEqual(snapshotB)
   })
 })
 

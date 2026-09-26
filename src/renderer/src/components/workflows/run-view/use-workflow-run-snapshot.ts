@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   workflowRunShow,
   type RuntimeWorkflowSettings,
@@ -37,22 +37,38 @@ export function useWorkflowRunSnapshot({
   const [snapshot, setSnapshot] = useState<WorkflowRunSnapshotView | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Tracks the runId as of the latest render so an in-flight fetch can tell, once it resolves,
+  // whether it's still the one the caller cares about (see the stale-response guard in `refresh`).
+  const runIdRef = useRef(runId)
+  runIdRef.current = runId
 
   const refresh = useCallback(async () => {
-    if (!runId) {
+    const requestedRunId = runId
+    if (!requestedRunId) {
       setSnapshot(null)
       setError(null)
+      setLoading(false)
       return
     }
     setLoading(true)
     try {
-      const result = await workflowRunShow(settings, runId)
+      const result = await workflowRunShow(settings, requestedRunId)
+      // Drop a stale response: the user may have switched workflows or started another run while
+      // this fetch was in flight, and an older run's snapshot must never repopulate `snapshot`.
+      if (runIdRef.current !== requestedRunId) {
+        return
+      }
       setSnapshot(result)
       setError(null)
     } catch (err) {
+      if (runIdRef.current !== requestedRunId) {
+        return
+      }
       setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setLoading(false)
+      if (runIdRef.current === requestedRunId) {
+        setLoading(false)
+      }
     }
   }, [settings, runId])
 

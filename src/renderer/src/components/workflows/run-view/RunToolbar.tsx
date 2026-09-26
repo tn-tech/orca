@@ -59,6 +59,8 @@ export default function RunToolbar({
   onStop,
   onRelayout
 }: RunToolbarProps): React.JSX.Element {
+  // Not cleared on run start/finish: keeping the typed objective around is a relaunch convenience
+  // once the input reappears after the run reaches a terminal state.
   const [objective, setObjective] = useState('')
   const objectiveId = useId()
   const isActive = runState !== undefined && ACTIVE_RUN_STATES.has(runState)
