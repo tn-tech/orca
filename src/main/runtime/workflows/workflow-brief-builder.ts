@@ -18,6 +18,7 @@ import { ensureOrcaDirIgnored } from '../../issue-command-file'
 import { joinWorktreeRelativePath } from '../runtime-relative-paths'
 import { ensureRemoteOrcaDirIgnored } from '../runtime-repository-issue-command'
 import type { WorkflowFilesystem } from './workflow-file-store-filesystem'
+import { routerChoiceLines, routerResultContract } from './workflow-router'
 
 /** A brief-eligible node: the three role-dispatching node types (agent-brief.md). */
 export type BriefNode = AgentNode | RouterNode | ReflectionNode
@@ -32,11 +33,7 @@ export function resultContractFor(node: BriefNode): ResultContract {
     return node.resultContract
   }
   if (node.type === 'router') {
-    return {
-      type: 'object',
-      required: ['choice', 'reason'],
-      properties: { choice: { enum: node.choices }, reason: { type: 'string' } }
-    }
+    return routerResultContract(node)
   }
   return {
     type: 'object',
@@ -169,6 +166,7 @@ export function buildBriefMarkdown(args: BuildBriefMarkdownArgs): {
     '',
     '## Result',
     '',
+    ...(args.node.type === 'router' ? routerChoiceLines(args.node) : []),
     'The result must validate against this JSON Schema:',
     '',
     '```json',

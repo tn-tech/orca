@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createNodeTask } from './workflow-frontier'
+import { createNodeTask } from './workflow-frontier-node-task'
 import { agent, attempt, end, linear, start, workflow } from './workflow-frontier-test-fixtures'
 
 describe('createNodeTask', () => {

@@ -13,6 +13,7 @@ import {
   incomingEdgeOutcome,
   isWaitingJoin,
   latestAttemptByNode,
+  nodeTypeOf,
   type FrontierAttempt
 } from './workflow-frontier'
 import { JOIN_SKIPPED_REASON, type IncomingBranch } from './workflow-join-policy'
@@ -94,12 +95,20 @@ export function bodyIncomingBranches(
   const outside = latestAttemptByNode(attempts)
   const branches = definition.edges
     .filter((edge) => edge.to === nodeId && edge.fromPort !== 'body')
-    .map((edge) => ({
-      sourceId: edge.from,
-      outcome: body.has(edge.from)
-        ? incomingEdgeOutcome(edge, inIteration.get(edge.from), skipped.has(edge.from))
-        : incomingEdgeOutcome(edge, outside.get(edge.from), false)
-    }))
+    .map((edge) => {
+      const sourceType = nodeTypeOf(definition.nodes, edge.from)
+      return {
+        sourceId: edge.from,
+        outcome: body.has(edge.from)
+          ? incomingEdgeOutcome(
+              edge,
+              inIteration.get(edge.from),
+              skipped.has(edge.from),
+              sourceType
+            )
+          : incomingEdgeOutcome(edge, outside.get(edge.from), false, sourceType)
+      }
+    })
   // The Loop implicitly flows into its entry node at the start of every iteration.
   return nodeId === loop.entryNodeId
     ? [...branches, { sourceId: loop.id, outcome: 'fired' }]

@@ -6,7 +6,7 @@ import type { NodeAttemptView } from '../../../shared/workflows/workflow-run-typ
 import type { OrchestrationDb } from '../orchestration/db'
 import { writeBrief, type BriefNode, type OrcaIgnoreTarget } from './workflow-brief-builder'
 import type { WorkflowFilesystem } from './workflow-file-store-filesystem'
-import { createNodeTask } from './workflow-frontier'
+import { createNodeTask } from './workflow-frontier-node-task'
 import { joinBranchesInput, settleJoin } from './workflow-join-settlement'
 import { loopPreviousInputs } from './workflow-loop-unrolling'
 import { dispatchWorkflowNode, resolveNodeLaunch } from './workflow-node-dispatch'

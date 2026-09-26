@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import type { JsonValue } from '../../../shared/workflows/workflow-condition-schema'
 import type { Edge, LoopNode, Node } from '../../../shared/workflows/workflow-definition-types'
 import type { WorkflowAttemptState } from '../../../shared/workflows/workflow-node-states'
-import { computeFrontier, createNodeTask } from './workflow-frontier'
+import { computeFrontier } from './workflow-frontier'
+import { createNodeTask } from './workflow-frontier-node-task'
 import { agent, end, start, workflow } from './workflow-frontier-test-fixtures'
 import { computeLoopProgress, type LoopProgressAttempt } from './workflow-loop-unrolling'
 
@@ -20,12 +21,15 @@ function loop(bodyNodeIds: string[]): LoopNode {
   }
 }
 
-const router: Node = {
+// Approval is still a pending seam in the engine (the frontier never offers it).
+const gate: Node = {
   id: 'route',
-  type: 'router',
+  type: 'approval',
   title: 'Route',
-  prompt: 'pick',
-  choices: ['yes', 'no']
+  question: 'pick',
+  options: ['yes', 'no'],
+  timeoutMs: 1000,
+  escalationGraceMs: 1000
 }
 
 function at(
@@ -54,7 +58,7 @@ describe('Loop exit resolution', () => {
         start,
         loop(['implement', 'route', 'review']),
         agent('implement'),
-        router,
+        gate,
         agent('review'),
         end
       ],
@@ -120,7 +124,7 @@ describe('Loop exit resolution', () => {
 
   it('settles when that outside node never gets an attempt and nothing else is moving', () => {
     const def = workflow(
-      [start, loop(['implement', 'review']), agent('implement'), agent('review'), router, end],
+      [start, loop(['implement', 'review']), agent('implement'), agent('review'), gate, end],
       [
         entry,
         { id: 'a', from: 'implement', to: 'review' },

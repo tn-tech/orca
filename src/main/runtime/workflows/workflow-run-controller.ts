@@ -16,6 +16,7 @@ import {
   type WorkflowOrchestrationDispatcher
 } from './workflow-orchestration-client'
 import { captureNodeResult } from './workflow-result-capture'
+import { captureRouterResult, recordRouterChoice } from './workflow-router'
 import { advanceRun } from './workflow-run-advance'
 import { classifyRunMail, type RunMail } from './workflow-run-mailbox-message'
 import {
@@ -197,16 +198,19 @@ export class WorkflowRunController {
       this.recorder.transitionAttempt(attempt.id, 'running')
     }
     const node = requireBriefNode(session.launch.definition, attempt.nodeId)
-    const capture = await captureNodeResult({
+    const captureArgs = {
       fs: session.launch.workspace.fs,
       workspaceRoot: session.launch.workspace.workspaceRoot,
       runId: this.deps.workflowRunId,
       attemptId: attempt.id,
       reportPath: mail.reportPath,
       outcome: mail.outcome,
-      resultContract: resultContractFor(node),
       declaredArtifacts: artifactsFor(node)
-    })
+    }
+    const capture =
+      node.type === 'router'
+        ? await captureRouterResult(node, captureArgs)
+        : await captureNodeResult({ ...captureArgs, resultContract: resultContractFor(node) })
     const { db } = this.deps
     if (capture.ok) {
       db.updateWorkflowAttempt(attempt.id, {
@@ -215,6 +219,9 @@ export class WorkflowRunController {
       })
       // Why: taskCreate readies a successor only once every dep Task is completed.
       await this.ensureTaskStatus(session, attempt.taskId, 'completed')
+      if (node.type === 'router') {
+        recordRouterChoice(this.recorder, attempt, capture.result)
+      }
       this.recorder.transitionAttempt(attempt.id, 'completed')
     } else {
       db.updateWorkflowAttempt(attempt.id, {

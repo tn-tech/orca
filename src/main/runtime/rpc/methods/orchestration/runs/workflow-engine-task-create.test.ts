@@ -4,7 +4,7 @@ import { OrchestrationDb } from '../../../../orchestration/db'
 import { eraseRpcMethods, type RpcContext } from '../../../core'
 import { ORCHESTRATION_METHODS } from '../../orchestration'
 import type { WorkflowEnginePrincipal } from '../../../../workflows/workflow-engine-principal'
-import { createNodeTask } from '../../../../workflows/workflow-frontier'
+import { createNodeTask } from '../../../../workflows/workflow-frontier-node-task'
 import {
   agent,
   attempt,

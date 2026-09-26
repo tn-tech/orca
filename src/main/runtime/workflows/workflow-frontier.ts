@@ -2,7 +2,7 @@ import type { Edge, Node, Workflow } from '../../../shared/workflows/workflow-de
 import { evaluateCondition } from '../../../shared/workflows/workflow-condition-evaluation'
 import type { NodeAttemptView } from '../../../shared/workflows/workflow-run-types'
 import { decideJoin, JOIN_SKIPPED_REASON, type IncomingBranch } from './workflow-join-policy'
-import type { WorkflowOrchestrationClient } from './workflow-orchestration-client'
+import { routerChoseEdge } from './workflow-router'
 
 export type FrontierAttempt = Pick<
   NodeAttemptView,
@@ -22,15 +22,20 @@ export type IncomingEdgeOutcome =
 
 export type FrontierDecision = { eligible: string[]; skipped: string[] }
 
-// Router/Approval/Reflection frontiers land with their own phases; they stay pending here.
+// Approval/Reflection frontiers land with their own phases; they stay pending here.
 // Loop bodies advance per iteration in workflow-loop-unrolling.ts; the Loop node itself is offered here.
 export const FRONTIER_NODE_TYPES: ReadonlySet<Node['type']> = new Set<Node['type']>([
   'start',
   'end',
   'agent',
+  'router',
   'loop',
   'join'
 ])
+
+export function nodeTypeOf(nodes: readonly Node[], nodeId: string): Node['type'] | undefined {
+  return nodes.find((node) => node.id === nodeId)?.type
+}
 
 export function latestAttemptByNode<T extends FrontierAttempt>(
   attempts: readonly T[]
@@ -49,23 +54,27 @@ export function latestAttemptByNode<T extends FrontierAttempt>(
   return latest
 }
 
+/** `sourceType` is the type of the node `source` belongs to; a Router's ports are its choices. */
 export function incomingEdgeOutcome(
   edge: Edge,
   source: FrontierAttempt | undefined,
-  sourceSkipped: boolean
+  sourceSkipped: boolean,
+  sourceType?: Node['type']
 ): IncomingEdgeOutcome {
   if (sourceSkipped) {
     return 'source-skipped'
   }
+  const routerPort = sourceType === 'router'
   // The caller resolves an `exit` edge's source to its Loop's attempt (loopExitSourceId).
-  // Router choice and approval option ports land with those node types; `body` edges are
-  // back-edges the loop unrolling owns.
-  if ((edge.fromPort !== undefined && edge.fromPort !== 'exit') || !source) {
+  // Approval option ports land with that node type; `body` edges are back-edges the loop
+  // unrolling owns.
+  if ((edge.fromPort !== undefined && edge.fromPort !== 'exit' && !routerPort) || !source) {
     return 'unresolved'
   }
   switch (source.state) {
     case 'completed':
-      return !edge.condition || evaluateCondition(edge.condition, source.resultJson)
+      return (!routerPort || routerChoseEdge(edge, source.resultJson)) &&
+        (!edge.condition || evaluateCondition(edge.condition, source.resultJson))
         ? 'fired'
         : 'not-taken'
     case 'cancelled':
@@ -209,7 +218,12 @@ export function incomingBranches(
       const sourceId = loopExitSourceId(definition.nodes, edge)
       return {
         sourceId,
-        outcome: incomingEdgeOutcome(edge, latest.get(sourceId), skipped.has(sourceId))
+        outcome: incomingEdgeOutcome(
+          edge,
+          latest.get(sourceId),
+          skipped.has(sourceId),
+          nodeTypeOf(definition.nodes, sourceId)
+        )
       }
     })
 }
@@ -240,58 +254,4 @@ export function computeFrontier(
     (nodeId, skipped) => incomingBranches(definition, latest, nodeId, skipped),
     waitingJoinIds
   )
-}
-
-export type WorkflowTaskPort = Pick<WorkflowOrchestrationClient, 'call'>
-
-function taskIdFromResult(result: unknown): string | undefined {
-  if (typeof result !== 'object' || result === null) {
-    return undefined
-  }
-  const task: unknown = Reflect.get(result, 'task')
-  if (typeof task !== 'object' || task === null) {
-    return undefined
-  }
-  const id: unknown = Reflect.get(task, 'id')
-  return typeof id === 'string' ? id : undefined
-}
-
-/**
- * Just-in-time Task for an eligible node (research R3): `deps` records upstream Tasks; the host
- * stamps workflow_run_id from the engine principal and node id/iteration from these params.
- */
-export async function createNodeTask(
-  port: WorkflowTaskPort,
-  args: {
-    definition: Workflow
-    attempts: readonly FrontierAttempt[]
-    nodeId: string
-    iteration: number
-    spec: string
-  }
-): Promise<string> {
-  const node = args.definition.nodes.find((candidate) => candidate.id === args.nodeId)
-  if (!node) {
-    throw new Error(`Workflow node ${args.nodeId} is not in the run's definition.`)
-  }
-  const latest = latestAttemptByNode(args.attempts)
-  // Why: taskCreate leaves a Task pending while any dep is not completed, and only ready Tasks dispatch.
-  const deps = args.definition.edges
-    .filter((edge) => edge.to === node.id)
-    .map((edge) => ({ edge, source: latest.get(loopExitSourceId(args.definition.nodes, edge)) }))
-    .filter(({ edge, source }) => incomingEdgeOutcome(edge, source, false) === 'fired')
-    .map(({ source }) => source?.taskId)
-    .filter((taskId): taskId is string => taskId !== undefined)
-  const result = await port.call('orchestration.taskCreate', {
-    spec: args.spec,
-    taskTitle: node.title,
-    deps: JSON.stringify([...new Set(deps)]),
-    workflowNodeId: node.id,
-    workflowIteration: args.iteration
-  })
-  const taskId = taskIdFromResult(result)
-  if (!taskId) {
-    throw new Error(`orchestration.taskCreate returned no task id for node ${node.id}.`)
-  }
-  return taskId
 }
