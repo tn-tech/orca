@@ -1,6 +1,7 @@
+import type { z } from 'zod'
 import { contextOnlyAbandonWarning } from '../../../../orchestration/context-only-dispatch-release'
 import { OrchestrationError } from '../../../../orchestration/orchestration-error'
-import { defineMethod } from '../../../core'
+import { defineMethod, type RpcContext } from '../../../core'
 import { assertCallerMayMutateDispatch } from '../runs/workflow-engine-run-scope'
 import {
   exposeDispatchContext,
@@ -22,6 +23,126 @@ import {
   WorkerDispatchParams,
   WorkerReadParams
 } from '../../../../../../shared/rpc-contract/orchestration-worker-control-params'
+
+/** Extracted so `workflow.run.readNodeOutput` (rpc/methods/workflows/runs.ts) can call it directly
+ *  by dispatch id without importing the dispatcher — that would cycle back through the method
+ *  registry into the workflow methods that call this. */
+export async function readWorkerOutput(
+  params: z.infer<typeof WorkerReadParams>,
+  { runtime }: RpcContext
+) {
+  const db = runtime.getOrchestrationDb()
+  const federated = db.getFederatedDispatch(params.dispatch)
+  if (federated) {
+    const server = resolvePinnedFederatedServer(runtime, federated)
+    return readFederatedWorkerOutput({
+      runtime,
+      db,
+      server,
+      federated,
+      dispatchId: params.dispatch,
+      source: params.source,
+      cursor: params.cursor,
+      limit: params.limit
+    })
+  }
+  const dispatch = db.getDispatchContextById(params.dispatch)
+  const worker = db.getWorkerDispatch(params.dispatch)
+  const terminalHandle = worker?.agent_terminal_handle ?? dispatch?.assignee_handle
+  if (!dispatch) {
+    throw new OrchestrationError('dispatch_not_found', `Dispatch ${params.dispatch} was not found.`)
+  }
+  if (!terminalHandle) {
+    throw new OrchestrationError(
+      'dispatch_not_found',
+      `Worker Dispatch ${params.dispatch} has no agent terminal.`
+    )
+  }
+  const resource = db.getWorkerTerminalResourceByOwner(params.dispatch)
+  if (resource && ['releasing', 'unknown', 'released'].includes(resource.release_state)) {
+    // Archive capture is not close evidence; recheck the execution host while releasing.
+    let liveness: 'live' | 'unverifiable' | 'exited' =
+      resource.release_state === 'released' ? 'exited' : 'unverifiable'
+    if (resource.release_state === 'releasing') {
+      const observed = await inspectWorkerTerminal(runtime, db, params.dispatch)
+      liveness =
+        observed.status === 'live'
+          ? 'live'
+          : observed.status === 'exited'
+            ? 'exited'
+            : 'unverifiable'
+    }
+    const archived = await readArchivedWorkerOutput({
+      db,
+      dispatchId: params.dispatch,
+      workerState: worker?.state ?? 'unsupervised',
+      resource,
+      source: params.source,
+      cursor: params.cursor,
+      limit: params.limit,
+      liveness
+    })
+    return { ...archived, projection: projectFleetWorker(runtime, db, params.dispatch) }
+  }
+  const observation = await inspectWorkerTerminal(runtime, db, params.dispatch)
+  if (!observation.exact) {
+    throw new OrchestrationError(
+      'worker_identity_changed',
+      `Worker Dispatch ${params.dispatch} no longer resolves to its exact process.`
+    )
+  }
+  // Read via the handle inspectWorkerTerminal proved live: the durable one, or a handle
+  // re-minted from the recorded incarnation after the durable handle went stale.
+  const liveHandle = observation.terminalHandle ?? terminalHandle
+  const structured = readStructuredWorkerOutput({
+    db,
+    dispatchId: params.dispatch,
+    workerState: worker?.state ?? 'unsupervised',
+    // Reused, never re-derived: being able to read the journal proves the host is installed,
+    // not that the provider child is alive.
+    liveness:
+      observation.status === 'live' || observation.status === 'exited'
+        ? observation.status
+        : 'unverifiable',
+    source: params.source,
+    cursor: params.cursor,
+    limit: params.limit
+  })
+  if (structured) {
+    return structured
+  }
+  const output = await readExactWorkerOutput({
+    runtime,
+    dispatchId: params.dispatch,
+    terminalHandle: liveHandle,
+    workerState: worker?.state ?? 'unsupervised',
+    terminalStatus:
+      observation.status === 'exited'
+        ? 'exited'
+        : observation.status === 'unverifiable'
+          ? 'unknown'
+          : 'running',
+    terminalLiveness:
+      observation.status === 'unverifiable'
+        ? 'unverifiable'
+        : observation.status === 'exited'
+          ? 'exited'
+          : 'live',
+    attachedAt: worker?.created_at ?? dispatch.dispatched_at ?? dispatch.created_at,
+    source: params.source,
+    cursor: params.cursor,
+    limit: params.limit
+  })
+  const afterRead = await inspectWorkerTerminal(runtime, db, params.dispatch)
+  if (!afterRead.exact) {
+    throw new OrchestrationError(
+      'worker_identity_changed',
+      `Worker Dispatch ${params.dispatch} changed process while output was read.`
+    )
+  }
+  // Two verdicts: status.liveness is the PTY's, the projection is the agent's.
+  return { ...output, projection: projectFleetWorker(runtime, db, params.dispatch) }
+}
 
 export const ORCHESTRATION_WORKER_CONTROL_METHODS = [
   defineMethod({
@@ -80,122 +201,7 @@ export const ORCHESTRATION_WORKER_CONTROL_METHODS = [
   defineMethod({
     name: 'orchestration.workerRead',
     params: WorkerReadParams,
-    handler: async (params, { runtime }) => {
-      const db = runtime.getOrchestrationDb()
-      const federated = db.getFederatedDispatch(params.dispatch)
-      if (federated) {
-        const server = resolvePinnedFederatedServer(runtime, federated)
-        return readFederatedWorkerOutput({
-          runtime,
-          db,
-          server,
-          federated,
-          dispatchId: params.dispatch,
-          source: params.source,
-          cursor: params.cursor,
-          limit: params.limit
-        })
-      }
-      const dispatch = db.getDispatchContextById(params.dispatch)
-      const worker = db.getWorkerDispatch(params.dispatch)
-      const terminalHandle = worker?.agent_terminal_handle ?? dispatch?.assignee_handle
-      if (!dispatch) {
-        throw new OrchestrationError(
-          'dispatch_not_found',
-          `Dispatch ${params.dispatch} was not found.`
-        )
-      }
-      if (!terminalHandle) {
-        throw new OrchestrationError(
-          'dispatch_not_found',
-          `Worker Dispatch ${params.dispatch} has no agent terminal.`
-        )
-      }
-      const resource = db.getWorkerTerminalResourceByOwner(params.dispatch)
-      if (resource && ['releasing', 'unknown', 'released'].includes(resource.release_state)) {
-        // Archive capture is not close evidence; recheck the execution host while releasing.
-        let liveness: 'live' | 'unverifiable' | 'exited' =
-          resource.release_state === 'released' ? 'exited' : 'unverifiable'
-        if (resource.release_state === 'releasing') {
-          const observed = await inspectWorkerTerminal(runtime, db, params.dispatch)
-          liveness =
-            observed.status === 'live'
-              ? 'live'
-              : observed.status === 'exited'
-                ? 'exited'
-                : 'unverifiable'
-        }
-        const archived = await readArchivedWorkerOutput({
-          db,
-          dispatchId: params.dispatch,
-          workerState: worker?.state ?? 'unsupervised',
-          resource,
-          source: params.source,
-          cursor: params.cursor,
-          limit: params.limit,
-          liveness
-        })
-        return { ...archived, projection: projectFleetWorker(runtime, db, params.dispatch) }
-      }
-      const observation = await inspectWorkerTerminal(runtime, db, params.dispatch)
-      if (!observation.exact) {
-        throw new OrchestrationError(
-          'worker_identity_changed',
-          `Worker Dispatch ${params.dispatch} no longer resolves to its exact process.`
-        )
-      }
-      // Read via the handle inspectWorkerTerminal proved live: the durable one, or a handle
-      // re-minted from the recorded incarnation after the durable handle went stale.
-      const liveHandle = observation.terminalHandle ?? terminalHandle
-      const structured = readStructuredWorkerOutput({
-        db,
-        dispatchId: params.dispatch,
-        workerState: worker?.state ?? 'unsupervised',
-        // Reused, never re-derived: being able to read the journal proves the host is installed,
-        // not that the provider child is alive.
-        liveness:
-          observation.status === 'live' || observation.status === 'exited'
-            ? observation.status
-            : 'unverifiable',
-        source: params.source,
-        cursor: params.cursor,
-        limit: params.limit
-      })
-      if (structured) {
-        return structured
-      }
-      const output = await readExactWorkerOutput({
-        runtime,
-        dispatchId: params.dispatch,
-        terminalHandle: liveHandle,
-        workerState: worker?.state ?? 'unsupervised',
-        terminalStatus:
-          observation.status === 'exited'
-            ? 'exited'
-            : observation.status === 'unverifiable'
-              ? 'unknown'
-              : 'running',
-        terminalLiveness:
-          observation.status === 'unverifiable'
-            ? 'unverifiable'
-            : observation.status === 'exited'
-              ? 'exited'
-              : 'live',
-        attachedAt: worker?.created_at ?? dispatch.dispatched_at ?? dispatch.created_at,
-        source: params.source,
-        cursor: params.cursor,
-        limit: params.limit
-      })
-      const afterRead = await inspectWorkerTerminal(runtime, db, params.dispatch)
-      if (!afterRead.exact) {
-        throw new OrchestrationError(
-          'worker_identity_changed',
-          `Worker Dispatch ${params.dispatch} changed process while output was read.`
-        )
-      }
-      // Two verdicts: status.liveness is the PTY's, the projection is the agent's.
-      return { ...output, projection: projectFleetWorker(runtime, db, params.dispatch) }
-    }
+    handler: readWorkerOutput
   }),
   defineMethod({
     name: 'orchestration.workerAbandon',

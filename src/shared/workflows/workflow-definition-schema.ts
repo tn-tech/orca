@@ -32,6 +32,13 @@ const RolesSchema = z
     Object.fromEntries(Object.entries(roles).map(([id, role]) => [id, { id, ...role }]))
   )
 
+/** Roles as they appear on an already-parsed, in-memory `Workflow` — each one already carries
+ *  the `id` `RolesSchema`'s transform injects, which the on-disk file format never has. */
+const RolesWithIdSchema = z.record(
+  z.string().min(1),
+  RoleFileSchema.extend({ id: z.string().min(1) })
+)
+
 const EdgeSchema = z
   .object({
     id: z.string().min(1),
@@ -42,19 +49,23 @@ const EdgeSchema = z
   })
   .strict()
 
-export const WorkflowFileSchema = z
-  .object({
-    version: z.literal(1),
-    name: z.string().min(1),
-    description: z.string().optional(),
-    concurrencyLimit: z.number().int().positive().optional(),
-    workspacePolicy: z.enum(['run-workspace', 'in-place']),
-    roles: RolesSchema,
-    nodes: z.array(NodeSchema).min(1),
-    edges: z.array(EdgeSchema),
-    layout: z.record(z.string().min(1), z.object({ x: z.number(), y: z.number() }).strict())
-  })
-  .strict()
+const workflowShapeBase = {
+  version: z.literal(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  concurrencyLimit: z.number().int().positive().optional(),
+  workspacePolicy: z.enum(['run-workspace', 'in-place']),
+  nodes: z.array(NodeSchema).min(1),
+  edges: z.array(EdgeSchema),
+  layout: z.record(z.string().min(1), z.object({ x: z.number(), y: z.number() }).strict())
+}
+
+export const WorkflowFileSchema = z.object({ ...workflowShapeBase, roles: RolesSchema }).strict()
+
+/** Same shape as `WorkflowFileSchema`, for RPC params that carry an already-parsed `Workflow`
+ *  (e.g. a prior `workflow.read` result round-tripped through `workflow.write`/`workflow.validate`)
+ *  rather than raw file text — `WorkflowFileSchema` would reject its roles' injected `id` field. */
+export const WorkflowSchema = z.object({ ...workflowShapeBase, roles: RolesWithIdSchema }).strict()
 
 export type Workflow = z.infer<typeof WorkflowFileSchema>
 export type Role = z.infer<typeof RolesSchema>[string]

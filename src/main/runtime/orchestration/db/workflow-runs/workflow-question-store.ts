@@ -123,6 +123,17 @@ export function listPendingWorkflowQuestions(
   return rows.map(toQuestionView)
 }
 
+/** Every question for a run, any state — the run view (workflow.run.show) unlike the pending-only list above. */
+export function listWorkflowQuestions(this: OrchestrationDb, runId: string): RunQuestionView[] {
+  const rows = selectWorkflowRows<WorkflowRunQuestionRow>(
+    this.db,
+    // Why rowid, not id: id is random-generated (generateId), not chronological.
+    'SELECT * FROM workflow_run_questions WHERE run_id = ? ORDER BY rowid',
+    runId
+  )
+  return rows.map(toQuestionView)
+}
+
 export function answerWorkflowQuestion(
   this: OrchestrationDb,
   id: string,
@@ -184,6 +195,7 @@ export function listExpiredWorkflowQuestions(
 export type WorkflowQuestionStoreMethods = {
   createWorkflowQuestion: typeof createWorkflowQuestion
   listPendingWorkflowQuestions: typeof listPendingWorkflowQuestions
+  listWorkflowQuestions: typeof listWorkflowQuestions
   answerWorkflowQuestion: typeof answerWorkflowQuestion
   escalateWorkflowQuestion: typeof escalateWorkflowQuestion
   expireWorkflowQuestion: typeof expireWorkflowQuestion
@@ -194,6 +206,7 @@ export function attachWorkflowQuestionStore(ctor: { prototype: object }): void {
   Object.assign(ctor.prototype, {
     createWorkflowQuestion,
     listPendingWorkflowQuestions,
+    listWorkflowQuestions,
     answerWorkflowQuestion,
     escalateWorkflowQuestion,
     expireWorkflowQuestion,

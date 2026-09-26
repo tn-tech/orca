@@ -79,6 +79,20 @@ const RUNTIME_PASSTHROUGH_CODES: ReadonlySet<string> = new Set([
   'remote_update_not_downloaded',
   // Why: U10 registers workflow.* handler skeletons; later units replace this with real logic.
   'workflow_not_implemented',
+  // U21 definitions/runs handlers (contracts/rpc-methods.md "Error codes"): the file store's own
+  // codes plus the ones this unit's handlers throw directly, all plain `Error(code)` throws.
+  'workflow_not_found',
+  'workflow_file_conflict',
+  'workflow_source_not_allowed',
+  'workflow_name_taken',
+  'workflow_host_unreachable',
+  // U09 file-store codes not otherwise remapped to the contract's `workflow_not_found`/
+  // `workflow_invalid` — kept here so an edge case that reaches a caller unwrapped still names
+  // itself instead of falling back to generic `runtime_error`.
+  'workflow_file_not_found',
+  'workflow_name_invalid',
+  'workflow_file_invalid',
+  'workflow_file_binary',
   ...AGENT_SESSION_RPC_ERROR_CODES
 ])
 
@@ -143,6 +157,10 @@ const STRUCTURED_RUNTIME_PASSTHROUGH_CODES: ReadonlySet<string> = new Set([
   'forbidden',
   NESTED_WORKER_DEPTH_EXCEEDED_CODE,
   GIT_DIFF_TOO_LARGE_CODE,
+  // Why: U21's workflow.write/run.start carry the file/graph problems list as `.data`; a plain
+  // message-only code would lose it, so these ride the structured (`.code`/`.data`) branch instead.
+  'workflow_invalid',
+  'workflow_file_version_unsupported',
   ARTIFACT_SHARING_DISABLED_CODE,
   AGENT_SKILL_SHARING_DISABLED_CODE,
   AGENT_SKILL_NOT_SHAREABLE_CODE,

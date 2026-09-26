@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { WorkflowFileSchema } from '../workflows/workflow-definition-schema'
+import { WorkflowSchema } from '../workflows/workflow-definition-schema'
 import { OptionalString, requiredString } from './rpc-param-primitives'
 
 // Why: only the routing identifiers (repo, name, source-of-role) are required; every other field
@@ -25,7 +25,9 @@ export const WorkflowWrite = z
     repo: requiredString('Missing repo selector'),
     name: requiredString('Missing workflow name'),
     source: WorkflowSource.optional(),
-    definition: WorkflowFileSchema.optional(),
+    // WorkflowSchema, not WorkflowFileSchema: this carries an already-parsed Workflow (its roles
+    // have `id`), not raw file-text shape.
+    definition: WorkflowSchema.optional(),
     expectedRevision: OptionalString
   })
   .strict()
@@ -33,7 +35,7 @@ export const WorkflowWrite = z
 export const WorkflowValidate = z
   .object({
     repo: requiredString('Missing repo selector'),
-    definition: WorkflowFileSchema.optional()
+    definition: WorkflowSchema.optional()
   })
   .strict()
 

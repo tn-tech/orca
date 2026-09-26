@@ -87,6 +87,28 @@ describe('workflow-message-store', () => {
     expect(d.listPendingWorkflowMessages().length).toBe(2)
   })
 
+  it('lists every message for a run regardless of state', () => {
+    const d = createDb()
+    const run = createRun(d)
+    const queued = d.createWorkflowMessage({
+      runId: run.id,
+      attemptId: 'wfa_1',
+      sender: 'user_1',
+      text: 'a',
+      mode: 'queued'
+    })
+    const delivered = d.createWorkflowMessage({
+      runId: run.id,
+      attemptId: 'wfa_2',
+      sender: 'user_1',
+      text: 'b',
+      mode: 'queued'
+    })
+    d.deliverWorkflowMessage(delivered.id)
+
+    expect(d.listWorkflowMessages(run.id).map((m) => m.id)).toEqual([queued.id, delivered.id])
+  })
+
   it('delivers a queued message and excludes it from the pending list', () => {
     const d = createDb()
     const run = createRun(d)

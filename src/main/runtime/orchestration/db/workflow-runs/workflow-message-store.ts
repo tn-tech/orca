@@ -89,6 +89,17 @@ export function listPendingWorkflowMessages(
   return rows.map(toMessageView)
 }
 
+/** Every message for a run, any state — the run view (workflow.run.show) unlike the pending-only list above. */
+export function listWorkflowMessages(this: OrchestrationDb, runId: string): RunMessageView[] {
+  const rows = selectWorkflowRows<WorkflowRunMessageRow>(
+    this.db,
+    // Why rowid, not id: id is random-generated (generateId), not chronological.
+    'SELECT * FROM workflow_run_messages WHERE run_id = ? ORDER BY rowid',
+    runId
+  )
+  return rows.map(toMessageView)
+}
+
 export function deliverWorkflowMessage(
   this: OrchestrationDb,
   id: string
@@ -122,6 +133,7 @@ export function failWorkflowMessage(this: OrchestrationDb, id: string): RunMessa
 export type WorkflowMessageStoreMethods = {
   createWorkflowMessage: typeof createWorkflowMessage
   listPendingWorkflowMessages: typeof listPendingWorkflowMessages
+  listWorkflowMessages: typeof listWorkflowMessages
   deliverWorkflowMessage: typeof deliverWorkflowMessage
   failWorkflowMessage: typeof failWorkflowMessage
 }
@@ -130,6 +142,7 @@ export function attachWorkflowMessageStore(ctor: { prototype: object }): void {
   Object.assign(ctor.prototype, {
     createWorkflowMessage,
     listPendingWorkflowMessages,
+    listWorkflowMessages,
     deliverWorkflowMessage,
     failWorkflowMessage
   })

@@ -93,7 +93,8 @@ async function resolveWorkflowsDirPath(repo: Repo, source: WorkflowFileSource): 
   return joinWorktreeRelativePath(repo.path, directory)
 }
 
-async function resolveWorkflowFilePath(
+/** The on-disk path for `<source>/<name>.workflow.yaml`; exported for `workflow.list`'s display path. */
+export async function resolveWorkflowFilePath(
   repo: Repo,
   source: WorkflowFileSource,
   name: string

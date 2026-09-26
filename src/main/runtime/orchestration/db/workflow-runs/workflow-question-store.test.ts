@@ -87,6 +87,26 @@ describe('workflow-question-store', () => {
     expect(d.listPendingWorkflowQuestions().length).toBe(2)
   })
 
+  it('lists every question for a run regardless of state', () => {
+    const d = createDb()
+    const run = createRun(d)
+    const pending = d.createWorkflowQuestion({
+      runId: run.id,
+      attemptId: 'wfa_1',
+      kind: 'approval',
+      prompt: 'Proceed?'
+    })
+    const answered = d.createWorkflowQuestion({
+      runId: run.id,
+      attemptId: 'wfa_2',
+      kind: 'approval',
+      prompt: 'Also proceed?'
+    })
+    d.answerWorkflowQuestion(answered.id, 'yes', 'user_1')
+
+    expect(d.listWorkflowQuestions(run.id).map((q) => q.id)).toEqual([pending.id, answered.id])
+  })
+
   it('answers a pending question and excludes it from the pending list', () => {
     const d = createDb()
     const run = createRun(d)
