@@ -2,6 +2,7 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { emitWorkflowsChangedWindowEvent } from '@/lib/workflows-changed-window-event'
+import type { LoopNode, Node } from '../../../../../shared/workflows/workflow-definition-types'
 import type { NodeAttemptView } from '../../../../../shared/workflows/workflow-run-types'
 
 const { workflowRunShowMock } = vi.hoisted(() => ({ workflowRunShowMock: vi.fn() }))
@@ -13,6 +14,7 @@ vi.mock('@/runtime/runtime-workflow-client', () => ({
 import {
   attemptsByIteration,
   latestNodeAttempt,
+  loopActiveIteration,
   nodeAttemptIterations,
   nodeAttemptStatuses,
   useWorkflowRunSnapshot
@@ -34,7 +36,22 @@ function attempt(patch: Partial<NodeAttemptView> = {}): NodeAttemptView {
   }
 }
 
-function snapshotFixture(attempts: NodeAttemptView[] = [], id = 'run-1') {
+function loopNode(patch: Partial<LoopNode> = {}): LoopNode {
+  return {
+    id: 'loop',
+    type: 'loop',
+    title: 'Loop',
+    body: { nodeIds: ['implement', 'review'] },
+    entryNodeId: 'implement',
+    exitNodeId: 'review',
+    maxIterations: 3,
+    exitCondition: { path: 'approved', op: 'truthy' },
+    onCapReached: 'fail',
+    ...patch
+  }
+}
+
+function snapshotFixture(attempts: NodeAttemptView[] = [], id = 'run-1', nodes: Node[] = []) {
   return {
     id,
     workflowName: 'wf',
@@ -44,7 +61,7 @@ function snapshotFixture(attempts: NodeAttemptView[] = [], id = 'run-1') {
       name: 'wf',
       workspacePolicy: 'run-workspace' as const,
       roles: {},
-      nodes: [],
+      nodes,
       edges: [],
       layout: {}
     },
@@ -247,14 +264,92 @@ describe('attemptsByIteration', () => {
   })
 })
 
-describe('nodeAttemptIterations', () => {
-  it('maps each Loop node to its own latest attempt iteration', () => {
-    const snapshot = snapshotFixture([
-      attempt({ nodeId: 'loop', nodeType: 'loop', iteration: 2, attemptIndex: 0 }),
-      attempt({ nodeId: 'review', nodeType: 'agent', iteration: 2, attemptIndex: 0 })
-    ])
+describe('loopActiveIteration', () => {
+  const loop = loopNode()
 
-    expect(nodeAttemptIterations(snapshot)).toEqual({ loop: 2 })
+  it("reads the highest iteration among the body nodes' attempts while running (index 2 -> 3, review round 2)", () => {
+    // Shaped like the engine's actual attempts: one Loop attempt stuck at iteration 0, plus
+    // real per-iteration body-node attempts (0, 1, 2 -> three iterations so far).
+    const attempts = [
+      attempt({
+        nodeId: 'loop',
+        nodeType: 'loop',
+        iteration: 0,
+        attemptIndex: 0,
+        state: 'running'
+      }),
+      attempt({ nodeId: 'implement', iteration: 0, attemptIndex: 0, state: 'completed' }),
+      attempt({ nodeId: 'review', iteration: 0, attemptIndex: 0, state: 'failed' }),
+      attempt({ nodeId: 'implement', iteration: 1, attemptIndex: 0, state: 'completed' }),
+      attempt({ nodeId: 'review', iteration: 1, attemptIndex: 0, state: 'failed' }),
+      attempt({ nodeId: 'implement', iteration: 2, attemptIndex: 0, state: 'completed' }),
+      attempt({ nodeId: 'review', iteration: 2, attemptIndex: 0, state: 'running' })
+    ]
+
+    expect(loopActiveIteration(loop, attempts)).toBe(3)
+  })
+
+  it("prefers the settled Loop attempt's resultJson.iterations once terminal", () => {
+    const attempts = [
+      attempt({
+        nodeId: 'loop',
+        nodeType: 'loop',
+        iteration: 0,
+        attemptIndex: 0,
+        state: 'completed',
+        resultJson: { iterations: 3, exitResult: { approved: true } }
+      }),
+      attempt({ nodeId: 'implement', iteration: 0, attemptIndex: 0, state: 'completed' }),
+      attempt({ nodeId: 'review', iteration: 0, attemptIndex: 0, state: 'completed' })
+    ]
+
+    expect(loopActiveIteration(loop, attempts)).toBe(3)
+  })
+
+  it('falls back to the body-node count when the settled result has no iterations field', () => {
+    const attempts = [
+      attempt({ nodeId: 'loop', nodeType: 'loop', iteration: 0, attemptIndex: 0, state: 'failed' }),
+      attempt({ nodeId: 'implement', iteration: 0, attemptIndex: 0, state: 'completed' }),
+      attempt({ nodeId: 'review', iteration: 0, attemptIndex: 0, state: 'failed' })
+    ]
+
+    expect(loopActiveIteration(loop, attempts)).toBe(1)
+  })
+
+  it('returns undefined before the Loop has any activity', () => {
+    expect(loopActiveIteration(loop, [])).toBeUndefined()
+  })
+})
+
+describe('nodeAttemptIterations', () => {
+  it("maps each Loop node to its active iteration from the definition's body nodes (review round 2)", () => {
+    const snapshot = snapshotFixture(
+      [
+        attempt({
+          nodeId: 'loop',
+          nodeType: 'loop',
+          iteration: 0,
+          attemptIndex: 0,
+          state: 'running'
+        }),
+        attempt({ nodeId: 'implement', iteration: 0, attemptIndex: 0, state: 'completed' }),
+        attempt({ nodeId: 'review', iteration: 0, attemptIndex: 0, state: 'failed' }),
+        attempt({ nodeId: 'implement', iteration: 1, attemptIndex: 0, state: 'completed' }),
+        attempt({ nodeId: 'review', iteration: 1, attemptIndex: 0, state: 'failed' }),
+        attempt({ nodeId: 'implement', iteration: 2, attemptIndex: 0, state: 'completed' }),
+        attempt({ nodeId: 'review', iteration: 2, attemptIndex: 0, state: 'running' })
+      ],
+      'run-1',
+      [loopNode()]
+    )
+
+    expect(nodeAttemptIterations(snapshot)).toEqual({ loop: 3 })
+  })
+
+  it('omits a Loop node with no activity yet', () => {
+    const snapshot = snapshotFixture([], 'run-1', [loopNode()])
+
+    expect(nodeAttemptIterations(snapshot)).toEqual({})
   })
 
   it('returns an empty map for a null snapshot', () => {

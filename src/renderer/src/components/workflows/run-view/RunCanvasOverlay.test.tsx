@@ -4,6 +4,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   AgentNode,
+  LoopNode,
   StartNode,
   Workflow
 } from '../../../../../shared/workflows/workflow-definition-types'
@@ -54,6 +55,27 @@ function workflow(): Workflow {
       { id: 'e2', from: 'implement', to: 'review' }
     ],
     layout: {}
+  }
+}
+
+function loopNode(): LoopNode {
+  return {
+    id: 'loop',
+    type: 'loop',
+    title: 'Loop',
+    body: { nodeIds: ['implement', 'review'] },
+    entryNodeId: 'implement',
+    exitNodeId: 'review',
+    maxIterations: 3,
+    exitCondition: { path: 'approved', op: 'truthy' },
+    onCapReached: 'fail'
+  }
+}
+
+function workflowWithLoop(): Workflow {
+  return {
+    ...workflow(),
+    nodes: [startNode(), loopNode(), agentNode('implement'), agentNode('review')]
   }
 }
 
@@ -115,21 +137,47 @@ describe('RunCanvasOverlay', () => {
     expect(workflowCanvasMock).toHaveBeenCalledWith(expect.objectContaining({ nodeStatuses: {} }))
   })
 
-  it("passes each Loop node's active iteration", () => {
+  it("passes each Loop node's active iteration, read from its body nodes (review round 2)", () => {
+    // Shaped like the engine's actual attempts: the Loop's own attempt is stuck at iteration 0,
+    // while its body nodes (implement/review) carry real per-iteration attempts (0, 1, 2).
     const withLoop = snapshot()
-    withLoop.attempts.push({
-      id: 'a3',
-      runId: 'run-1',
-      nodeId: 'loop',
-      nodeType: 'loop',
-      iteration: 2,
-      attemptIndex: 0,
-      state: 'running',
-      artifactsJson: []
-    })
+    withLoop.workflowSnapshot = workflowWithLoop()
+    withLoop.attempts.push(
+      {
+        id: 'a3',
+        runId: 'run-1',
+        nodeId: 'loop',
+        nodeType: 'loop',
+        iteration: 0,
+        attemptIndex: 0,
+        state: 'running',
+        artifactsJson: []
+      },
+      {
+        id: 'a4',
+        runId: 'run-1',
+        nodeId: 'implement',
+        nodeType: 'agent',
+        iteration: 1,
+        attemptIndex: 0,
+        state: 'completed',
+        artifactsJson: []
+      },
+      {
+        id: 'a5',
+        runId: 'run-1',
+        nodeId: 'review',
+        nodeType: 'agent',
+        iteration: 1,
+        attemptIndex: 0,
+        state: 'running',
+        artifactsJson: []
+      }
+    )
 
-    render(<RunCanvasOverlay definition={workflow()} snapshot={withLoop} />)
+    render(<RunCanvasOverlay definition={workflowWithLoop()} snapshot={withLoop} />)
 
+    // Highest body iteration seen is index 1 (a second pass) -> displayed as "2".
     expect(workflowCanvasMock).toHaveBeenCalledWith(
       expect.objectContaining({ nodeIterations: { loop: 2 } })
     )

@@ -8,6 +8,7 @@ import {
   WORKFLOWS_CHANGED_EVENT,
   workflowsChangedWindowDetail
 } from '@/lib/workflows-changed-window-event'
+import type { JsonValue, LoopNode } from '../../../../../shared/workflows/workflow-definition-types'
 import type { NodeAttemptView } from '../../../../../shared/workflows/workflow-run-types'
 import type { WorkflowAttemptState } from '../../../../../shared/workflows/workflow-node-states'
 
@@ -154,24 +155,67 @@ export function attemptsByIteration(
   return [...byIteration.values()].sort((a, b) => a.iteration - b.iteration)
 }
 
-/** Every Loop node's currently active iteration — its own latest attempt's `iteration` — for the
- *  canvas badge (T079, `WorkflowCanvas`'s `nodeIterations` prop). */
+const TERMINAL_ATTEMPT_STATES: ReadonlySet<WorkflowAttemptState> = new Set([
+  'completed',
+  'failed',
+  'skipped',
+  'cancelled'
+])
+
+/** The engine's settled Loop result shape is `{ iterations, exitResult }` (U29); reads `iterations`
+ *  back out without a cast, tolerating anything else `resultJson` could be. */
+function settledIterationCount(resultJson: JsonValue | undefined): number | undefined {
+  if (typeof resultJson !== 'object' || resultJson === null || Array.isArray(resultJson)) {
+    return undefined
+  }
+  const iterations = resultJson.iterations
+  return typeof iterations === 'number' ? iterations : undefined
+}
+
+/**
+ * A Loop's currently active iteration, ready to display (review round 2): the engine keeps a
+ * single Loop attempt at iteration 0, whose `resultJson` only becomes `{ iterations, exitResult }`
+ * once it settles — so the Loop's own attempt can't be read directly while running. While
+ * running, this is the highest `iteration` among the Loop's own body-node attempts (from
+ * `loop.body.nodeIds`), converted from a 0-based index to a 1-based "how many iterations so far"
+ * count (index 2 → 3). Once the Loop's attempt is settled, `resultJson.iterations` — the
+ * engine's own authoritative final count — takes over. `undefined` before the Loop has any
+ * activity at all (no badge to show yet).
+ */
+export function loopActiveIteration(
+  loop: Pick<LoopNode, 'id' | 'body'>,
+  attempts: readonly NodeAttemptView[]
+): number | undefined {
+  const loopAttempt = latestNodeAttempt(attempts, loop.id)
+  if (loopAttempt && TERMINAL_ATTEMPT_STATES.has(loopAttempt.state)) {
+    const settledCount = settledIterationCount(loopAttempt.resultJson)
+    if (settledCount !== undefined) {
+      return settledCount
+    }
+  }
+  const bodyIds = new Set(loop.body.nodeIds)
+  const bodyIterations = attempts
+    .filter((attempt) => bodyIds.has(attempt.nodeId))
+    .map((attempt) => attempt.iteration)
+  return bodyIterations.length > 0 ? Math.max(...bodyIterations) + 1 : undefined
+}
+
+/** Every Loop node's currently active iteration (`loopActiveIteration`) — for the canvas badge
+ *  (T079, `WorkflowCanvas`'s `nodeIterations` prop). */
 export function nodeAttemptIterations(
   snapshot: WorkflowRunSnapshotView | null
 ): Record<string, number> {
   if (!snapshot) {
     return {}
   }
-  const loopNodeIds = new Set(
-    snapshot.attempts
-      .filter((attempt) => attempt.nodeType === 'loop')
-      .map((attempt) => attempt.nodeId)
-  )
   const iterations: Record<string, number> = {}
-  for (const nodeId of loopNodeIds) {
-    const attempt = latestNodeAttempt(snapshot.attempts, nodeId)
-    if (attempt) {
-      iterations[nodeId] = attempt.iteration
+  for (const node of snapshot.workflowSnapshot.nodes) {
+    if (node.type !== 'loop') {
+      continue
+    }
+    const active = loopActiveIteration(node, snapshot.attempts)
+    if (active !== undefined) {
+      iterations[node.id] = active
     }
   }
   return iterations

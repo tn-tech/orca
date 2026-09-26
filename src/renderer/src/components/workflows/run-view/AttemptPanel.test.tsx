@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   AgentNode,
+  LoopNode,
   StartNode,
   Workflow
 } from '../../../../../shared/workflows/workflow-definition-types'
@@ -75,6 +76,40 @@ function workflow(): Workflow {
   }
 }
 
+function reviewNode(): AgentNode {
+  return {
+    id: 'review',
+    type: 'agent',
+    title: 'Review',
+    prompt: 'Review it.',
+    workspace: 'run',
+    resultContract: { type: 'object' },
+    artifacts: [],
+    question: { timeoutMs: 1, escalationGraceMs: 1 }
+  }
+}
+
+function loopNode(): LoopNode {
+  return {
+    id: 'loop',
+    type: 'loop',
+    title: 'Loop',
+    body: { nodeIds: ['implement', 'review'] },
+    entryNodeId: 'implement',
+    exitNodeId: 'review',
+    maxIterations: 3,
+    exitCondition: { path: 'approved', op: 'truthy' },
+    onCapReached: 'fail'
+  }
+}
+
+function workflowWithLoop(): Workflow {
+  return {
+    ...workflow(),
+    nodes: [startNode(), loopNode(), agentNode(), reviewNode()]
+  }
+}
+
 function attempt(patch: Partial<NodeAttemptView> = {}): NodeAttemptView {
   return {
     id: 'attempt-1',
@@ -89,12 +124,15 @@ function attempt(patch: Partial<NodeAttemptView> = {}): NodeAttemptView {
   }
 }
 
-function snapshot(attempts: NodeAttemptView[]): WorkflowRunSnapshotView {
+function snapshot(
+  attempts: NodeAttemptView[],
+  workflowSnapshot: Workflow = workflow()
+): WorkflowRunSnapshotView {
   return {
     id: 'run-1',
     workflowName: 'wf',
     workflowSource: 'project',
-    workflowSnapshot: workflow(),
+    workflowSnapshot,
     workflowVersion: 'rev-1',
     objective: 'ship it',
     repoId: 'repo-1',
@@ -290,5 +328,80 @@ describe('AttemptPanel', () => {
     expect(screen.getByText(/"approved": false/)).toBeInTheDocument()
     // Appears twice: the iteration-1 row, and the "Result" section below (same, latest attempt).
     expect(screen.getAllByText(/"approved": true/)).toHaveLength(2)
+  })
+
+  describe('a selected Loop node (review round 2)', () => {
+    // Shaped like the engine's actual attempts: the Loop's own attempt is stuck at iteration 0,
+    // while its body nodes (implement/review) carry real per-iteration attempts (0, 1, 2).
+    function bodyAttempts(): NodeAttemptView[] {
+      return [
+        attempt({
+          id: 'loop-attempt',
+          nodeId: 'loop',
+          nodeType: 'loop',
+          iteration: 0,
+          attemptIndex: 0,
+          state: 'running'
+        }),
+        attempt({ id: 'implement-0', nodeId: 'implement', iteration: 0, state: 'completed' }),
+        attempt({
+          id: 'review-0',
+          nodeId: 'review',
+          iteration: 0,
+          state: 'failed',
+          failureReason: 'not approved',
+          resultJson: { approved: false }
+        }),
+        attempt({ id: 'implement-1', nodeId: 'implement', iteration: 1, state: 'completed' }),
+        attempt({
+          id: 'review-1',
+          nodeId: 'review',
+          iteration: 1,
+          state: 'failed',
+          resultJson: { approved: false }
+        }),
+        attempt({ id: 'implement-2', nodeId: 'implement', iteration: 2, state: 'completed' }),
+        attempt({
+          id: 'review-2',
+          nodeId: 'review',
+          iteration: 2,
+          state: 'completed',
+          resultJson: { approved: true }
+        })
+      ]
+    }
+
+    it("shows the Loop's active iteration from its body nodes, not its own stuck-at-0 attempt", () => {
+      render(
+        <AttemptPanel
+          definition={workflowWithLoop()}
+          snapshot={snapshot(bodyAttempts(), workflowWithLoop())}
+          nodeId="loop"
+          runtimeEnvironmentId={null}
+        />
+      )
+
+      // Highest body iteration index is 2 (a third pass) -> displayed as "3".
+      expect(screen.getByText('Iteration 3')).toBeInTheDocument()
+    })
+
+    it("lists per-iteration results from the exit node's attempts", () => {
+      render(
+        <AttemptPanel
+          definition={workflowWithLoop()}
+          snapshot={snapshot(bodyAttempts(), workflowWithLoop())}
+          nodeId="loop"
+          runtimeEnvironmentId={null}
+        />
+      )
+
+      expect(screen.getByText('Iterations')).toBeInTheDocument()
+      // One row per iteration (0, 1, 2); the header badge shows "Iteration 3" separately.
+      expect(screen.getByText('Iteration 0')).toBeInTheDocument()
+      expect(screen.getByText('Iteration 1')).toBeInTheDocument()
+      expect(screen.getByText('Iteration 2')).toBeInTheDocument()
+      expect(screen.getByText('Iteration 3')).toBeInTheDocument()
+      expect(screen.getByText('not approved')).toBeInTheDocument()
+    })
   })
 })

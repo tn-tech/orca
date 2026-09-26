@@ -17,7 +17,11 @@ import type {
 } from '../../../../../shared/workflows/workflow-run-types'
 import { workflowNodeStatusDotClassName } from '../editor/nodes/workflow-node-run-status-style'
 import { InspectorField } from '../editor/InspectorField'
-import { attemptsByIteration, latestNodeAttempt } from './use-workflow-run-snapshot'
+import {
+  attemptsByIteration,
+  latestNodeAttempt,
+  loopActiveIteration
+} from './use-workflow-run-snapshot'
 
 export type AttemptPanelProps = {
   definition: Workflow
@@ -154,13 +158,23 @@ export default function AttemptPanel({
 }: AttemptPanelProps): React.JSX.Element | null {
   const node = definition.nodes.find((candidate) => candidate.id === nodeId)
   const attempt = latestNodeAttempt(snapshot.attempts, nodeId)
-  const iterations = attemptsByIteration(snapshot.attempts, nodeId)
   const worktree = useWorktreeById(attempt?.workspaceWorktreeId ?? null)
   const openAllDiffs = useAppStore((state) => state.openAllDiffs)
 
   if (!node) {
     return null
   }
+
+  // A Loop's own attempt sits at iteration 0 regardless of progress (review round 2), so its
+  // iteration badge and per-iteration rows come from its body instead — the exit node's attempts
+  // are what the engine's `exitCondition` actually evaluates each pass, so they stand in for
+  // "this iteration's result".
+  const iterationDisplay =
+    node.type === 'loop' ? loopActiveIteration(node, snapshot.attempts) : attempt?.iteration
+  const iterations = attemptsByIteration(
+    snapshot.attempts,
+    node.type === 'loop' ? node.exitNodeId : nodeId
+  )
 
   if (!attempt) {
     return (
@@ -198,12 +212,12 @@ export default function AttemptPanel({
     <div className="flex h-full flex-col gap-4 overflow-y-auto scrollbar-sleek p-4">
       <div className="flex items-center gap-2">
         <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{node.title}</h2>
-        {attempt.iteration > 0 ? (
+        {iterationDisplay !== undefined && iterationDisplay > 0 ? (
           <span className="shrink-0 text-xs text-muted-foreground">
             {translate(
               'auto.components.workflows.run-view.AttemptPanel.iterationLabel',
               'Iteration {{n}}',
-              { n: attempt.iteration }
+              { n: iterationDisplay }
             )}
           </span>
         ) : null}
