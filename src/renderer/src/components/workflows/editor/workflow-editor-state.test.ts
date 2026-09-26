@@ -264,6 +264,24 @@ describe('workflow editor state: delete and undo', () => {
     expect(state.definition.nodes).toHaveLength(0)
   })
 
+  it('mark-saved clears dirty without touching history or the definition', () => {
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+    state = dispatch(state, { type: 'add-node', node: startNode(), position: { x: 0, y: 0 } })
+    const revisionBeforeSave = state.revision
+    const historyBeforeSave = state.history
+
+    state = dispatch(state, { type: 'mark-saved' })
+
+    expect(state.dirty).toBe(false)
+    expect(state.revision).toBe(revisionBeforeSave)
+    expect(state.history).toBe(historyBeforeSave)
+    expect(state.definition.nodes).toHaveLength(1)
+
+    // A no-op on an already-clean state (referential no-change, not just a value match).
+    const clean = dispatch(state, { type: 'mark-saved' })
+    expect(clean).toBe(state)
+  })
+
   it('undoing a move restores both the position and the pin state', () => {
     let state = createInitialWorkflowEditorState(emptyWorkflow())
     state = dispatch(state, { type: 'add-node', node: startNode(), position: { x: 0, y: 0 } })

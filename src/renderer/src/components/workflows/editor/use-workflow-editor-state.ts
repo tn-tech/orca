@@ -46,6 +46,9 @@ export type WorkflowEditorAction =
   /** A fresh definition arrived (reload, or a run snapshot); see FR-010 handling below. */
   | { type: 'load-definition'; definition: Workflow }
   | { type: 'undo' }
+  /** A write to disk just succeeded for the current definition; clears dirty without touching
+   *  history/revision so undo and the "unsaved changes" state stay independently correct. */
+  | { type: 'mark-saved' }
 
 export function createInitialWorkflowEditorState(definition: Workflow): WorkflowEditorState {
   return { definition, manualPositionIds: new Set(), history: [], dirty: false, revision: 0 }
@@ -182,6 +185,9 @@ export function workflowEditorReducer(
         lastProblem: undefined
       }
     }
+
+    case 'mark-saved':
+      return state.dirty ? { ...state, dirty: false } : state
   }
 }
 
