@@ -100,6 +100,8 @@ function decodeWorkflowRunListCursor(value: string): WorkflowRunListCursor {
 export function createWorkflowRun(
   this: OrchestrationDb,
   params: {
+    /** Pre-generated id: the engine names a run's workspace from it before this row exists. */
+    id?: string
     workflowName: string
     workflowSource: WorkflowRunSource
     workflowSnapshot: Workflow
@@ -114,7 +116,7 @@ export function createWorkflowRun(
     rerunFromNodeId?: string
   }
 ): RunSnapshot {
-  const id = generateId('wfr')
+  const id = params.id ?? generateId('wfr')
   this.db
     .prepare(
       `INSERT INTO workflow_runs (

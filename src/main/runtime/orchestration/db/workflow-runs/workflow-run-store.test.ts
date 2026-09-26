@@ -72,6 +72,22 @@ describe('workflow-run-store', () => {
     expect(d.getWorkflowRun('wfr_missing')).toBeUndefined()
   })
 
+  it('honors a pre-generated id so the caller can name a workspace before the row exists', () => {
+    const d = createDb()
+    const run = d.createWorkflowRun({
+      id: 'wfr_pregenerated',
+      workflowName: 'demo',
+      workflowSource: 'project',
+      workflowSnapshot: fixtureSnapshot(),
+      workflowVersion: 'v1',
+      objective: 'build',
+      repoId: 'repo_1',
+      worktreeId: 'wt_1'
+    })
+    expect(run.id).toBe('wfr_pregenerated')
+    expect(d.getWorkflowRun('wfr_pregenerated')).toEqual(run)
+  })
+
   describe('transitionWorkflowRun', () => {
     it('enforces canTransition and rejects an illegal jump', () => {
       const d = createDb()

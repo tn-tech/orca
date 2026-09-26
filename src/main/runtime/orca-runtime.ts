@@ -3,8 +3,13 @@ import { OrcaRuntimeWithResolveWaiter } from './orca-runtime-resolve-waiter'
 import type { RuntimeCommandSurfaceHost } from './orca-runtime-core'
 import { registerWorktreeChangeInvalidator } from '../ipc/worktree-change-invalidators'
 import { registerDetectedWorktreeScanInvalidation } from '../ipc/worktrees/listing/register-detected-worktree-scan-invalidation'
+import { ORCHESTRATION_METHODS } from './rpc/methods/orchestration'
+import { RpcDispatcher } from './rpc/dispatcher'
+import { WorkflowEngine } from './workflows/workflow-engine'
 
 class OrcaRuntimeService extends OrcaRuntimeWithResolveWaiter {
+  private workflowEngine: WorkflowEngine | null = null
+
   constructor(...args: ConstructorParameters<typeof OrcaRuntimeWithResolveWaiter>) {
     super(...args)
     // Why: the runtime listing re-runs a scan the worktree-change generation overtook and re-lists
@@ -12,6 +17,35 @@ class OrcaRuntimeService extends OrcaRuntimeWithResolveWaiter {
     // module registers the generation bump at load; a headless host never loads it.
     registerDetectedWorktreeScanInvalidation()
     registerWorktreeChangeInvalidator((repoId) => this.invalidateWorktreeCatalog(repoId))
+  }
+
+  /**
+   * Lazily built like `getOrchestrationDb()` (same file, mixed in below): built on first use
+   * rather than in the constructor, so an idle runtime never creates an orchestration DB. Building
+   * it rehydrates every run a prior process left non-terminal (FR-039), so a host that starts
+   * workflows at all must call this once during its own startup, not only when a client asks.
+   */
+  getWorkflowEngine(): WorkflowEngine {
+    if (!this.workflowEngine) {
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the command
+      // surfaces (waitForMessage, browser commands, …) are installed onto this instance by the
+      // OrcaRuntimeWith* mixin chain the constructor runs through; this is the same cast
+      // orca-runtime-state-fields.ts uses internally to type them.
+      const runtime = this as unknown as OrcaRuntimeServiceExport
+      this.workflowEngine = new WorkflowEngine({
+        db: this.getOrchestrationDb(),
+        runtime,
+        dispatcher: new RpcDispatcher({ runtime, methods: ORCHESTRATION_METHODS }),
+        getRepo: (repoId) => this.store?.getRepo(repoId)
+      })
+      this.workflowEngine.rehydrateActiveRuns()
+    }
+    return this.workflowEngine
+  }
+
+  /** Stops every active run controller; called on shutdown so a worker's mailbox is left quiet. */
+  async stopWorkflowEngine(): Promise<void> {
+    await this.workflowEngine?.stop()
   }
 }
 type OrcaRuntimeServiceExport = RuntimeCommandSurfaceHost<OrcaRuntimeService>
