@@ -1,0 +1,167 @@
+// Starts one frontier-eligible node: Start/End settle at once; a role-dispatching node gets its
+// attempt, brief, just-in-time Task and worker (research R3, R5; FR-024, FR-026).
+import type { BriefReferenceInputs } from '../../../shared/workflows/workflow-brief-references'
+import type { Node, Workflow } from '../../../shared/workflows/workflow-definition-types'
+import type { NodeAttemptView } from '../../../shared/workflows/workflow-run-types'
+import type { OrchestrationDb } from '../orchestration/db'
+import { writeBrief, type BriefNode, type OrcaIgnoreTarget } from './workflow-brief-builder'
+import type { WorkflowFilesystem } from './workflow-file-store-filesystem'
+import { createNodeTask } from './workflow-frontier'
+import { dispatchWorkflowNode, resolveNodeLaunch } from './workflow-node-dispatch'
+import type { WorkflowOrchestrationClient } from './workflow-orchestration-client'
+import type { WorkflowRunRecorder } from './workflow-run-recorder'
+
+/** Where a run's node attempts write and read their files, on the run's execution host. */
+export type WorkflowRunWorkspaceAccess = {
+  /** Worker placement for the engine principal; absent means the run's own worktree id. */
+  worktreeId?: string
+  workspaceRoot: string
+  fs: WorkflowFilesystem
+  orcaIgnoreTarget: OrcaIgnoreTarget
+}
+
+export type WorkflowNodeLaunchContext = {
+  db: OrchestrationDb
+  recorder: WorkflowRunRecorder
+  client: WorkflowOrchestrationClient
+  workflowName: string
+  objective: string
+  definition: Workflow
+  workspace: WorkflowRunWorkspaceAccess
+  placementWorktreeId: string | undefined
+}
+
+function isBriefNode(node: Node): node is BriefNode {
+  return node.type === 'agent' || node.type === 'router' || node.type === 'reflection'
+}
+
+export function requireBriefNode(definition: Workflow, nodeId: string): BriefNode {
+  const node = definition.nodes.find((candidate) => candidate.id === nodeId)
+  if (!node || !isBriefNode(node)) {
+    throw new Error(`Workflow node ${nodeId} does not dispatch a worker.`)
+  }
+  return node
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function isNewer(candidate: NodeAttemptView, current: NodeAttemptView | undefined): boolean {
+  return (
+    !current ||
+    candidate.iteration > current.iteration ||
+    (candidate.iteration === current.iteration && candidate.attemptIndex > current.attemptIndex)
+  )
+}
+
+/** Latest completed result of every node, so `${upstream.<id>...}` resolves for any ancestor. */
+export function upstreamInputs(
+  attempts: readonly NodeAttemptView[]
+): BriefReferenceInputs['upstream'] {
+  const latest = new Map<string, NodeAttemptView>()
+  for (const attempt of attempts) {
+    if (
+      attempt.state === 'completed' &&
+      attempt.resultJson !== undefined &&
+      isNewer(attempt, latest.get(attempt.nodeId))
+    ) {
+      latest.set(attempt.nodeId, attempt)
+    }
+  }
+  return Object.fromEntries(
+    [...latest].map(([nodeId, attempt]) => [
+      nodeId,
+      {
+        result: attempt.resultJson ?? null,
+        artifacts: attempt.artifactsJson.filter((a) => a.exists).map((a) => a.path)
+      }
+    ])
+  )
+}
+
+/** Start and End have no worker; they complete the moment they become eligible. */
+function settleStructuralNode(ctx: WorkflowNodeLaunchContext, node: Node): void {
+  const attempt = ctx.recorder.createAttempt(node)
+  for (const state of ['provisioning', 'running', 'completed'] as const) {
+    ctx.recorder.transitionAttempt(attempt.id, state)
+  }
+}
+
+async function launchBriefNode(
+  ctx: WorkflowNodeLaunchContext,
+  node: BriefNode,
+  attempts: readonly NodeAttemptView[]
+): Promise<void> {
+  const attempt = ctx.recorder.createAttempt(node)
+  let taskId: string
+  try {
+    const launch = resolveNodeLaunch(node, ctx.definition.roles)
+    const role = node.roleId === undefined ? undefined : ctx.definition.roles[node.roleId]
+    const brief = await writeBrief({
+      fs: ctx.workspace.fs,
+      workspaceRoot: ctx.workspace.workspaceRoot,
+      orcaIgnoreTarget: ctx.workspace.orcaIgnoreTarget,
+      workflowName: ctx.workflowName,
+      runId: ctx.recorder.runId,
+      attemptId: attempt.id,
+      iteration: attempt.iteration,
+      node,
+      systemPrompt: launch.systemPrompt,
+      skills: node.overrides?.skills ?? role?.skills ?? [],
+      briefInputs: { objective: ctx.objective, upstream: upstreamInputs(attempts) }
+    })
+    taskId = await createNodeTask(ctx.client, {
+      definition: ctx.definition,
+      attempts,
+      nodeId: node.id,
+      iteration: attempt.iteration,
+      spec: brief.taskSpec
+    })
+    ctx.db.updateWorkflowAttempt(attempt.id, {
+      taskId,
+      briefPath: brief.briefPath,
+      resultPath: brief.resultPath,
+      ...(ctx.placementWorktreeId ? { workspaceWorktreeId: ctx.placementWorktreeId } : {})
+    })
+  } catch (error) {
+    ctx.recorder.failBeforeDispatch(attempt.id, errorMessage(error))
+    return
+  }
+  const outcome = await dispatchWorkflowNode({
+    port: ctx.client,
+    attemptStore: ctx.recorder.dispatchStore(),
+    runId: ctx.recorder.runId,
+    attemptId: attempt.id,
+    taskId,
+    node,
+    roles: ctx.definition.roles
+  })
+  const dispatchId = outcome.attempt?.dispatchId
+  if (outcome.ok && dispatchId) {
+    ctx.db.updateWorkflowAttempt(attempt.id, {
+      transcriptRef: { kind: 'dispatch', id: dispatchId }
+    })
+  }
+}
+
+export async function launchEligibleNode(
+  ctx: WorkflowNodeLaunchContext,
+  nodeId: string,
+  attempts: readonly NodeAttemptView[]
+): Promise<void> {
+  const node = ctx.definition.nodes.find((candidate) => candidate.id === nodeId)
+  if (!node) {
+    throw new Error(`Workflow node ${nodeId} is not in the run's definition.`)
+  }
+  if (node.type === 'start' || node.type === 'end') {
+    settleStructuralNode(ctx, node)
+    return
+  }
+  if (isBriefNode(node)) {
+    await launchBriefNode(ctx, node, attempts)
+    return
+  }
+  // The frontier never offers Loop/Join/Approval yet; offering one would re-offer it forever.
+  throw new Error(`Workflow node ${nodeId} (${node.type}) cannot be launched by this engine yet.`)
+}

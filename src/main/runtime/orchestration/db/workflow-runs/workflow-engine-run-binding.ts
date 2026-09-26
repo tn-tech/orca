@@ -52,6 +52,10 @@ export function createWorkflowEngineRun(
         engineCoordinatorPaneKey(params.workflowRunId),
         params.workflowRunId
       )
+    // Why: RunSnapshot.orchestrationRunId is what run views read; it can only be set once the Run exists.
+    this.db
+      .prepare('UPDATE workflow_runs SET orchestration_run_id = ? WHERE id = ?')
+      .run(id, params.workflowRunId)
     this.rememberRunCoordinatorHandle(id, coordinatorHandle)
     this.db.exec('COMMIT')
   } catch (error) {

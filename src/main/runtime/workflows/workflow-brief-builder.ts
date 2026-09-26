@@ -26,7 +26,7 @@ function attemptRelativeDir(runId: string, attemptId: string): string {
 }
 
 /** Router/Reflection have no `resultContract` field; their result shape is fixed by the contract. */
-function resultContractFor(node: BriefNode): ResultContract {
+export function resultContractFor(node: BriefNode): ResultContract {
   if (node.type === 'agent') {
     return node.resultContract
   }
@@ -60,7 +60,7 @@ function resultContractFor(node: BriefNode): ResultContract {
   }
 }
 
-function artifactsFor(node: BriefNode): { path: string; required: boolean }[] {
+export function artifactsFor(node: BriefNode): { path: string; required: boolean }[] {
   return node.type === 'agent' ? node.artifacts : []
 }
 
