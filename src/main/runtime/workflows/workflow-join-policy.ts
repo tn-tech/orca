@@ -24,7 +24,10 @@ export type JoinDecision =
   | { kind: 'proceed'; branches: JoinBranches }
   | { kind: 'fail'; reason: JoinFailureReason; branches: JoinBranches }
 
-function branchOutcome(outcome: IncomingEdgeOutcome, onFailure: JoinNode['onFailure']) {
+function branchOutcome(
+  outcome: IncomingEdgeOutcome,
+  onFailure: JoinNode['onFailure']
+): JoinBranchOutcome {
   switch (outcome) {
     case 'fired':
       return 'completed'
@@ -38,11 +41,18 @@ function branchOutcome(outcome: IncomingEdgeOutcome, onFailure: JoinNode['onFail
   }
 }
 
+export function joinBranchOutcomes(
+  node: JoinNode,
+  incoming: readonly IncomingBranch[]
+): JoinBranches {
+  return Object.fromEntries(
+    incoming.map((branch) => [branch.sourceId, branchOutcome(branch.outcome, node.onFailure)])
+  )
+}
+
 export function decideJoin(node: JoinNode, incoming: readonly IncomingBranch[]): JoinDecision {
   const outcomes = incoming.map((branch) => branchOutcome(branch.outcome, node.onFailure))
-  const branches: JoinBranches = Object.fromEntries(
-    incoming.map((branch, index) => [branch.sourceId, outcomes[index]])
-  )
+  const branches = joinBranchOutcomes(node, incoming)
   const count = (outcome: JoinBranchOutcome) => outcomes.filter((o) => o === outcome).length
   const completed = count('completed')
   const failed = count('failed')
@@ -67,6 +77,8 @@ export function decideJoin(node: JoinNode, incoming: readonly IncomingBranch[]):
       return { kind: 'waiting' }
     }
   }
-  // Out of reach: failures make that a Join failure; with none, the Join was skipped upstream.
-  return failed > 0 ? { kind: 'fail', reason: 'join_unsatisfied', branches } : { kind: 'skip' }
+  // Out of reach: skipped only when no branch did any work; otherwise the policy is unsatisfied.
+  return failed + completed > 0
+    ? { kind: 'fail', reason: 'join_unsatisfied', branches }
+    : { kind: 'skip' }
 }

@@ -100,20 +100,46 @@ function isBlocked(outcome: IncomingEdgeOutcome): boolean {
 
 type CandidateVerdict = 'eligible' | 'skipped' | 'waiting'
 
+/**
+ * A Join with no attempt is offered to open its Waiting attempt once one branch settled; with a
+ * Waiting attempt it is offered again only when its policy settles it.
+ */
+function joinVerdict(
+  kind: ReturnType<typeof decideJoin>['kind'],
+  branches: readonly IncomingBranch[],
+  hasWaitingAttempt: boolean
+): CandidateVerdict {
+  if (hasWaitingAttempt) {
+    return kind === 'waiting' ? 'waiting' : 'eligible'
+  }
+  if (kind === 'skip') {
+    return 'skipped'
+  }
+  if (kind === 'waiting') {
+    return branches.some((branch) => branch.outcome !== 'unresolved') ? 'eligible' : 'waiting'
+  }
+  return 'eligible'
+}
+
 /** A Join applies its policy; any other merge node behaves like the default Join. */
 function candidateVerdict(
   node: Node | undefined,
-  branches: readonly IncomingBranch[]
+  branches: readonly IncomingBranch[],
+  hasWaitingAttempt: boolean
 ): CandidateVerdict {
   if (node?.type === 'join') {
-    const { kind } = decideJoin(node, branches)
-    return kind === 'skip' ? 'skipped' : kind === 'waiting' ? 'waiting' : 'eligible'
+    return joinVerdict(decideJoin(node, branches).kind, branches, hasWaitingAttempt)
   }
   const outcomes = branches.map((branch) => branch.outcome)
   if (outcomes.length > 0 && outcomes.every(isBlocked)) {
     return 'skipped'
   }
   return outcomes.includes('fired') && !outcomes.includes('unresolved') ? 'eligible' : 'waiting'
+}
+
+/** A Join whose latest attempt is Waiting stays a candidate until its policy settles it. */
+export function isWaitingJoin(node: Node, attempt: FrontierAttempt | undefined): boolean {
+  return node.type === 'join' && attempt?.state === 'waiting'
 }
 
 function loopBodyNodeIds(nodes: readonly Node[]): Set<string> {
@@ -132,21 +158,22 @@ export function loopExitSourceId(nodes: readonly Node[], edge: Edge): string {
 /**
  * Splits candidates into eligible and skipped. Several incoming edges merge like the default Join:
  * eligible once none is unresolved and one fired; skipped only when every edge is blocked. A Join
- * node is eligible once its policy proceeds or fails it. Skips cascade to a fixpoint. Roots are
- * always eligible.
+ * node follows joinVerdict. Skips cascade to a fixpoint. Roots are always eligible.
  */
 export function decideCandidates(
   definition: Workflow,
   candidateIds: readonly string[],
   isRoot: (nodeId: string) => boolean,
-  branchesFor: (nodeId: string, skipped: ReadonlySet<string>) => IncomingBranch[]
+  branchesFor: (nodeId: string, skipped: ReadonlySet<string>) => IncomingBranch[],
+  waitingJoinIds: ReadonlySet<string> = new Set()
 ): FrontierDecision {
   const verdict = (nodeId: string, skipped: ReadonlySet<string>): CandidateVerdict =>
     isRoot(nodeId)
       ? 'eligible'
       : candidateVerdict(
           definition.nodes.find((node) => node.id === nodeId),
-          branchesFor(nodeId, skipped)
+          branchesFor(nodeId, skipped),
+          waitingJoinIds.has(nodeId)
         )
   const skipped = new Set<string>()
   let changed = true
@@ -185,15 +212,21 @@ export function incomingBranches(
     })
 }
 
-/** Nodes outside every Loop body that have no attempt and may start now, or can never run. */
+/** Nodes outside every Loop body that have no attempt (or a Waiting Join) and may start now, or can never run. */
 export function computeFrontier(
   definition: Workflow,
   attempts: readonly FrontierAttempt[]
 ): FrontierDecision {
   const latest = latestAttemptByNode(attempts)
   const inLoopBody = loopBodyNodeIds(definition.nodes)
+  const waitingJoinIds = new Set(
+    definition.nodes.filter((node) => isWaitingJoin(node, latest.get(node.id))).map((n) => n.id)
+  )
   const candidates = definition.nodes.filter(
-    (node) => FRONTIER_NODE_TYPES.has(node.type) && !inLoopBody.has(node.id) && !latest.has(node.id)
+    (node) =>
+      FRONTIER_NODE_TYPES.has(node.type) &&
+      !inLoopBody.has(node.id) &&
+      (!latest.has(node.id) || waitingJoinIds.has(node.id))
   )
   const startIds = new Set(
     candidates.filter((node) => node.type === 'start').map((node) => node.id)
@@ -202,7 +235,8 @@ export function computeFrontier(
     definition,
     candidates.map((node) => node.id),
     (nodeId) => startIds.has(nodeId),
-    (nodeId, skipped) => incomingBranches(definition, latest, nodeId, skipped)
+    (nodeId, skipped) => incomingBranches(definition, latest, nodeId, skipped),
+    waitingJoinIds
   )
 }
 

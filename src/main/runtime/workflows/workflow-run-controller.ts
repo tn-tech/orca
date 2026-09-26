@@ -262,8 +262,13 @@ export class WorkflowRunController {
       return
     }
     const attempts = this.deps.db.listWorkflowAttempts(this.deps.workflowRunId)
-    if (attempts.some((attempt) => ACTIVE_ATTEMPT_STATES.has(attempt.state))) {
+    // A Waiting Join alone cannot move: its pending branches have nothing left to settle them.
+    const stuckJoin = (a: NodeAttemptView) => a.nodeType === 'join' && a.state === 'waiting'
+    if (attempts.some((a) => ACTIVE_ATTEMPT_STATES.has(a.state) && !stuckJoin(a))) {
       return
+    }
+    for (const join of attempts.filter(stuckJoin)) {
+      this.recorder.transitionAttempt(join.id, 'cancelled', { reason: 'join_unreachable' })
     }
     if (attempts.some((attempt) => attempt.nodeType === 'end' && attempt.state === 'completed')) {
       this.recorder.transitionRun('completed', 'run_completed')

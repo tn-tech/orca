@@ -12,6 +12,7 @@ import {
   decideCandidates,
   FRONTIER_NODE_TYPES,
   incomingEdgeOutcome,
+  isWaitingJoin,
   latestAttemptByNode,
   type FrontierAttempt
 } from './workflow-frontier'
@@ -114,6 +115,11 @@ function iterationFrontier(
   iteration: number
 ): { eligible: string[]; skipped: string[] } {
   const inIteration = iterationAttempts(loop, attempts, iteration)
+  const waitingJoinIds = new Set(
+    definition.nodes
+      .filter((node) => isWaitingJoin(node, inIteration.get(node.id)))
+      .map((n) => n.id)
+  )
   // Node types the engine cannot run yet stay pending, exactly as in the main frontier.
   const candidates = loop.body.nodeIds.filter((nodeId) => {
     const type = definition.nodes.find((node) => node.id === nodeId)?.type
@@ -121,7 +127,7 @@ function iterationFrontier(
       type !== undefined &&
       type !== 'loop' &&
       FRONTIER_NODE_TYPES.has(type) &&
-      !inIteration.has(nodeId)
+      (!inIteration.has(nodeId) || waitingJoinIds.has(nodeId))
     )
   })
   return decideCandidates(
@@ -129,7 +135,8 @@ function iterationFrontier(
     candidates,
     () => false,
     (nodeId, skipped) =>
-      bodyIncomingBranches(definition, loop, attempts, iteration, nodeId, skipped)
+      bodyIncomingBranches(definition, loop, attempts, iteration, nodeId, skipped),
+    waitingJoinIds
   )
 }
 

@@ -113,6 +113,16 @@ describe('decideJoin', () => {
     })
   })
 
+  it('fails rather than skips a Join whose quorum is out of reach after a completion', () => {
+    expect(
+      decideJoin(join({ quorum: 2 }, 'fail'), [branch('a', 'fired'), branch('b', 'not-taken')])
+    ).toEqual({
+      kind: 'fail',
+      reason: 'join_unsatisfied',
+      branches: { a: 'completed', b: 'skipped' }
+    })
+  })
+
   it('`onFailure: partial` fails when no branch completed', () => {
     expect(
       decideJoin(join('all', 'partial'), [branch('a', 'source-failed'), branch('b', 'not-taken')])
@@ -137,16 +147,25 @@ describe('computeFrontier with a Join', () => {
     )
   }
 
-  it('offers the Join once its policy is satisfied, or it must fail', () => {
+  it('offers the Join to open Waiting on the first settled branch, then only to settle it', () => {
     const def = fanOut(join('all', 'fail'))
+    const unsettled = [
+      attempt('start', 'completed'),
+      attempt('a', 'running'),
+      attempt('b', 'running'),
+      attempt('c', 'running')
+    ]
+    expect(computeFrontier(def, unsettled)).toEqual({ eligible: [], skipped: [] })
     const running = [
       attempt('start', 'completed'),
       attempt('a', 'completed'),
       attempt('b', 'completed'),
       attempt('c', 'running')
     ]
-    expect(computeFrontier(def, running)).toEqual({ eligible: [], skipped: [] })
-    const failed = [...running.slice(0, 3), attempt('c', 'failed')]
+    expect(computeFrontier(def, running)).toEqual({ eligible: ['join'], skipped: [] })
+    const waiting = [...running, attempt('join', 'waiting')]
+    expect(computeFrontier(def, waiting)).toEqual({ eligible: [], skipped: [] })
+    const failed = [...running.slice(0, 3), attempt('c', 'failed'), attempt('join', 'waiting')]
     expect(computeFrontier(def, failed)).toEqual({ eligible: ['join'], skipped: [] })
     const anyDef = fanOut(join('any', 'fail'))
     const firstDone = [...running.slice(0, 2), attempt('b', 'running'), attempt('c', 'running')]
@@ -219,13 +238,13 @@ describe('a Join inside a Loop body', () => {
     id: nodeId
   })
 
-  it('applies the same policy per iteration', () => {
+  it('applies the same policy per iteration, including the Waiting attempt', () => {
     const base = [at('start', 'completed'), at('qa', 'running'), at('a', 'completed')]
-    expect(
-      computeLoopProgress(def, [...base, at('b', 'failed'), at('c', 'running')]).eligible
-    ).toEqual([])
-    expect(
-      computeLoopProgress(def, [...base, at('b', 'failed'), at('c', 'completed')]).eligible
-    ).toEqual([{ nodeId: 'join', iteration: 0 }])
+    const waiting = [...base, at('b', 'failed'), at('join', 'waiting')]
+    expect(computeLoopProgress(def, [...waiting, at('c', 'running')]).eligible).toEqual([])
+    expect(computeLoopProgress(def, [...waiting, at('c', 'completed')]).eligible).toEqual([
+      { nodeId: 'join', iteration: 0 }
+    ])
+    expect(computeLoopProgress(def, [...waiting, at('c', 'completed')]).settlements).toEqual([])
   })
 })

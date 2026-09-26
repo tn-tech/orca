@@ -9,6 +9,7 @@ import {
   type LoopSettlement
 } from './workflow-loop-unrolling'
 import type { WorkflowResultFailureReason } from './workflow-result-capture'
+import { refreshWaitingJoins } from './workflow-join-settlement'
 import { launchEligibleNode, type WorkflowNodeLaunchContext } from './workflow-run-node-launch'
 
 const LOOP_FAILURE_REASONS: Record<
@@ -74,6 +75,7 @@ export async function advanceRun(ctx: WorkflowNodeLaunchContext): Promise<void> 
       ...loops.eligible
     ]
     if (skipped.length === 0 && eligible.length === 0 && loops.settlements.length === 0) {
+      refreshWaitingJoins(ctx)
       return
     }
     for (const node of skipped) {
@@ -82,19 +84,22 @@ export async function advanceRun(ctx: WorkflowNodeLaunchContext): Promise<void> 
     for (const settlement of loops.settlements) {
       settleLoop(ctx, settlement)
     }
+    // Why: Joins settle alone, then the frontier is recomputed, so branch nodes a failed Join
+    // skipped are never launched from this pass's stale eligible list.
+    const isJoin = ({ nodeId }: IterationNode) =>
+      ctx.definition.nodes.some((node) => node.id === nodeId && node.type === 'join')
+    const joins = eligible.filter(isJoin)
+    for (const { nodeId, iteration } of joins) {
+      await launchEligibleNode(ctx, nodeId, attempts, iteration)
+    }
+    if (joins.length > 0) {
+      continue
+    }
     for (const start of loops.iterationStarts) {
       recordIterationStart(ctx, start)
     }
-    // Why: Joins settle first, so a failed Join's stop requests never race a sibling's launch.
-    const isJoin = ({ nodeId }: IterationNode) =>
-      ctx.definition.nodes.some((node) => node.id === nodeId && node.type === 'join')
-    for (const { nodeId, iteration } of eligible.filter(isJoin)) {
-      await launchEligibleNode(ctx, nodeId, attempts, iteration)
-    }
     await Promise.all(
-      eligible
-        .filter((node) => !isJoin(node))
-        .map(({ nodeId, iteration }) => launchEligibleNode(ctx, nodeId, attempts, iteration))
+      eligible.map(({ nodeId, iteration }) => launchEligibleNode(ctx, nodeId, attempts, iteration))
     )
   }
 }
