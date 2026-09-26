@@ -58,6 +58,8 @@ vi.mock('../runtime/orca-runtime', () => ({
     rehydrateClientHostedBrowserPages() {}
     async refreshRestoredOrchestrationAuthority() {}
     async reconcileLegacyWorkerTerminals() {}
+    startWorkflowEngine() {}
+    async stopWorkflowEngine() {}
     setMobilePushRegistrar(
       registrar: Parameters<RuntimeMobileNotificationController['setPushRegistrar']>[0]
     ) {
