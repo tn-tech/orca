@@ -52,6 +52,8 @@ export type CaptureResultOutcome =
   | {
       ok: false
       failureReason: WorkflowResultFailureReason
+      /** Why a parsed result was rejected, when the reason alone does not say. */
+      detail?: string
       rawBody?: string
       result?: JsonValue
       artifacts?: WorkflowAttemptArtifact[]

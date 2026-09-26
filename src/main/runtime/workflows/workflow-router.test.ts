@@ -3,12 +3,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
+  JoinNode,
   LoopNode,
   RouterNode,
   Workflow
 } from '../../../shared/workflows/workflow-definition-types'
 import { buildBriefMarkdown } from './workflow-brief-builder'
-import { computeFrontier } from './workflow-frontier'
+import { classifyIncomingEdge, computeFrontier } from './workflow-frontier'
 import { agent, attempt, end, start, workflow } from './workflow-frontier-test-fixtures'
 import { computeLoopProgress } from './workflow-loop-unrolling'
 import { branchAgent, joinDriver } from './workflow-run-controller-join-fixtures'
@@ -112,6 +113,90 @@ describe('Router routing (pure)', () => {
     expect(progress.skipped).toEqual([{ nodeId: 'polish', iteration: 0 }])
   })
 
+  it('classifies a Router port edge only when told the source is a Router', () => {
+    const edge = { id: 'e', from: 'route', to: 'bugfix', fromPort: 'bugfix' }
+    const routed = [
+      attempt('route', 'completed', { resultJson: { choice: 'bugfix', reason: 'r' } })
+    ]
+    expect(classifyIncomingEdge(edge, routed, 'router')).toBe('fired')
+    expect(classifyIncomingEdge({ ...edge, fromPort: 'feature' }, routed, 'router')).toBe(
+      'not-taken'
+    )
+    expect(classifyIncomingEdge(edge, routed)).toBe('unresolved')
+  })
+
+  it('lets the unchosen port satisfy a Join the Router feeds directly', () => {
+    const join: JoinNode = {
+      id: 'join',
+      type: 'join',
+      title: 'Join',
+      policy: 'all',
+      onFailure: 'fail'
+    }
+    const def = workflow(
+      [start, router, join, end],
+      [
+        { id: 'e1', from: 'start', to: 'route' },
+        { id: 'e2', from: 'route', to: 'join', fromPort: 'bugfix' },
+        { id: 'e3', from: 'route', to: 'join', fromPort: 'feature' },
+        { id: 'e4', from: 'join', to: 'end' }
+      ]
+    )
+    const routed = [
+      attempt('start', 'completed'),
+      attempt('route', 'completed', { resultJson: { choice: 'feature', reason: 'new' } })
+    ]
+    expect(computeFrontier(def, routed)).toEqual({ eligible: ['join'], skipped: [] })
+  })
+
+  it('routes a Loop-body Router afresh each iteration', () => {
+    const loop: LoopNode = {
+      id: 'qa',
+      type: 'loop',
+      title: 'QA',
+      body: { nodeIds: ['route', 'fix', 'polish', 'check'] },
+      entryNodeId: 'route',
+      exitNodeId: 'check',
+      maxIterations: 3,
+      exitCondition: { path: 'approved', op: 'eq', value: true },
+      onCapReached: 'fail'
+    }
+    const def = workflow(
+      [start, loop, router, agent('fix'), agent('polish'), agent('check'), end],
+      [
+        { id: 'in', from: 'start', to: 'qa' },
+        { id: 'b', from: 'route', to: 'fix', fromPort: 'bugfix' },
+        { id: 'f', from: 'route', to: 'polish', fromPort: 'feature' },
+        { id: 'fc', from: 'fix', to: 'check' },
+        { id: 'pc', from: 'polish', to: 'check' },
+        { id: 'out', from: 'qa', to: 'end', fromPort: 'exit' }
+      ]
+    )
+    const at = (a: ReturnType<typeof attempt>, iteration: number) => ({
+      ...a,
+      iteration,
+      id: `${a.nodeId}#${iteration}`
+    })
+    const firstPass = [
+      at(attempt('start', 'completed'), 0),
+      at(attempt('qa', 'running'), 0),
+      at(attempt('route', 'completed', { resultJson: { choice: 'bugfix', reason: 'bug' } }), 0),
+      at(attempt('fix', 'completed'), 0),
+      at(attempt('polish', 'skipped'), 0),
+      at(attempt('check', 'completed', { resultJson: { approved: false } }), 0)
+    ]
+    expect(computeLoopProgress(def, firstPass).eligible).toEqual([
+      { nodeId: 'route', iteration: 1 }
+    ])
+    const secondRoute = [
+      ...firstPass,
+      at(attempt('route', 'completed', { resultJson: { choice: 'feature', reason: 'new' } }), 1)
+    ]
+    const progress = computeLoopProgress(def, secondRoute)
+    expect(progress.eligible).toEqual([{ nodeId: 'polish', iteration: 1 }])
+    expect(progress.skipped).toEqual([{ nodeId: 'fix', iteration: 1 }])
+  })
+
   it('lists the allowed choices verbatim in the Router brief', () => {
     const { text } = buildBriefMarkdown({
       workflowName: 'wf',
@@ -198,6 +283,10 @@ describe('WorkflowRunController Router execution', () => {
     expect(d.attempt(run.id, 'feature')?.state).toBe('skipped')
     expect(h.workerHandles).toHaveLength(1)
     expect(events(run.id, 'router_choice')).toEqual([])
+    expect(events(run.id, 'attempt_failed')[0]?.payloadJson).toMatchObject({
+      nodeId: 'route',
+      detail: 'choice "chore" is not one of ["bugfix","feature"]'
+    })
   })
 
   it('fails with result_invalid when the result lacks a reason', async () => {

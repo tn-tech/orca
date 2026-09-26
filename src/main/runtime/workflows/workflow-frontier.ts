@@ -2,7 +2,7 @@ import type { Edge, Node, Workflow } from '../../../shared/workflows/workflow-de
 import { evaluateCondition } from '../../../shared/workflows/workflow-condition-evaluation'
 import type { NodeAttemptView } from '../../../shared/workflows/workflow-run-types'
 import { decideJoin, JOIN_SKIPPED_REASON, type IncomingBranch } from './workflow-join-policy'
-import { routerChoseEdge } from './workflow-router'
+import { routerChoseEdge } from './workflow-router-choice'
 
 export type FrontierAttempt = Pick<
   NodeAttemptView,
@@ -97,12 +97,14 @@ export function incomingEdgeOutcome(
  * Outcome of one incoming edge; conditions read only the source attempt's result (FR-027).
  * Contract: the controller persists a `skipped` attempt for every `computeFrontier(...).skipped`
  * node (the run view shows Skipped), so skips are read from attempts, never from frontier state.
+ * Pass `sourceType` for port edges; without it a Router choice edge reads as unresolved.
  */
 export function classifyIncomingEdge(
   edge: Edge,
-  attempts: readonly FrontierAttempt[]
+  attempts: readonly FrontierAttempt[],
+  sourceType?: Node['type']
 ): IncomingEdgeOutcome {
-  return incomingEdgeOutcome(edge, latestAttemptByNode(attempts).get(edge.from), false)
+  return incomingEdgeOutcome(edge, latestAttemptByNode(attempts).get(edge.from), false, sourceType)
 }
 
 function isBlocked(outcome: IncomingEdgeOutcome): boolean {

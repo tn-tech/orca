@@ -559,6 +559,45 @@ describe('validateWorkflowGraph: approval and router ports', () => {
     const problems = validateWorkflowGraph(wf, permissiveContext)
     expect(problems.filter((p) => p.nodeId === 'gate')).toEqual([])
   })
+
+  it.each(['exit', 'body'])('rejects a router choice named %s, reserved for Loop ports', (name) => {
+    const wf = workflow({
+      nodes: [startNode(), routerNode('router', { choices: [name, 'b'] }), endNode()],
+      edges: [
+        edge('e1', 'start', 'router'),
+        edge('e2', 'router', 'end', { fromPort: name }),
+        edge('e3', 'router', 'end', { fromPort: 'b' })
+      ]
+    })
+    expect(validateWorkflowGraph(wf, permissiveContext)).toContainEqual(
+      expect.objectContaining({
+        code: 'graph_option_reserved_name',
+        nodeId: 'router',
+        severity: 'error'
+      })
+    )
+  })
+
+  it.each(['exit', 'body'])(
+    'rejects an approval option named %s, reserved for Loop ports',
+    (name) => {
+      const wf = workflow({
+        nodes: [startNode(), approvalNode('gate', { options: ['approve', name] }), endNode()],
+        edges: [
+          edge('e1', 'start', 'gate'),
+          edge('e2', 'gate', 'end', { fromPort: 'approve' }),
+          edge('e3', 'gate', 'end', { fromPort: name })
+        ]
+      })
+      expect(validateWorkflowGraph(wf, permissiveContext)).toContainEqual(
+        expect.objectContaining({
+          code: 'graph_option_reserved_name',
+          nodeId: 'gate',
+          severity: 'error'
+        })
+      )
+    }
+  )
 })
 
 describe('validateWorkflowGraph: role references and model overrides', () => {

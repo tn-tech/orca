@@ -145,7 +145,7 @@ export type DispatchWorkflowNodeArgs = {
   attemptStore: WorkflowAttemptDispatchStore
   runId: string
   attemptId: string
-  /** The Task already created for this node (workflow-frontier.ts createNodeTask, U14). */
+  /** The Task already created for this node (workflow-frontier-node-task.ts createNodeTask, U14). */
   taskId: string
   node: BriefNode
   roles: Workflow['roles']

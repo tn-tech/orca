@@ -232,6 +232,7 @@ export class WorkflowRunController {
       await this.ensureTaskStatus(session, attempt.taskId, 'failed')
       this.recorder.transitionAttempt(attempt.id, 'failed', {
         workerReport: message.body,
+        ...(capture.detail !== undefined ? { detail: capture.detail } : {}),
         ...(capture.rawBody !== undefined ? { rawBody: capture.rawBody } : {})
       })
     }
