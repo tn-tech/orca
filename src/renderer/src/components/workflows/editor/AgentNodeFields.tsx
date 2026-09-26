@@ -6,31 +6,12 @@ import AgentNodeArtifactsField from './AgentNodeArtifactsField'
 import AgentNodeResultContractField from './AgentNodeResultContractField'
 import { InspectorField } from './InspectorField'
 import RoleDispatchFields from './RoleDispatchFields'
+import { withRoleDispatchOverrides } from './workflow-role-dispatch-overrides'
 
 export type AgentNodeFieldsProps = {
   node: AgentNode
   roles: Workflow['roles']
   onChange: (node: AgentNode) => void
-}
-
-type AgentOverrides = NonNullable<AgentNode['overrides']>
-
-const OVERRIDE_KEYS: readonly (keyof AgentOverrides)[] = [
-  'agent',
-  'model',
-  'effort',
-  'systemPrompt',
-  'skills'
-]
-
-function withOverrides(node: AgentNode, patch: Partial<AgentOverrides>): AgentNode {
-  const merged: AgentOverrides = { ...node.overrides, ...patch }
-  for (const key of OVERRIDE_KEYS) {
-    if (merged[key] === undefined) {
-      delete merged[key]
-    }
-  }
-  return { ...node, overrides: Object.keys(merged).length > 0 ? merged : undefined }
 }
 
 /** Agent node settings: agent/model/effort/prompt via `RoleDispatchFields` (FR-003/FR-004),
@@ -53,10 +34,12 @@ export default function AgentNodeFields({
         effort={effectiveEffort}
         prompt={node.prompt}
         onAgentChange={(agent) =>
-          onChange(withOverrides(node, { agent, model: undefined, effort: undefined }))
+          onChange(withRoleDispatchOverrides(node, { agent, model: undefined, effort: undefined }))
         }
-        onModelChange={(model) => onChange(withOverrides(node, { model, effort: undefined }))}
-        onEffortChange={(effort) => onChange(withOverrides(node, { effort }))}
+        onModelChange={(model) =>
+          onChange(withRoleDispatchOverrides(node, { model, effort: undefined }))
+        }
+        onEffortChange={(effort) => onChange(withRoleDispatchOverrides(node, { effort }))}
         onPromptChange={(prompt) => onChange({ ...node, prompt })}
       />
 

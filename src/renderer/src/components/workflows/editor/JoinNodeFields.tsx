@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -28,9 +28,15 @@ function quorumCount(policy: JoinNode['policy']): number {
   return typeof policy === 'object' ? policy.quorum : 1
 }
 
-function parseQuorum(text: string): number {
-  const parsed = Number.parseInt(text, 10)
-  return Number.isInteger(parsed) && parsed >= 1 ? parsed : 1
+/** `undefined` for anything that isn't a plain positive integer (blank, `-1`, `1.5`, `12abc`, …) —
+ *  the caller keeps the user's draft text on screen and simply doesn't commit until this parses. */
+function parseValidQuorum(text: string): number | undefined {
+  const trimmed = text.trim()
+  if (!/^\d+$/.test(trimmed)) {
+    return undefined
+  }
+  const parsed = Number.parseInt(trimmed, 10)
+  return parsed >= 1 ? parsed : undefined
 }
 
 /** Join node settings (FR-007, data-model.md §1 JoinNode): wait-all/wait-any/quorum(n) plus a
@@ -45,6 +51,27 @@ export default function JoinNodeFields({
   const quorum = quorumCount(node.policy)
   const quorumExceedsBranches =
     kind === 'quorum' && incomingEdgeCount > 0 && quorum > incomingEdgeCount
+
+  // `quorumDraft` is the free-typed text; it only snaps to the committed value when that value
+  // changes for a reason other than our own commit below — switching nodes, switching policy
+  // kind, undo/redo (mirrors ConditionBuilder's resync pattern). It never snaps back while the
+  // user is mid-edit with unparseable text: coercing an emptied field straight back to `1` fought
+  // typing a replacement value (review round 1).
+  const [quorumDraft, setQuorumDraft] = useState(() => String(quorum))
+  const [syncedQuorum, setSyncedQuorum] = useState(quorum)
+  if (quorum !== syncedQuorum) {
+    setSyncedQuorum(quorum)
+    setQuorumDraft(String(quorum))
+  }
+  const quorumParsed = parseValidQuorum(quorumDraft)
+
+  function handleQuorumInput(text: string): void {
+    setQuorumDraft(text)
+    const parsed = parseValidQuorum(text)
+    if (parsed !== undefined) {
+      onChange({ ...node, policy: { quorum: parsed } })
+    }
+  }
 
   function setPolicyKind(next: string): void {
     if (next === 'all' || next === 'any') {
@@ -102,15 +129,13 @@ export default function JoinNodeFields({
               type="number"
               min={1}
               step={1}
-              value={quorum}
-              onChange={(event) =>
-                onChange({ ...node, policy: { quorum: parseQuorum(event.target.value) } })
-              }
+              value={quorumDraft}
+              onChange={(event) => handleQuorumInput(event.target.value)}
               aria-label={translate(
                 'auto.components.workflows.editor.JoinNodeFields.quorumLabel',
                 'Quorum'
               )}
-              aria-invalid={quorumExceedsBranches}
+              aria-invalid={quorumParsed === undefined || quorumExceedsBranches}
               className="mt-1.5 h-8 w-24"
             />
             <p className="text-xs text-muted-foreground">
@@ -120,7 +145,14 @@ export default function JoinNodeFields({
                 { count: incomingEdgeCount }
               )}
             </p>
-            {quorumExceedsBranches ? (
+            {quorumParsed === undefined ? (
+              <p className="text-xs text-destructive">
+                {translate(
+                  'auto.components.workflows.editor.JoinNodeFields.quorumInvalid',
+                  'Enter a whole number of 1 or more.'
+                )}
+              </p>
+            ) : quorumExceedsBranches ? (
               <p className="text-xs text-destructive">
                 {translate(
                   'auto.components.workflows.editor.JoinNodeFields.quorumExceedsBranches',

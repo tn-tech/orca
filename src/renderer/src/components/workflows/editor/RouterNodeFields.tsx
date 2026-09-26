@@ -10,31 +10,13 @@ import type {
 } from '../../../../../shared/workflows/workflow-definition-types'
 import { InspectorField } from './InspectorField'
 import RoleDispatchFields from './RoleDispatchFields'
+import { invalidChoiceIndices } from './workflow-router-choices'
+import { withRoleDispatchOverrides } from './workflow-role-dispatch-overrides'
 
 export type RouterNodeFieldsProps = {
   node: RouterNode
   roles: Workflow['roles']
   onChange: (node: RouterNode) => void
-}
-
-type RouterOverrides = NonNullable<RouterNode['overrides']>
-
-const OVERRIDE_KEYS: readonly (keyof RouterOverrides)[] = [
-  'agent',
-  'model',
-  'effort',
-  'systemPrompt',
-  'skills'
-]
-
-function withOverrides(node: RouterNode, patch: Partial<RouterOverrides>): RouterNode {
-  const merged: RouterOverrides = { ...node.overrides, ...patch }
-  for (const key of OVERRIDE_KEYS) {
-    if (merged[key] === undefined) {
-      delete merged[key]
-    }
-  }
-  return { ...node, overrides: Object.keys(merged).length > 0 ? merged : undefined }
 }
 
 /** Router node settings (FR-029, data-model.md §1 RouterNode): the same role/overrides/prompt
@@ -60,6 +42,7 @@ export default function RouterNodeFields({
     choice,
     index
   }))
+  const invalidIndices = invalidChoiceIndices(node.choices)
 
   function updateChoice(index: number, value: string): void {
     onChange({ ...node, choices: node.choices.map((choice, i) => (i === index ? value : choice)) })
@@ -86,10 +69,12 @@ export default function RouterNodeFields({
         effort={effectiveEffort}
         prompt={node.prompt}
         onAgentChange={(agent) =>
-          onChange(withOverrides(node, { agent, model: undefined, effort: undefined }))
+          onChange(withRoleDispatchOverrides(node, { agent, model: undefined, effort: undefined }))
         }
-        onModelChange={(model) => onChange(withOverrides(node, { model, effort: undefined }))}
-        onEffortChange={(effort) => onChange(withOverrides(node, { effort }))}
+        onModelChange={(model) =>
+          onChange(withRoleDispatchOverrides(node, { model, effort: undefined }))
+        }
+        onEffortChange={(effort) => onChange(withRoleDispatchOverrides(node, { effort }))}
         onPromptChange={(prompt) => onChange({ ...node, prompt })}
       />
 
@@ -120,6 +105,7 @@ export default function RouterNodeFields({
                   'auto.components.workflows.editor.RouterNodeFields.choiceLabel',
                   'Choice'
                 )}
+                aria-invalid={invalidIndices.has(index)}
               />
               <Button
                 type="button"
@@ -137,6 +123,14 @@ export default function RouterNodeFields({
             </div>
           ))}
         </div>
+        {invalidIndices.size > 0 ? (
+          <p className="text-xs text-destructive">
+            {translate(
+              'auto.components.workflows.editor.RouterNodeFields.invalidChoices',
+              'Choices must be non-empty and unique — a blank or repeated choice gets no outgoing edge.'
+            )}
+          </p>
+        ) : null}
         <Button type="button" variant="outline" size="sm" onClick={addChoice}>
           <Plus />
           {translate('auto.components.workflows.editor.RouterNodeFields.addChoice', 'Add choice')}

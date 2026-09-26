@@ -17198,15 +17198,6 @@
             "addArtifact": "Add artifact"
           },
           "AgentNodeFields": {
-            "selectModelForEffort": "Select a model before choosing reasoning effort.",
-            "noEffortLevels": "\"{{model}}\" has no reasoning effort levels.",
-            "agentLabel": "Agent",
-            "selectAgent": "Select agent",
-            "modelLabel": "Model",
-            "selectModel": "Select a model",
-            "effortLabel": "Reasoning effort",
-            "selectEffort": "Select reasoning effort",
-            "promptLabel": "Prompt",
             "workspaceLabel": "Workspace",
             "workspaceRun": "Run workspace",
             "workspaceChild": "Child workspace"
@@ -17273,7 +17264,8 @@
             "summary": "{{errorCount}} error(s), {{warningCount}} warning(s)"
           },
           "AgentNode": {
-            "noAgent": "No agent selected"
+            "noAgent": "No agent selected",
+            "workspace": "Workspace: {{name}}"
           },
           "workflow-editor-commands": {
             "cycleRefused": "This connection would create a cycle outside a Loop node.",
@@ -17303,6 +17295,49 @@
           "WorkflowEditorProblemNotice": {
             "wrapInLoop": "Wrap in Loop",
             "dismiss": "Dismiss"
+          },
+          "JoinNodeFields": {
+            "policyLabel": "Policy",
+            "policyAll": "Wait for all branches",
+            "policyAny": "Continue on the first branch",
+            "policyQuorum": "Continue after a quorum",
+            "quorumLabel": "Quorum",
+            "incomingBranches": "{{count}} incoming branch(es).",
+            "quorumInvalid": "Enter a whole number of 1 or more.",
+            "quorumExceedsBranches": "Quorum is higher than the number of incoming branches.",
+            "onFailureLabel": "When a branch fails",
+            "onFailureFail": "Fail the join",
+            "onFailureSkip": "Treat the branch as skipped",
+            "onFailurePartial": "Continue with partial results"
+          },
+          "RoleDispatchFields": {
+            "selectModelForEffort": "Select a model before choosing reasoning effort.",
+            "noEffortLevels": "\"{{model}}\" has no reasoning effort levels.",
+            "agentLabel": "Agent",
+            "selectAgent": "Select agent",
+            "modelLabel": "Model",
+            "selectModel": "Select a model",
+            "effortLabel": "Reasoning effort",
+            "selectEffort": "Select reasoning effort",
+            "promptLabel": "Prompt"
+          },
+          "RouterNodeFields": {
+            "choicesLabel": "Choices",
+            "choicesHelp": "Each choice gets exactly one outgoing edge on the canvas; the agent must report one of these exactly.",
+            "choicePlaceholder": "e.g. bugfix",
+            "choiceLabel": "Choice",
+            "removeChoice": "Remove choice",
+            "invalidChoices": "Choices must be non-empty and unique — a blank or repeated choice gets no outgoing edge.",
+            "addChoice": "Add choice"
+          },
+          "JoinNode": {
+            "policyAll": "Wait all",
+            "policyAny": "Wait any",
+            "policyQuorum": "Quorum {{n}}"
+          },
+          "RouterNode": {
+            "noAgent": "No agent selected",
+            "workspace": "Workspace: {{name}}"
           }
         },
         "run-view": {
@@ -17339,6 +17374,17 @@
             "stop": "Stop",
             "run": "Run",
             "relayout": "Re-layout"
+          },
+          "JoinBranchOutcomes": {
+            "completed": "Completed",
+            "failed": "Failed",
+            "skipped": "Skipped",
+            "pending": "Pending",
+            "label": "Branches"
+          },
+          "RouterChoiceSummary": {
+            "choiceLabel": "Choice",
+            "reasonLabel": "Reason"
           }
         },
         "use-workflow-editor-session": {
