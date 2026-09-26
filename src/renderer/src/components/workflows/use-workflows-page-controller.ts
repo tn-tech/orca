@@ -56,14 +56,24 @@ export function useWorkflowsPageController() {
       setHostProblems([])
       return
     }
+    // Why: a slower, earlier request (a stale definition, or a workflow the user has since
+    // switched away from) must never overwrite a later one's result once it finally resolves.
+    let ignore = false
     const timer = window.setTimeout(() => {
       void workflowValidate(settings, { repo: repoId, definition })
-        .then((result) => setHostProblems(result.problems))
+        .then((result) => {
+          if (!ignore) {
+            setHostProblems(result.problems)
+          }
+        })
         .catch(() => {
           // Best-effort: local validation still surfaces structural problems while offline/racing.
         })
     }, HOST_VALIDATE_DEBOUNCE_MS)
-    return () => window.clearTimeout(timer)
+    return () => {
+      ignore = true
+      window.clearTimeout(timer)
+    }
   }, [definition, repoId, settings])
 
   const problems = useMemo(

@@ -45,6 +45,20 @@ export default function WorkflowListPane({
   const [createOpen, setCreateOpen] = useState(false)
   const [duplicateTarget, setDuplicateTarget] = useState<WorkflowSummary | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<WorkflowSummary | null>(null)
+  // Why: WorkflowNameDialog reads its initial name/source once, at mount — bumping these on every
+  // open forces a fresh mount (a real `key` change) instead of a no-op effect that would flash the
+  // previous value. Not bumped on close, so the closing dialog keeps its exit animation.
+  const [createDialogGeneration, setCreateDialogGeneration] = useState(0)
+  const [duplicateDialogGeneration, setDuplicateDialogGeneration] = useState(0)
+
+  const openCreateDialog = (): void => {
+    setCreateDialogGeneration((generation) => generation + 1)
+    setCreateOpen(true)
+  }
+  const openDuplicateDialog = (row: WorkflowSummary): void => {
+    setDuplicateDialogGeneration((generation) => generation + 1)
+    setDuplicateTarget(row)
+  }
 
   return (
     <section className="flex h-full min-h-0 w-64 shrink-0 flex-col border-r border-border">
@@ -56,7 +70,7 @@ export default function WorkflowListPane({
           type="button"
           variant="ghost"
           size="icon-xs"
-          onClick={() => setCreateOpen(true)}
+          onClick={openCreateDialog}
           aria-label={translate('auto.components.workflows.WorkflowListPane.new', 'New workflow')}
         >
           <Plus />
@@ -124,7 +138,7 @@ export default function WorkflowListPane({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onSelect={() => setDuplicateTarget(row)}>
+                        <DropdownMenuItem onSelect={() => openDuplicateDialog(row)}>
                           {translate(
                             'auto.components.workflows.WorkflowListPane.duplicate',
                             'Duplicate'
@@ -147,6 +161,7 @@ export default function WorkflowListPane({
       </div>
 
       <WorkflowNameDialog
+        key={`create-${createDialogGeneration}`}
         open={createOpen}
         title={translate('auto.components.workflows.WorkflowListPane.createTitle', 'New workflow')}
         submitLabel={translate('auto.components.workflows.WorkflowListPane.createSubmit', 'Create')}
@@ -154,6 +169,7 @@ export default function WorkflowListPane({
         onSubmit={onCreate}
       />
       <WorkflowNameDialog
+        key={`duplicate-${duplicateDialogGeneration}`}
         open={duplicateTarget !== null}
         title={translate(
           'auto.components.workflows.WorkflowListPane.duplicateTitle',

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { toast } from 'sonner'
 import type { Workflow } from '../../../../shared/workflows/workflow-definition-types'
 
 const { workflowReadMock, workflowWriteMock } = vi.hoisted(() => ({
@@ -12,6 +13,8 @@ vi.mock('@/runtime/runtime-workflow-client', () => ({
   workflowRead: workflowReadMock,
   workflowWrite: workflowWriteMock
 }))
+
+vi.mock('sonner', () => ({ toast: { error: vi.fn() } }))
 
 import { useWorkflowEditorSession } from './use-workflow-editor-session'
 
@@ -43,6 +46,7 @@ const settings = { activeRuntimeEnvironmentId: null }
 beforeEach(() => {
   workflowReadMock.mockReset()
   workflowWriteMock.mockReset()
+  vi.mocked(toast.error).mockReset()
 })
 
 describe('useWorkflowEditorSession', () => {
@@ -90,6 +94,47 @@ describe('useWorkflowEditorSession', () => {
 
     expect(result.current.conflict).toBe('save')
     expect(result.current.saving).toBe(false)
+  })
+
+  it('save shows a toast and resolves (does not throw) on a non-conflict error', async () => {
+    const definition = savedWorkflow()
+    workflowReadMock.mockResolvedValue({ definition, raw: 'raw', revision: 'rev-1', problems: [] })
+    workflowWriteMock.mockRejectedValueOnce(new Error('disk full'))
+    const { result } = renderHook(() => useWorkflowEditorSession({ settings, repoId: 'repo-1' }))
+    await act(() => result.current.open({ name: 'wf', source: 'project' }))
+
+    await expect(act(() => result.current.save())).resolves.toBeUndefined()
+
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith('disk full')
+    expect(result.current.conflict).toBeNull()
+    expect(result.current.saving).toBe(false)
+  })
+
+  it('overwriteOnDisk shows a toast and resolves (does not throw) on a non-conflict error', async () => {
+    const definition = savedWorkflow()
+    workflowReadMock.mockResolvedValue({ definition, raw: 'raw', revision: 'rev-1', problems: [] })
+    workflowWriteMock.mockRejectedValueOnce(new Error('network down'))
+    const { result } = renderHook(() => useWorkflowEditorSession({ settings, repoId: 'repo-1' }))
+    await act(() => result.current.open({ name: 'wf', source: 'project' }))
+
+    await expect(act(() => result.current.overwriteOnDisk())).resolves.toBeUndefined()
+
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith('network down')
+    expect(result.current.conflict).toBeNull()
+    expect(result.current.saving).toBe(false)
+  })
+
+  it('reloadFromDisk shows a toast and resolves (does not throw) on a read failure', async () => {
+    const definition = savedWorkflow()
+    workflowReadMock
+      .mockResolvedValueOnce({ definition, raw: 'raw', revision: 'rev-1', problems: [] })
+      .mockRejectedValueOnce(new Error('offline'))
+    const { result } = renderHook(() => useWorkflowEditorSession({ settings, repoId: 'repo-1' }))
+    await act(() => result.current.open({ name: 'wf', source: 'project' }))
+
+    await expect(act(() => result.current.reloadFromDisk())).resolves.toBeUndefined()
+
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith('offline')
   })
 
   it('reloadFromDisk adopts the on-disk copy and clears the conflict', async () => {
@@ -185,6 +230,41 @@ describe('useWorkflowEditorSession', () => {
     expect(result.current.conflict).toBe('external')
     // The local edit survives — checkForExternalChange must not overwrite it silently.
     expect(result.current.editor.state.definition.nodes[0].title).toBe('Renamed')
+  })
+
+  it('checkForExternalChange does nothing while a save is in flight', async () => {
+    const definition = savedWorkflow()
+    workflowReadMock.mockResolvedValueOnce({
+      definition,
+      raw: 'raw',
+      revision: 'rev-1',
+      problems: []
+    })
+    const { result } = renderHook(() => useWorkflowEditorSession({ settings, repoId: 'repo-1' }))
+    await act(() => result.current.open({ name: 'wf', source: 'project' }))
+
+    let resolveWrite!: (value: { revision: string }) => void
+    workflowWriteMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveWrite = resolve
+      })
+    )
+    act(() => {
+      void result.current.save()
+    })
+    expect(result.current.saving).toBe(true)
+    workflowReadMock.mockClear()
+
+    await act(() => result.current.checkForExternalChange())
+
+    expect(workflowReadMock).not.toHaveBeenCalled()
+    expect(result.current.conflict).toBeNull()
+
+    // Drain the pending save so it doesn't leak into another test.
+    await act(async () => {
+      resolveWrite({ revision: 'rev-2' })
+      await Promise.resolve()
+    })
   })
 
   it('close resets the session back to empty', async () => {

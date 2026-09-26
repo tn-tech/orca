@@ -1,5 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
+import { toast } from 'sonner'
 import { createBrowserUuid } from '@/lib/browser-uuid'
+import { translate } from '@/i18n/i18n'
 import { hasRuntimeRpcErrorCode } from '@/runtime/runtime-rpc-client'
 import {
   workflowRead,
@@ -160,7 +162,16 @@ export function useWorkflowEditorSession({
         setConflict('save')
         return
       }
-      throw error
+      // Why toast, not rethrow: callers fire this from a `void`-called handler (e.g. the header
+      // Save button), so a thrown error here would be an unhandled rejection with no UI feedback.
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : translate(
+              'auto.components.workflows.use-workflow-editor-session.saveFailed',
+              'Failed to save workflow.'
+            )
+      )
     } finally {
       setSaving(false)
     }
@@ -170,12 +181,24 @@ export function useWorkflowEditorSession({
     if (!repoId || !openRef) {
       return
     }
-    const result = await workflowRead(settings, { repo: repoId, ...openRef })
-    if (result.definition) {
-      editor.dispatch({ type: 'load-definition', definition: result.definition })
-      setDocumentRevision(result.revision)
+    // Why no rethrow: called `void`-style from the conflict dialog's Reload button.
+    try {
+      const result = await workflowRead(settings, { repo: repoId, ...openRef })
+      if (result.definition) {
+        editor.dispatch({ type: 'load-definition', definition: result.definition })
+        setDocumentRevision(result.revision)
+      }
+      setConflict(null)
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : translate(
+              'auto.components.workflows.use-workflow-editor-session.reloadFailed',
+              'Failed to reload the workflow from disk.'
+            )
+      )
     }
-    setConflict(null)
   }, [editor, openRef, repoId, settings])
 
   const overwriteOnDisk = useCallback(async () => {
@@ -201,7 +224,14 @@ export function useWorkflowEditorSession({
         setConflict('save')
         return
       }
-      throw error
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : translate(
+              'auto.components.workflows.use-workflow-editor-session.overwriteFailed',
+              'Failed to overwrite the workflow on disk.'
+            )
+      )
     } finally {
       setSaving(false)
     }
@@ -219,7 +249,7 @@ export function useWorkflowEditorSession({
   }, [editor])
 
   const checkForExternalChange = useCallback(async () => {
-    if (!repoId || !openRef || status !== 'ready' || conflict) {
+    if (!repoId || !openRef || status !== 'ready' || conflict || saving) {
       return
     }
     try {
@@ -236,7 +266,7 @@ export function useWorkflowEditorSession({
     } catch {
       // Best-effort: a transient read failure here just skips this poll.
     }
-  }, [conflict, documentRevision, editor, openRef, repoId, settings, status])
+  }, [conflict, documentRevision, editor, openRef, repoId, saving, settings, status])
 
   return {
     status,

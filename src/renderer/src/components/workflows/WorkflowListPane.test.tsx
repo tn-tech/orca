@@ -27,6 +27,11 @@ const noop = {
   onDelete: vi.fn().mockResolvedValue(undefined)
 }
 
+/** Radix's DropdownMenuTrigger opens on pointerdown, not click. */
+function openRowMenu(): void {
+  fireEvent.pointerDown(screen.getByRole('button', { name: 'Workflow actions' }), { button: 0 })
+}
+
 describe('WorkflowListPane', () => {
   it('shows the empty state when there are no rows', () => {
     render(<WorkflowListPane rows={[]} loading={false} error={null} selected={null} {...noop} />)
@@ -93,6 +98,59 @@ describe('WorkflowListPane', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
 
     await vi.waitFor(() => expect(onCreate).toHaveBeenCalledExactlyOnceWith('new-flow', 'project'))
+  })
+
+  it('reopens the New dialog blank after it was closed with typed text', () => {
+    render(<WorkflowListPane rows={[]} loading={false} error={null} selected={null} {...noop} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'New workflow' }))
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'typed-name' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'New workflow' }))
+
+    expect(screen.getByLabelText('Name')).toHaveValue('')
+  })
+
+  it('opens the Duplicate dialog pre-filled with "<name>-copy" for the clicked row', async () => {
+    render(
+      <WorkflowListPane
+        rows={[row({ name: 'ship-it' })]}
+        loading={false}
+        error={null}
+        selected={null}
+        {...noop}
+      />
+    )
+
+    openRowMenu()
+    fireEvent.click(await screen.findByText('Duplicate'))
+
+    expect(await screen.findByLabelText('Name')).toHaveValue('ship-it-copy')
+  })
+
+  it('reopens the Duplicate dialog with a fresh "<name>-copy" after being closed', async () => {
+    render(
+      <WorkflowListPane
+        rows={[row({ name: 'ship-it' })]}
+        loading={false}
+        error={null}
+        selected={null}
+        {...noop}
+      />
+    )
+
+    openRowMenu()
+    fireEvent.click(await screen.findByText('Duplicate'))
+    fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'edited' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument()
+
+    openRowMenu()
+    fireEvent.click(await screen.findByText('Duplicate'))
+
+    expect(await screen.findByLabelText('Name')).toHaveValue('ship-it-copy')
   })
 
   it('refuses an empty name without calling onCreate', async () => {
