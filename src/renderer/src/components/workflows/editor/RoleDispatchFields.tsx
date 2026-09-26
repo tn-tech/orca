@@ -18,31 +18,26 @@ import {
   getModelEffortChoices
 } from './workflow-agent-model-catalog'
 
-export type RoleDispatchFieldsProps = {
+export type AgentModelEffortFieldsProps = {
   agent?: string
   model?: string
   effort?: string
-  prompt: string
   onAgentChange: (agent: string | undefined) => void
   onModelChange: (model: string) => void
   onEffortChange: (effort: string) => void
-  onPromptChange: (prompt: string) => void
 }
 
-/** Agent/model/effort/prompt fields shared by every role-dispatching node (data-model.md §1's
- *  `roleDispatchShape`: AgentNode, RouterNode, later Reflection). FR-004's disabled-with-reason
- *  rule for model/effort lives here once instead of per node type. */
-export default function RoleDispatchFields({
+/** Agent/model/effort trio shared by every role-dispatching surface: per-node dispatch
+ *  (`RoleDispatchFields`, below) and role definition editing (`roles/RoleEditor.tsx`). FR-004's
+ *  disabled-with-reason rule for model/effort lives here once instead of per surface. */
+export function AgentModelEffortFields({
   agent,
   model,
   effort,
-  prompt,
   onAgentChange,
   onModelChange,
-  onEffortChange,
-  onPromptChange
-}: RoleDispatchFieldsProps): React.JSX.Element {
-  const promptId = useId()
+  onEffortChange
+}: AgentModelEffortFieldsProps): React.JSX.Element {
   const agentCatalog = getAgentCatalog()
   // Why: AgentCombobox is typed over the known TuiAgent union; a custom/unknown agent id
   // (permitted by the node schema's plain string) shows as unselected rather than crashing.
@@ -155,6 +150,46 @@ export default function RoleDispatchFields({
         </Select>
         {effortReason ? <p className="text-xs text-muted-foreground">{effortReason}</p> : null}
       </InspectorField>
+    </>
+  )
+}
+
+export type RoleDispatchFieldsProps = {
+  agent?: string
+  model?: string
+  effort?: string
+  prompt: string
+  onAgentChange: (agent: string | undefined) => void
+  onModelChange: (model: string) => void
+  onEffortChange: (effort: string) => void
+  onPromptChange: (prompt: string) => void
+}
+
+/** Agent/model/effort/prompt fields shared by every role-dispatching node (data-model.md §1's
+ *  `roleDispatchShape`: AgentNode, RouterNode, later Reflection). FR-004's disabled-with-reason
+ *  rule for model/effort lives in `AgentModelEffortFields` once instead of per node type. */
+export default function RoleDispatchFields({
+  agent,
+  model,
+  effort,
+  prompt,
+  onAgentChange,
+  onModelChange,
+  onEffortChange,
+  onPromptChange
+}: RoleDispatchFieldsProps): React.JSX.Element {
+  const promptId = useId()
+
+  return (
+    <>
+      <AgentModelEffortFields
+        agent={agent}
+        model={model}
+        effort={effort}
+        onAgentChange={onAgentChange}
+        onModelChange={onModelChange}
+        onEffortChange={onEffortChange}
+      />
 
       <InspectorField
         htmlFor={promptId}

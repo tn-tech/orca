@@ -17200,7 +17200,17 @@
           "AgentNodeFields": {
             "workspaceLabel": "Workspace",
             "workspaceRun": "Run workspace",
-            "workspaceChild": "Child workspace"
+            "workspaceChild": "Child workspace",
+            "roleFieldAgent": "Agent",
+            "roleFieldModel": "Model",
+            "roleFieldEffort": "Reasoning effort",
+            "roleFieldSystemPrompt": "System prompt",
+            "roleFieldSkills": "Skills",
+            "roleLabel": "Role",
+            "noRole": "No role",
+            "overridesHeading": "Role overrides",
+            "revertField": "Revert {{field}} to role default",
+            "noWorkspaceSkillSupport": "\"{{agent}}\" can't load skills from a workspace; skill instructions will be included in the prompt instead."
           },
           "AgentNodeResultContractField": {
             "invalidJson": "Not valid JSON.",
@@ -17398,6 +17408,62 @@
           "runStartFailed": "Failed to start the run.",
           "runStopNotImplemented": "Stopping a run isn't available yet.",
           "runStopFailed": "Failed to stop the run."
+        },
+        "roles": {
+          "ImportRoleDialog": {
+            "errorRequired": "Enter a source and a role name.",
+            "errorNotAllowedWithPath": "\"{{source}}\" is not on the project allowlist. Add it to workflows.allowedSources in {{path}}.",
+            "errorNotAllowed": "\"{{source}}\" is not on the project allowlist.",
+            "title": "Import role from repository",
+            "description": "The source must be on the project allowlist. Re-importing the same role updates it and flags local changes since the last import.",
+            "sourceLabel": "Source",
+            "sourcePlaceholder": "https://github.com/org/repo",
+            "roleNameLabel": "Role name",
+            "versionLabel": "Version (optional)",
+            "cancel": "Cancel",
+            "submit": "Import"
+          },
+          "RoleEditor": {
+            "nameLabel": "Name",
+            "systemPromptLabel": "System prompt",
+            "skillsLabel": "Skills",
+            "importFromRepository": "Import from repository…",
+            "originSummary": "Imported from {{source}} @ {{version}} on {{importedAt}}.",
+            "locallyModified": "Locally modified"
+          },
+          "SkillReferenceList": {
+            "addSkill": "Add skill",
+            "namePlaceholder": "Skill name",
+            "nameLabel": "Skill name",
+            "required": "Required",
+            "removeSkill": "Remove skill",
+            "sourceKindLabel": "Source",
+            "sourceKindPlugin": "Plugin",
+            "sourceKindRepository": "Repository",
+            "pluginPlaceholder": "Plugin name",
+            "pluginLabel": "Plugin name",
+            "locationPlaceholder": "Repository location",
+            "locationLabel": "Repository location",
+            "versionPlaceholder": "Version (optional)",
+            "versionLabel": "Version",
+            "trust": "Trust…"
+          },
+          "SkillSourceBadge": {
+            "repositoryWithVersion": "{{location}} @ {{version}}",
+            "plugin": "Plugin: {{plugin}}",
+            "notAllowlisted": "Not on the project allowlist."
+          },
+          "TrustSourceDialog": {
+            "title": "Trust this source?",
+            "description": "This decision is remembered for every later run on this host and can be revoked from settings.",
+            "sourceLabel": "Source",
+            "skillsLabel": "Skills provided",
+            "noSkills": "None named yet.",
+            "agentsLabel": "Agents affected",
+            "noAgents": "None yet.",
+            "refuse": "Refuse",
+            "trust": "Trust"
+          }
         }
       }
     },

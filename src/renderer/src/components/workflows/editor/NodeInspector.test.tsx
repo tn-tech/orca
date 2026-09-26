@@ -3,19 +3,40 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import type {
   AgentNode,
   JoinNode,
   LoopNode,
+  Role,
   RouterNode,
   StartNode,
   Workflow
 } from '../../../../../shared/workflows/workflow-definition-types'
-import NodeInspector from './NodeInspector'
+import NodeInspector, { type NodeInspectorProps } from './NodeInspector'
 
 afterEach(() => {
   cleanup()
 })
+
+function renderInspector(props: NodeInspectorProps): void {
+  render(
+    <TooltipProvider>
+      <NodeInspector {...props} />
+    </TooltipProvider>
+  )
+}
+
+function role(patch: Partial<Role> = {}): Role {
+  return {
+    id: 'reviewer',
+    name: 'Reviewer',
+    agent: 'claude',
+    systemPrompt: 'Review the change.',
+    skills: [],
+    ...patch
+  }
+}
 
 function agentNode(patch: Partial<AgentNode> = {}): AgentNode {
   return {
@@ -216,5 +237,116 @@ describe('NodeInspector', () => {
     )
     expect(screen.getByText('start → implement')).toBeInTheDocument()
     expect(screen.getByText('No condition — this edge always fires.')).toBeInTheDocument()
+  })
+
+  describe('Agent node role assignment and overrides (FR-017, FR-020)', () => {
+    it('lists roles from the definition and assigns one to the node', () => {
+      const onNodeChange = vi.fn()
+      renderInspector({
+        definition: workflow({ roles: { reviewer: role() } }),
+        selectedNodeId: 'implement',
+        onNodeChange,
+        onEdgeConditionChange: vi.fn()
+      })
+
+      fireEvent.click(screen.getByRole('combobox', { name: 'Role' }))
+      fireEvent.click(screen.getByRole('option', { name: 'Reviewer' }))
+
+      expect(onNodeChange).toHaveBeenLastCalledWith(expect.objectContaining({ roleId: 'reviewer' }))
+    })
+
+    it('shows no "Role overrides" strip until a field actually diverges from the role', () => {
+      renderInspector({
+        definition: workflow({
+          nodes: [
+            { id: 'start', type: 'start', title: 'Start' },
+            agentNode({ roleId: 'reviewer' })
+          ],
+          roles: { reviewer: role() }
+        }),
+        selectedNodeId: 'implement',
+        onNodeChange: vi.fn(),
+        onEdgeConditionChange: vi.fn()
+      })
+
+      expect(screen.queryByText('Role overrides')).not.toBeInTheDocument()
+    })
+
+    it('shows an overridden field distinctly and reverts it back to the role default', () => {
+      const onNodeChange = vi.fn()
+      renderInspector({
+        definition: workflow({
+          nodes: [
+            { id: 'start', type: 'start', title: 'Start' },
+            agentNode({ roleId: 'reviewer', overrides: { systemPrompt: 'Be terse.' } })
+          ],
+          roles: { reviewer: role() }
+        }),
+        selectedNodeId: 'implement',
+        onNodeChange,
+        onEdgeConditionChange: vi.fn()
+      })
+
+      expect(screen.getByText('Role overrides')).toBeInTheDocument()
+      expect(screen.getByLabelText('System prompt')).toHaveValue('Be terse.')
+
+      fireEvent.click(screen.getByRole('button', { name: 'Revert System prompt to role default' }))
+
+      expect(onNodeChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ overrides: undefined })
+      )
+    })
+
+    it('warns when the effective agent has no documented workspace skill location', () => {
+      renderInspector({
+        definition: workflow({
+          nodes: [
+            { id: 'start', type: 'start', title: 'Start' },
+            agentNode({
+              roleId: 'reviewer',
+              overrides: {
+                skills: [
+                  { name: 'plan', source: { kind: 'plugin', plugin: 'speckit' }, required: true }
+                ]
+              }
+            })
+          ],
+          roles: { reviewer: role({ agent: 'amp' }) }
+        }),
+        selectedNodeId: 'implement',
+        onNodeChange: vi.fn(),
+        onEdgeConditionChange: vi.fn()
+      })
+
+      expect(
+        screen.getByText(
+          `"amp" can't load skills from a workspace; skill instructions will be included in the prompt instead.`
+        )
+      ).toBeInTheDocument()
+    })
+
+    it('does not warn when the effective agent has a documented workspace skill location', () => {
+      renderInspector({
+        definition: workflow({
+          nodes: [
+            { id: 'start', type: 'start', title: 'Start' },
+            agentNode({
+              roleId: 'reviewer',
+              overrides: {
+                skills: [
+                  { name: 'plan', source: { kind: 'plugin', plugin: 'speckit' }, required: true }
+                ]
+              }
+            })
+          ],
+          roles: { reviewer: role({ agent: 'claude' }) }
+        }),
+        selectedNodeId: 'implement',
+        onNodeChange: vi.fn(),
+        onEdgeConditionChange: vi.fn()
+      })
+
+      expect(screen.queryByText(/can't load skills from a workspace/)).not.toBeInTheDocument()
+    })
   })
 })
