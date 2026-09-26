@@ -14,6 +14,10 @@ import type {
 import { engineCoordinatorHandle } from './workflow-engine-principal'
 import type { BriefNode } from './workflow-brief-builder'
 import type { WorkflowOrchestrationClient } from './workflow-orchestration-client'
+import {
+  provisioningBlockReason,
+  type WorkflowSkillProvisioningOutcome
+} from './workflow-skill-provisioning'
 
 export type ResolvedNodeLaunch = {
   agent: string
@@ -150,6 +154,8 @@ export type DispatchWorkflowNodeArgs = {
   node: BriefNode
   roles: Workflow['roles']
   workspacePolicy: Workflow['workspacePolicy']
+  /** Installs the node's skills for `agent` while the attempt is `provisioning` (FR-018). */
+  provisionSkills?: (agent: string) => Promise<WorkflowSkillProvisioningOutcome>
 }
 
 export type DispatchWorkflowNodeOutcome =
@@ -193,6 +199,18 @@ export async function dispatchWorkflowNode(
     launch = resolveNodeLaunch(node, roles)
   } catch (error) {
     return fail(error instanceof Error ? error.message : String(error))
+  }
+
+  if (args.provisionSkills) {
+    let blocked: string | undefined
+    try {
+      blocked = provisioningBlockReason(await args.provisionSkills(launch.agent))
+    } catch (error) {
+      blocked = error instanceof Error ? error.message : String(error)
+    }
+    if (blocked !== undefined) {
+      return fail(blocked)
+    }
   }
 
   const supportsModel = catalogSupportsWorkerLaunchPreferences(

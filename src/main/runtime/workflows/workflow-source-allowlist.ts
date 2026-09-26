@@ -29,7 +29,9 @@ export function assertSourceAllowed(source: string, allowlist: readonly string[]
 }
 
 /** Reads the repository-source allowlist from `orca.yaml` on the repo's execution host. */
-export async function getRepoWorkflowSourceAllowlist(repo: Repo): Promise<string[]> {
+export async function getRepoWorkflowSourceAllowlist(
+  repo: Pick<Repo, 'path' | 'connectionId'>
+): Promise<string[]> {
   const config = await readRepoWorkflowsConfig(repo)
   return config?.allowedSources ?? []
 }

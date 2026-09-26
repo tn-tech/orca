@@ -18,7 +18,9 @@ export const DEFAULT_WORKFLOWS_DIRECTORY = 'orca-workflows'
  * fallback when an SSH host is unreachable — that throws). Returns null when `orca.yaml` is
  * missing or has no `workflows` block.
  */
-export async function readRepoWorkflowsConfig(repo: Repo): Promise<OrcaWorkflowsConfig | null> {
+export async function readRepoWorkflowsConfig(
+  repo: Pick<Repo, 'path' | 'connectionId'>
+): Promise<OrcaWorkflowsConfig | null> {
   if (repo.connectionId) {
     const fsProvider = getSshFilesystemProvider(repo.connectionId)
     if (!fsProvider) {

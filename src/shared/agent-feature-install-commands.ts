@@ -17,6 +17,8 @@ export type AgentFeatureSkillCommandOptions = {
   global?: boolean
   yes?: boolean
   agents?: readonly string[]
+  /** Repository to install from; Orca's own skills repository when omitted. */
+  source?: string
 }
 
 export function buildAgentFeatureSkillInstallArgs(
@@ -39,12 +41,17 @@ export function buildAgentFeatureSkillInstallArgs(
   if (unusable !== undefined) {
     throw new Error(`"${unusable}" is not a usable install target.`)
   }
+  const source = options.source ?? ORCA_SKILLS_REPOSITORY_URL
+  // Why: a leading `-` would be parsed as a flag, not the positional source.
+  if (source.length === 0 || source.startsWith('-')) {
+    throw new Error(`"${source}" is not a usable skill source.`)
+  }
   // Why: one flag per name remains compatible with both single-value and variadic parsers.
   const skillArgs = skillNames.flatMap((name) => ['--skill', name])
   return [
     'skills',
     'add',
-    ORCA_SKILLS_REPOSITORY_URL,
+    source,
     ...skillArgs,
     ...(global ? ['--global'] : []),
     // Why: an explicit --agent stops `skills add` calling its own detection, whose

@@ -1,7 +1,11 @@
 // Starts one frontier-eligible node: Start/End/Join settle at once; a role-dispatching node gets its
 // attempt, brief, just-in-time Task and worker (research R3, R5; FR-024, FR-026).
 import type { BriefReferenceInputs } from '../../../shared/workflows/workflow-brief-references'
-import type { Node, Workflow } from '../../../shared/workflows/workflow-definition-types'
+import type {
+  Node,
+  SkillReference,
+  Workflow
+} from '../../../shared/workflows/workflow-definition-types'
 import type { NodeAttemptView } from '../../../shared/workflows/workflow-run-types'
 import type { OrchestrationDb } from '../orchestration/db'
 import { writeBrief, type BriefNode, type OrcaIgnoreTarget } from './workflow-brief-builder'
@@ -12,6 +16,8 @@ import { loopPreviousInputs } from './workflow-loop-unrolling'
 import { dispatchWorkflowNode, resolveNodeLaunch } from './workflow-node-dispatch'
 import type { WorkflowOrchestrationClient } from './workflow-orchestration-client'
 import type { WorkflowRunRecorder } from './workflow-run-recorder'
+import type { WorkflowSkillProvisioningOutcome } from './workflow-skill-provisioning'
+import { createRunSkillProvisioner } from './workflow-skill-provisioning-host'
 
 /** Where a run's node attempts write and read their files, on the run's execution host. */
 export type WorkflowRunWorkspaceAccess = {
@@ -104,6 +110,37 @@ function startLoop(ctx: WorkflowNodeLaunchContext, node: Node): void {
   ctx.recorder.transitionAttempt(attempt.id, 'running')
 }
 
+/** Node skills replace the role's list as a whole, matching the brief (FR-017). */
+function nodeSkills(node: BriefNode, roles: Workflow['roles']): SkillReference[] {
+  const role = node.roleId === undefined ? undefined : roles[node.roleId]
+  return node.overrides?.skills ?? role?.skills ?? []
+}
+
+async function provisionNodeSkillsFor(
+  ctx: WorkflowNodeLaunchContext,
+  node: BriefNode,
+  attemptId: string,
+  agent: string
+): Promise<WorkflowSkillProvisioningOutcome> {
+  const outcome = await createRunSkillProvisioner(ctx.workspace).provision({
+    runId: ctx.recorder.runId,
+    agent,
+    skills: nodeSkills(node, ctx.definition.roles)
+  })
+  if (outcome.kind === 'ready' && (outcome.installed.length > 0 || outcome.promptFallback)) {
+    ctx.recorder.event(
+      'skills_provisioned',
+      {
+        nodeId: node.id,
+        installed: outcome.installed,
+        promptFallback: outcome.promptFallback?.skills.map((skill) => skill.name) ?? []
+      },
+      { attemptId, reason: 'attempt' }
+    )
+  }
+  return outcome
+}
+
 async function launchBriefNode(
   ctx: WorkflowNodeLaunchContext,
   node: BriefNode,
@@ -116,7 +153,6 @@ async function launchBriefNode(
   let taskId: string
   try {
     const launch = resolveNodeLaunch(node, ctx.definition.roles)
-    const role = node.roleId === undefined ? undefined : ctx.definition.roles[node.roleId]
     const brief = await writeBrief({
       fs: ctx.workspace.fs,
       workspaceRoot: ctx.workspace.workspaceRoot,
@@ -127,7 +163,7 @@ async function launchBriefNode(
       iteration: attempt.iteration,
       node,
       systemPrompt: launch.systemPrompt,
-      skills: node.overrides?.skills ?? role?.skills ?? [],
+      skills: nodeSkills(node, ctx.definition.roles),
       briefInputs: {
         objective: ctx.objective,
         upstream: upstreamInputs(attempts),
@@ -160,7 +196,8 @@ async function launchBriefNode(
     taskId,
     node,
     roles: ctx.definition.roles,
-    workspacePolicy: ctx.definition.workspacePolicy
+    workspacePolicy: ctx.definition.workspacePolicy,
+    provisionSkills: (agent) => provisionNodeSkillsFor(ctx, node, attempt.id, agent)
   })
   const dispatchId = outcome.attempt?.dispatchId
   if (outcome.ok && dispatchId) {

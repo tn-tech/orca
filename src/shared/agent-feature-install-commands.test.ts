@@ -87,6 +87,29 @@ describe('agent feature skill commands', () => {
     expect(buildAgentFeatureSkillUpdateArgs(['orca-cli'], { yes: true }).at(-1)).toBe('-y')
   })
 
+  it('installs from a caller-chosen repository at project scope', () => {
+    expect(
+      buildAgentFeatureSkillInstallArgs(['review'], {
+        source: 'https://github.com/acme/skills',
+        global: false,
+        yes: true,
+        agents: ['claude-code']
+      })
+    ).toEqual([
+      'skills',
+      'add',
+      'https://github.com/acme/skills',
+      '--skill',
+      'review',
+      '--agent',
+      'claude-code',
+      '-y'
+    ])
+    expect(() =>
+      buildAgentFeatureSkillInstallArgs(['review'], { source: '--global', agents: ['codex'] })
+    ).toThrow('"--global" is not a usable skill source.')
+  })
+
   it('builds single-skill update commands', () => {
     expect(buildAgentFeatureSkillUpdateCommand('orchestration')).toBe(
       'npx skills update orchestration --global'
