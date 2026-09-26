@@ -61,6 +61,13 @@ describe('resolveConcurrencyLimit', () => {
   it('lets workflow.run.start overrides.concurrencyLimit win over the workflow file', () => {
     expect(resolveConcurrencyLimit({ concurrencyLimit: 8 }, 2)).toBe(2)
   })
+
+  it('floors a legacy/hand-edited zero-or-negative value at 1 so a run cannot stall forever', () => {
+    expect(resolveConcurrencyLimit({ concurrencyLimit: 0 })).toBe(1)
+    expect(resolveConcurrencyLimit({ concurrencyLimit: -5 })).toBe(1)
+    expect(resolveConcurrencyLimit({ concurrencyLimit: undefined }, 0)).toBe(1)
+    expect(resolveConcurrencyLimit({ concurrencyLimit: undefined }, -3)).toBe(1)
+  })
 })
 
 describe('countInFlightAttempts', () => {

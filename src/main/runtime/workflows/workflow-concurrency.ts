@@ -3,26 +3,24 @@
 // a rehydrated run enforces the same budget a live one would (data-model.md workflow_runs
 // .concurrency_limit). Structural nodes (start/end/loop/join) settle inline and never hold a slot.
 import type { Workflow } from '../../../shared/workflows/workflow-definition-types'
+import { ACTIVE_ATTEMPT_STATES } from '../../../shared/workflows/workflow-node-states'
 import type { NodeAttemptView } from '../../../shared/workflows/workflow-run-types'
 import type { IterationNode } from './workflow-loop-unrolling'
 import { WORKER_DISPATCH_NODE_TYPES } from './workflow-run-node-launch'
 
 export const DEFAULT_WORKFLOW_CONCURRENCY_LIMIT = 4
 
-const IN_FLIGHT_ATTEMPT_STATES: ReadonlySet<NodeAttemptView['state']> = new Set([
-  'pending',
-  'provisioning',
-  'running',
-  'waiting',
-  'unverifiable'
-])
-
 /** `overrides.concurrencyLimit` (workflow.run.start) wins; else the workflow file's own value, else the default. */
 export function resolveConcurrencyLimit(
   workflow: Pick<Workflow, 'concurrencyLimit'>,
   overrideConcurrencyLimit?: number
 ): number {
-  return overrideConcurrencyLimit ?? workflow.concurrencyLimit ?? DEFAULT_WORKFLOW_CONCURRENCY_LIMIT
+  // Floor of 1: both schemas validate `.positive()`, but a hand-edited or pre-validation
+  // snapshot could still carry a stray 0/negative value, which would stall the run forever.
+  return Math.max(
+    1,
+    overrideConcurrencyLimit ?? workflow.concurrencyLimit ?? DEFAULT_WORKFLOW_CONCURRENCY_LIMIT
+  )
 }
 
 /** Attempts holding a slot right now: not yet terminal, on a worker-dispatching node type. */
@@ -31,8 +29,7 @@ export function countInFlightAttempts(
 ): number {
   return attempts.filter(
     (attempt) =>
-      WORKER_DISPATCH_NODE_TYPES.has(attempt.nodeType) &&
-      IN_FLIGHT_ATTEMPT_STATES.has(attempt.state)
+      WORKER_DISPATCH_NODE_TYPES.has(attempt.nodeType) && ACTIVE_ATTEMPT_STATES.has(attempt.state)
   ).length
 }
 

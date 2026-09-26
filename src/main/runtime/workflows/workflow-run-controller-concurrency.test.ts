@@ -113,4 +113,37 @@ describe('WorkflowRunController concurrency', () => {
     await d.report(run.id, 'integrate', 'succeeded')
     await expect(finished).resolves.toBe('completed')
   })
+
+  it('keeps concurrency budgets independent across two runs in the same project (spec edge case)', async () => {
+    const tightRun = createRun(1)
+    const looseRun = createRun(4)
+    const tightFinished = h.createController(tightRun.id).run()
+    const looseFinished = h.createController(looseRun.id).run()
+
+    await waitUntil(() => d.attempt(tightRun.id, 'a')?.state === 'running')
+    await waitUntil(() =>
+      ['a', 'b', 'c'].every((nodeId) => d.attempt(looseRun.id, nodeId)?.state === 'running')
+    )
+    // tightRun's limit of 1 only ever admits one branch...
+    expect(d.attempt(tightRun.id, 'b')).toBeUndefined()
+    expect(d.attempt(tightRun.id, 'c')).toBeUndefined()
+    // ...and never throttled looseRun's own (independent) budget.
+    expect(
+      ['a', 'b', 'c'].every((nodeId) => d.attempt(looseRun.id, nodeId)?.state === 'running')
+    ).toBe(true)
+
+    await d.report(tightRun.id, 'a', 'succeeded')
+    await waitUntil(() => d.attempt(tightRun.id, 'b')?.state === 'running')
+    await d.report(tightRun.id, 'b', 'succeeded')
+    await waitUntil(() => d.attempt(tightRun.id, 'c')?.state === 'running')
+    await d.report(tightRun.id, 'c', 'succeeded')
+    await d.report(tightRun.id, 'integrate', 'succeeded')
+    await expect(tightFinished).resolves.toBe('completed')
+
+    await d.report(looseRun.id, 'a', 'succeeded')
+    await d.report(looseRun.id, 'b', 'succeeded')
+    await d.report(looseRun.id, 'c', 'succeeded')
+    await d.report(looseRun.id, 'integrate', 'succeeded')
+    await expect(looseFinished).resolves.toBe('completed')
+  })
 })
