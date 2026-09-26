@@ -20,22 +20,33 @@ class OrcaRuntimeService extends OrcaRuntimeWithResolveWaiter {
   }
 
   /**
-   * Lazily built like `getOrchestrationDb()` (same file, mixed in below): built on first use
-   * rather than in the constructor, so an idle runtime never creates an orchestration DB. Building
-   * it rehydrates every run a prior process left non-terminal (FR-039), so a host that starts
-   * workflows at all must call this once during its own startup, not only when a client asks.
+   * Builds the workflow engine (rehydrating every run a prior process left non-terminal, FR-039)
+   * if it isn't already built. Every host that starts workflows at all — desktop and orcad — must
+   * call this once during its own startup: FR-039 requires a run to keep going with no client
+   * connected, so rehydration cannot wait for a client to ask via `getWorkflowEngine()`. Safe to
+   * call more than once; only the first call does anything.
    */
-  getWorkflowEngine(): WorkflowEngine {
+  startWorkflowEngine(this: OrcaRuntimeServiceExport): void {
+    this.getWorkflowEngine()
+  }
+
+  /**
+   * Lazily built like `getOrchestrationDb()` (same file, mixed in below): built on first use
+   * rather than in the constructor, so an idle runtime never creates an orchestration DB.
+   * Building it also rehydrates active runs — see `startWorkflowEngine()`, which every host calls
+   * unconditionally at boot so that doesn't depend on a client ever calling this.
+   *
+   * The explicit `this` parameter (rather than a cast) types `waitForMessage`, `createManagedWorktree`
+   * and the other command-surface members this method needs: they're installed onto every instance
+   * by the `OrcaRuntimeWith*` mixin chain the constructor runs through, but aren't visible on the
+   * bare class from inside its own body — only on the exported, fully-mixed type.
+   */
+  getWorkflowEngine(this: OrcaRuntimeServiceExport): WorkflowEngine {
     if (!this.workflowEngine) {
-      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the command
-      // surfaces (waitForMessage, browser commands, …) are installed onto this instance by the
-      // OrcaRuntimeWith* mixin chain the constructor runs through; this is the same cast
-      // orca-runtime-state-fields.ts uses internally to type them.
-      const runtime = this as unknown as OrcaRuntimeServiceExport
       this.workflowEngine = new WorkflowEngine({
         db: this.getOrchestrationDb(),
-        runtime,
-        dispatcher: new RpcDispatcher({ runtime, methods: ORCHESTRATION_METHODS }),
+        runtime: this,
+        dispatcher: new RpcDispatcher({ runtime: this, methods: ORCHESTRATION_METHODS }),
         getRepo: (repoId) => this.store?.getRepo(repoId)
       })
       this.workflowEngine.rehydrateActiveRuns()

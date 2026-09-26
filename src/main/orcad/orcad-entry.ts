@@ -166,16 +166,20 @@ async function startOrcadRuntime(
   let uninstallObservedStatusIdentity = (): void => {}
   registerCleanup(async () => {
     try {
-      await rpc?.stop()
+      await runtime?.stopWorkflowEngine()
     } finally {
       try {
-        // Why disconnect and not shut down: the daemon must outlive this process, or an
-        // orcad restart goes back to killing every running terminal.
-        await stopOrcadDaemon()
+        await rpc?.stop()
       } finally {
-        uninstallObservedStatusIdentity()
-        uninstallHookStatusRepublish()
-        agentHookServer.stop()
+        try {
+          // Why disconnect and not shut down: the daemon must outlive this process, or an
+          // orcad restart goes back to killing every running terminal.
+          await stopOrcadDaemon()
+        } finally {
+          uninstallObservedStatusIdentity()
+          uninstallHookStatusRepublish()
+          agentHookServer.stop()
+        }
       }
     }
   })
@@ -294,6 +298,10 @@ async function startOrcadRuntime(
 
   // Recovery binds terminal and dispatch identities; only now can startup observations be fenced.
   observedStatusCapture.attach(runtime)
+
+  // Why here and not lazily on first RPC call: a workflow run on this host must resume with no
+  // client connected (FR-039), so rehydration cannot wait for one to ask.
+  runtime.startWorkflowEngine()
 
   const bindHost = resolveOrcadBindHost(options.bind)
   rpc = new OrcaRuntimeRpcServer({
