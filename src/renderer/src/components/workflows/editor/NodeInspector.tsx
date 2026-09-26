@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useId } from 'react'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { translate } from '@/i18n/i18n'
@@ -51,21 +51,27 @@ function NodeBaseFields({
   node: Node
   onChange: (node: Node) => void
 }): React.JSX.Element {
+  const titleId = useId()
+  const notesId = useId()
   return (
     <>
       <InspectorField
+        htmlFor={titleId}
         label={translate('auto.components.workflows.editor.NodeInspector.titleLabel', 'Title')}
       >
         <Input
+          id={titleId}
           value={node.title}
           onChange={(event) => onChange({ ...node, title: event.target.value })}
           className="h-8"
         />
       </InspectorField>
       <InspectorField
+        htmlFor={notesId}
         label={translate('auto.components.workflows.editor.NodeInspector.notesLabel', 'Notes')}
       >
         <Textarea
+          id={notesId}
           value={node.notes ?? ''}
           onChange={(event) => onChange({ ...node, notes: event.target.value || undefined })}
           className="min-h-16"

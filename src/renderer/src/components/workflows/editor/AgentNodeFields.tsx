@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useId } from 'react'
 import AgentCombobox from '@/components/agent/AgentCombobox'
 import {
   Select,
@@ -56,6 +56,7 @@ export default function AgentNodeFields({
   roles,
   onChange
 }: AgentNodeFieldsProps): React.JSX.Element {
+  const promptId = useId()
   const role = node.roleId ? roles[node.roleId] : undefined
   const effectiveAgent = node.overrides?.agent ?? role?.agent
   const effectiveModel = node.overrides?.model ?? role?.model
@@ -184,9 +185,11 @@ export default function AgentNodeFields({
       </InspectorField>
 
       <InspectorField
+        htmlFor={promptId}
         label={translate('auto.components.workflows.editor.AgentNodeFields.promptLabel', 'Prompt')}
       >
         <Textarea
+          id={promptId}
           value={node.prompt}
           onChange={(event) => onChange({ ...node, prompt: event.target.value })}
           className="min-h-24"

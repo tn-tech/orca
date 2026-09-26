@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   AgentNode,
@@ -68,6 +68,44 @@ describe('NodeInspector', () => {
     )
     expect(screen.getByDisplayValue('Implement')).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Model' })).toBeInTheDocument()
+    // Title/Prompt are plain Input/Textarea fields; the shadcn Label must be programmatically
+    // associated with them (htmlFor/id) for screen readers, not just a nearby caption div.
+    expect(screen.getByLabelText('Title')).toHaveValue('Implement')
+    expect(screen.getByLabelText('Prompt')).toHaveValue('Build it.')
+  })
+
+  it('shows title/notes but not AgentNodeFields for a non-agent node', () => {
+    render(
+      <NodeInspector
+        definition={workflow()}
+        selectedNodeId="start"
+        onNodeChange={vi.fn()}
+        onEdgeConditionChange={vi.fn()}
+      />
+    )
+    expect(screen.getByDisplayValue('Start')).toBeInTheDocument()
+    expect(
+      screen.getByText('Detailed settings for this node type land in a later unit.')
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Model' })).not.toBeInTheDocument()
+  })
+
+  it('edits a non-agent node title through the shared base fields', () => {
+    const onNodeChange = vi.fn()
+    render(
+      <NodeInspector
+        definition={workflow()}
+        selectedNodeId="start"
+        onNodeChange={onNodeChange}
+        onEdgeConditionChange={vi.fn()}
+      />
+    )
+
+    fireEvent.change(screen.getByDisplayValue('Start'), { target: { value: 'Kickoff' } })
+
+    expect(onNodeChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: 'start', type: 'start', title: 'Kickoff' })
+    )
   })
 
   it('renders ConditionBuilder for a selected edge', () => {

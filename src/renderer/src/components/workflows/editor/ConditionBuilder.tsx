@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react'
+import React, { useState } from 'react'
 import { Plus, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -28,6 +28,16 @@ import {
 export type ConditionBuilderProps = {
   condition: Condition | undefined
   onChange: (condition: Condition | undefined) => void
+}
+
+/** Content comparison (not `===`) so our own committed edit — a new-but-equal object round-
+ *  tripping back through props — is never mistaken for an external change. */
+function conditionsMatch(a: Condition | undefined, b: Condition | undefined): boolean {
+  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
+}
+
+function generateRowKeys(count: number): string[] {
+  return Array.from({ length: count }, () => createBrowserUuid())
 }
 
 function conditionOpLabel(op: ConditionOp): string {
@@ -154,18 +164,35 @@ export default function ConditionBuilder({
   onChange
 }: ConditionBuilderProps): React.JSX.Element {
   const [state, setState] = useState<ConditionBuilderState>(() => decodeCondition(condition))
+  // The `condition` value `state` currently reflects — either the initial prop, or the last
+  // value we ourselves committed. Compared by content, not identity, below.
+  const [syncedCondition, setSyncedCondition] = useState(condition)
   // Why: rows have no id of their own; a stable per-row key keeps a row's inputs attached to
   // that row when a different row is removed, instead of the array index.
-  const rowKeysRef = useRef<string[]>(state.rows.map(() => createBrowserUuid()))
+  const [rowKeys, setRowKeys] = useState<string[]>(() => generateRowKeys(state.rows.length))
+
+  // Resync when `condition` changes without going through `commit` below — e.g. undo/redo or
+  // another client editing the same edge while it stays selected. A no-op for our own edits,
+  // which update `syncedCondition` in lockstep, and never fires mid-typing since every row
+  // interaction here already commits (there is no "invalid, uncommitted" condition draft).
+  if (!conditionsMatch(condition, syncedCondition)) {
+    const nextState = decodeCondition(condition)
+    setSyncedCondition(condition)
+    setState(nextState)
+    setRowKeys(generateRowKeys(nextState.rows.length))
+  }
+
   const keyedRows = state.rows.map((row, index) => ({
-    rowKey: rowKeysRef.current[index] ?? createBrowserUuid(),
+    rowKey: rowKeys[index] ?? createBrowserUuid(),
     row,
     index
   }))
 
   function commit(next: ConditionBuilderState): void {
+    const encoded = encodeConditionBuilderState(next)
     setState(next)
-    onChange(encodeConditionBuilderState(next))
+    setSyncedCondition(encoded)
+    onChange(encoded)
   }
 
   function updateRow(index: number, row: ConditionBuilderRow): void {
@@ -177,12 +204,12 @@ export default function ConditionBuilder({
   }
 
   function removeRow(index: number): void {
-    rowKeysRef.current = rowKeysRef.current.filter((_, i) => i !== index)
+    setRowKeys((keys) => keys.filter((_, i) => i !== index))
     commit({ ...state, rows: state.rows.filter((_, i) => i !== index), unsupported: false })
   }
 
   function addRow(): void {
-    rowKeysRef.current = [...rowKeysRef.current, createBrowserUuid()]
+    setRowKeys((keys) => [...keys, createBrowserUuid()])
     commit({
       ...state,
       rows: [...state.rows, { path: '', op: 'truthy', value: '' }],
