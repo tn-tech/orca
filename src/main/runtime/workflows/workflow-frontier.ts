@@ -21,11 +21,14 @@ export type IncomingEdgeOutcome =
 
 export type FrontierDecision = { eligible: string[]; skipped: string[] }
 
-// Router/Loop/Join/Approval/Reflection frontiers land with their own phases; they stay pending here.
-const FRONTIER_NODE_TYPES = new Set<Node['type']>(['start', 'end', 'agent'])
+// Router/Join/Approval/Reflection frontiers land with their own phases; they stay pending here.
+// Loop bodies advance per iteration in workflow-loop-unrolling.ts; the Loop node itself is offered here.
+const FRONTIER_NODE_TYPES = new Set<Node['type']>(['start', 'end', 'agent', 'loop'])
 
-function latestAttemptByNode(attempts: readonly FrontierAttempt[]): Map<string, FrontierAttempt> {
-  const latest = new Map<string, FrontierAttempt>()
+export function latestAttemptByNode<T extends FrontierAttempt>(
+  attempts: readonly T[]
+): Map<string, T> {
+  const latest = new Map<string, T>()
   for (const attempt of attempts) {
     const current = latest.get(attempt.nodeId)
     if (
@@ -39,7 +42,7 @@ function latestAttemptByNode(attempts: readonly FrontierAttempt[]): Map<string, 
   return latest
 }
 
-function edgeOutcome(
+export function incomingEdgeOutcome(
   edge: Edge,
   source: FrontierAttempt | undefined,
   sourceSkipped: boolean
@@ -47,8 +50,10 @@ function edgeOutcome(
   if (sourceSkipped) {
     return 'source-skipped'
   }
-  // Port selection (router choice, approval option, loop body/exit) lands with those node types.
-  if (edge.fromPort !== undefined || !source) {
+  // The caller resolves an `exit` edge's source to its Loop's attempt (loopExitSourceId).
+  // Router choice and approval option ports land with those node types; `body` edges are
+  // back-edges the loop unrolling owns.
+  if ((edge.fromPort !== undefined && edge.fromPort !== 'exit') || !source) {
     return 'unresolved'
   }
   switch (source.state) {
@@ -79,7 +84,7 @@ export function classifyIncomingEdge(
   edge: Edge,
   attempts: readonly FrontierAttempt[]
 ): IncomingEdgeOutcome {
-  return edgeOutcome(edge, latestAttemptByNode(attempts).get(edge.from), false)
+  return incomingEdgeOutcome(edge, latestAttemptByNode(attempts).get(edge.from), false)
 }
 
 function isBlocked(outcome: IncomingEdgeOutcome): boolean {
@@ -90,11 +95,55 @@ function loopBodyNodeIds(nodes: readonly Node[]): Set<string> {
   return new Set(nodes.flatMap((node) => (node.type === 'loop' ? node.body.nodeIds : [])))
 }
 
+/** An `exit` edge fires when its Loop settles, whether drawn from the Loop or its body. */
+function loopExitSourceId(nodes: readonly Node[], edge: Edge): string {
+  if (edge.fromPort !== 'exit') {
+    return edge.from
+  }
+  const loop = nodes.find((node) => node.type === 'loop' && node.body.nodeIds.includes(edge.from))
+  return loop?.id ?? edge.from
+}
+
 /**
- * Nodes without an attempt that may start now, and nodes that can never run. Several incoming edges
- * merge like the default Join: eligible once none is unresolved and one fired; skipped only when
- * every edge is blocked. Skips cascade to a fixpoint.
+ * Splits candidates into eligible and skipped. Several incoming edges merge like the default Join:
+ * eligible once none is unresolved and one fired; skipped only when every edge is blocked. Skips
+ * cascade to a fixpoint. Roots are always eligible.
  */
+export function decideCandidates(
+  candidateIds: readonly string[],
+  isRoot: (nodeId: string) => boolean,
+  outcomesFor: (nodeId: string, skipped: ReadonlySet<string>) => IncomingEdgeOutcome[]
+): FrontierDecision {
+  const skipped = new Set<string>()
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const nodeId of candidateIds) {
+      if (isRoot(nodeId) || skipped.has(nodeId)) {
+        continue
+      }
+      const outcomes = outcomesFor(nodeId, skipped)
+      if (outcomes.length > 0 && outcomes.every(isBlocked)) {
+        skipped.add(nodeId)
+        changed = true
+      }
+    }
+  }
+  const eligible = candidateIds.filter((nodeId) => {
+    if (isRoot(nodeId)) {
+      return true
+    }
+    const outcomes = outcomesFor(nodeId, skipped)
+    return (
+      !skipped.has(nodeId) &&
+      outcomes.some((outcome) => outcome === 'fired') &&
+      !outcomes.includes('unresolved')
+    )
+  })
+  return { eligible, skipped: candidateIds.filter((nodeId) => skipped.has(nodeId)) }
+}
+
+/** Nodes outside every Loop body that have no attempt and may start now, or can never run. */
 export function computeFrontier(
   definition: Workflow,
   attempts: readonly FrontierAttempt[]
@@ -104,43 +153,20 @@ export function computeFrontier(
   const candidates = definition.nodes.filter(
     (node) => FRONTIER_NODE_TYPES.has(node.type) && !inLoopBody.has(node.id) && !latest.has(node.id)
   )
-  const incoming = (nodeId: string): Edge[] => definition.edges.filter((edge) => edge.to === nodeId)
-  const skipped = new Set<string>()
-  const outcomesFor = (nodeId: string): IncomingEdgeOutcome[] =>
-    incoming(nodeId).map((edge) => edgeOutcome(edge, latest.get(edge.from), skipped.has(edge.from)))
-
-  let changed = true
-  while (changed) {
-    changed = false
-    for (const node of candidates) {
-      if (node.type === 'start' || skipped.has(node.id)) {
-        continue
-      }
-      const outcomes = outcomesFor(node.id)
-      if (outcomes.length > 0 && outcomes.every(isBlocked)) {
-        skipped.add(node.id)
-        changed = true
-      }
-    }
-  }
-
-  const eligible = candidates
-    .filter((node) => {
-      if (node.type === 'start') {
-        return true
-      }
-      const outcomes = outcomesFor(node.id)
-      return (
-        !skipped.has(node.id) &&
-        outcomes.some((outcome) => outcome === 'fired') &&
-        !outcomes.includes('unresolved')
-      )
-    })
-    .map((node) => node.id)
-  return {
-    eligible,
-    skipped: candidates.filter((node) => skipped.has(node.id)).map((node) => node.id)
-  }
+  const startIds = new Set(
+    candidates.filter((node) => node.type === 'start').map((node) => node.id)
+  )
+  return decideCandidates(
+    candidates.map((node) => node.id),
+    (nodeId) => startIds.has(nodeId),
+    (nodeId, skipped) =>
+      definition.edges
+        .filter((edge) => edge.to === nodeId && edge.fromPort !== 'body')
+        .map((edge) => {
+          const sourceId = loopExitSourceId(definition.nodes, edge)
+          return incomingEdgeOutcome(edge, latest.get(sourceId), skipped.has(sourceId))
+        })
+  )
 }
 
 export type WorkflowTaskPort = Pick<WorkflowOrchestrationClient, 'call'>
@@ -179,7 +205,7 @@ export async function createNodeTask(
   // Why: taskCreate leaves a Task pending while any dep is not completed, and only ready Tasks dispatch.
   const deps = args.definition.edges
     .filter((edge) => edge.to === node.id)
-    .filter((edge) => edgeOutcome(edge, latest.get(edge.from), false) === 'fired')
+    .filter((edge) => incomingEdgeOutcome(edge, latest.get(edge.from), false) === 'fired')
     .map((edge) => latest.get(edge.from)?.taskId)
     .filter((taskId): taskId is string => taskId !== undefined)
   const result = await port.call('orchestration.taskCreate', {

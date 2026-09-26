@@ -6,6 +6,7 @@ import type {
   ResultContract,
   RouterNode
 } from '../../../shared/workflows/workflow-definition-types'
+import type { JsonValue } from '../../../shared/workflows/workflow-condition-schema'
 import type { SkillReference } from '../../../shared/workflows/workflow-skill-reference-schema'
 import type { WorkflowProblem } from '../../../shared/workflows/workflow-problem'
 import {
@@ -71,20 +72,47 @@ function skillsSection(skills: readonly SkillReference[]): string {
   return skills.map((skill) => `- **${skill.name}** — invoke with \`/${skill.name}\``).join('\n')
 }
 
-function inputsSection(upstream: BriefReferenceInputs['upstream'], inputsJsonPath: string): string {
-  const entries = Object.entries(upstream)
-  const table =
-    entries.length === 0
-      ? 'No upstream node results.'
-      : [
-          '| Node | Result | Artifacts |',
-          '| --- | --- | --- |',
-          ...entries.map(
-            ([nodeId, { result, artifacts }]) =>
-              `| ${nodeId} | \`${JSON.stringify(result)}\` | ${artifacts.map((path) => `\`${path}\``).join(', ') || '—'} |`
-          )
-        ].join('\n')
-  return `${table}\n\nFull structured data (including \`loop.previous\` and \`join.branches\` where applicable) is in \`${inputsJsonPath}\`.`
+type ResultRows = Record<string, { result: JsonValue; artifacts?: string[] }>
+
+function resultTable(rows: ResultRows, emptyText: string): string {
+  const entries = Object.entries(rows)
+  if (entries.length === 0) {
+    return emptyText
+  }
+  return [
+    '| Node | Result | Artifacts |',
+    '| --- | --- | --- |',
+    ...entries.map(
+      ([nodeId, { result, artifacts = [] }]) =>
+        `| ${nodeId} | \`${JSON.stringify(result)}\` | ${artifacts.map((path) => `\`${path}\``).join(', ') || '—'} |`
+    )
+  ].join('\n')
+}
+
+/** Loop body nodes also see their iteration and the previous iteration's results (FR-028). */
+function loopSection(inputs: BriefReferenceInputs, iteration: number | undefined): string[] {
+  if (inputs.loopPrevious === undefined) {
+    return []
+  }
+  return [
+    `Loop iteration ${iteration ?? 0} (0-based). Previous iteration results (\`loop.previous\`):`,
+    '',
+    resultTable(inputs.loopPrevious, 'No previous iteration.'),
+    ''
+  ]
+}
+
+function inputsSection(
+  inputs: BriefReferenceInputs,
+  iteration: number | undefined,
+  inputsJsonPath: string
+): string {
+  return [
+    resultTable(inputs.upstream, 'No upstream node results.'),
+    '',
+    ...loopSection(inputs, iteration),
+    `Full structured data (including \`loop.previous\` and \`join.branches\` where applicable) is in \`${inputsJsonPath}\`.`
+  ].join('\n')
 }
 
 function artifactsSection(artifacts: readonly { path: string; required: boolean }[]): string {
@@ -104,6 +132,8 @@ export type BuildBriefMarkdownArgs = {
   systemPrompt: string
   skills: readonly SkillReference[]
   briefInputs: BriefReferenceInputs
+  /** The Loop iteration of a body node; shown only when `briefInputs.loopPrevious` is set. */
+  iteration?: number
 }
 
 /** Renders brief.md's seven sections, in the order contracts/agent-brief.md defines them. */
@@ -131,7 +161,7 @@ export function buildBriefMarkdown(args: BuildBriefMarkdownArgs): {
     '',
     '## Inputs',
     '',
-    inputsSection(args.briefInputs.upstream, inputsJsonPath),
+    inputsSection(args.briefInputs, args.iteration, inputsJsonPath),
     '',
     '## Skills',
     '',

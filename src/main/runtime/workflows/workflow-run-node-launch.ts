@@ -7,6 +7,7 @@ import type { OrchestrationDb } from '../orchestration/db'
 import { writeBrief, type BriefNode, type OrcaIgnoreTarget } from './workflow-brief-builder'
 import type { WorkflowFilesystem } from './workflow-file-store-filesystem'
 import { createNodeTask } from './workflow-frontier'
+import { loopPreviousInputs } from './workflow-loop-unrolling'
 import { dispatchWorkflowNode, resolveNodeLaunch } from './workflow-node-dispatch'
 import type { WorkflowOrchestrationClient } from './workflow-orchestration-client'
 import type { WorkflowRunRecorder } from './workflow-run-recorder'
@@ -88,12 +89,21 @@ function settleStructuralNode(ctx: WorkflowNodeLaunchContext, node: Node): void 
   }
 }
 
+/** A Loop's single attempt runs for as long as it iterates (workflow-loop-unrolling.ts). */
+function startLoop(ctx: WorkflowNodeLaunchContext, node: Node): void {
+  const attempt = ctx.recorder.createAttempt(node)
+  ctx.recorder.transitionAttempt(attempt.id, 'provisioning')
+  ctx.recorder.transitionAttempt(attempt.id, 'running')
+}
+
 async function launchBriefNode(
   ctx: WorkflowNodeLaunchContext,
   node: BriefNode,
-  attempts: readonly NodeAttemptView[]
+  attempts: readonly NodeAttemptView[],
+  iteration: number
 ): Promise<void> {
-  const attempt = ctx.recorder.createAttempt(node)
+  const attempt = ctx.recorder.createAttempt(node, iteration)
+  const loopPrevious = loopPreviousInputs(ctx.definition, attempts, node.id, iteration)
   let taskId: string
   try {
     const launch = resolveNodeLaunch(node, ctx.definition.roles)
@@ -109,7 +119,11 @@ async function launchBriefNode(
       node,
       systemPrompt: launch.systemPrompt,
       skills: node.overrides?.skills ?? role?.skills ?? [],
-      briefInputs: { objective: ctx.objective, upstream: upstreamInputs(attempts) }
+      briefInputs: {
+        objective: ctx.objective,
+        upstream: upstreamInputs(attempts),
+        ...(loopPrevious ? { loopPrevious } : {})
+      }
     })
     taskId = await createNodeTask(ctx.client, {
       definition: ctx.definition,
@@ -145,10 +159,12 @@ async function launchBriefNode(
   }
 }
 
+/** `iteration` is the Loop iteration for a body node, 0 elsewhere. */
 export async function launchEligibleNode(
   ctx: WorkflowNodeLaunchContext,
   nodeId: string,
-  attempts: readonly NodeAttemptView[]
+  attempts: readonly NodeAttemptView[],
+  iteration = 0
 ): Promise<void> {
   const node = ctx.definition.nodes.find((candidate) => candidate.id === nodeId)
   if (!node) {
@@ -158,10 +174,14 @@ export async function launchEligibleNode(
     settleStructuralNode(ctx, node)
     return
   }
-  if (isBriefNode(node)) {
-    await launchBriefNode(ctx, node, attempts)
+  if (node.type === 'loop') {
+    startLoop(ctx, node)
     return
   }
-  // The frontier never offers Loop/Join/Approval yet; offering one would re-offer it forever.
+  if (isBriefNode(node)) {
+    await launchBriefNode(ctx, node, attempts, iteration)
+    return
+  }
+  // The frontier never offers Join/Approval yet; offering one would re-offer it forever.
   throw new Error(`Workflow node ${nodeId} (${node.type}) cannot be launched by this engine yet.`)
 }

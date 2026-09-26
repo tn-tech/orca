@@ -10,12 +10,14 @@ import type { ResultSchemaValidation } from './workflow-result-schema'
 import { createResultSchemaValidator } from './workflow-result-schema'
 import type { WorkflowFilesystem } from './workflow-file-store-filesystem'
 
-/** T077 adds `loop_cap_reached` here for a Loop node's cap-exceeded failure. */
+/** The last two fail a Loop node: cap reached without the exit condition, or a failed iteration. */
 export const WORKFLOW_RESULT_FAILURE_REASONS = [
   'result_missing',
   'result_invalid',
   'artifact_missing',
-  'worker_failed'
+  'worker_failed',
+  'loop_cap_reached',
+  'loop_body_failed'
 ] as const
 export type WorkflowResultFailureReason = (typeof WORKFLOW_RESULT_FAILURE_REASONS)[number]
 

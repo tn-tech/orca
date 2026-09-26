@@ -7,16 +7,15 @@ import type { OrchestrationDb } from '../orchestration/db'
 import type { MessageRow } from '../orchestration/types'
 import type { MessageWaitResult } from '../runtime-message-waiters'
 import { artifactsFor, resultContractFor } from './workflow-brief-builder'
-import { computeFrontier } from './workflow-frontier'
 import {
   createWorkflowOrchestrationClient,
   type WorkflowOrchestrationClient,
   type WorkflowOrchestrationDispatcher
 } from './workflow-orchestration-client'
 import { captureNodeResult } from './workflow-result-capture'
+import { advanceRun } from './workflow-run-advance'
 import { classifyRunMail, type RunMail } from './workflow-run-mailbox-message'
 import {
-  launchEligibleNode,
   requireBriefNode,
   type WorkflowNodeLaunchContext,
   type WorkflowRunWorkspaceAccess
@@ -247,28 +246,9 @@ export class WorkflowRunController {
     }
   }
 
-  /** Persists skips and launches eligible nodes until the frontier is quiet, then settles the run. */
+  /** Advances the run until the frontier is quiet, then settles it. */
   private async advance(session: ControllerSession): Promise<void> {
-    const { db } = this.deps
-    const { definition } = session.launch
-    for (;;) {
-      const attempts = db.listWorkflowAttempts(this.deps.workflowRunId)
-      const { eligible, skipped } = computeFrontier(definition, attempts)
-      if (eligible.length === 0 && skipped.length === 0) {
-        break
-      }
-      // Why: the frontier reads skips from persisted attempts; an unrecorded skip reads as unresolved.
-      for (const nodeId of skipped) {
-        const node = definition.nodes.find((candidate) => candidate.id === nodeId)
-        if (node) {
-          const attempt = this.recorder.createAttempt(node)
-          this.recorder.transitionAttempt(attempt.id, 'skipped')
-        }
-      }
-      await Promise.all(
-        eligible.map((nodeId) => launchEligibleNode(session.launch, nodeId, attempts))
-      )
-    }
+    await advanceRun(session.launch)
     this.settleRunIfQuiet()
   }
 
