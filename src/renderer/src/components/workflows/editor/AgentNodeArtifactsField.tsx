@@ -21,7 +21,10 @@ export default function AgentNodeArtifactsField({
 }: AgentNodeArtifactsFieldProps): React.JSX.Element {
   // Why: artifacts have no id of their own; a stable per-row key keeps a row's inputs (and
   // focus) attached to that row when a different row is removed, instead of the array index.
-  const rowKeysRef = useRef<string[]>(node.artifacts.map(() => createBrowserUuid()))
+  // Lazy-seeded (see lazy-use-ref-ratchet.test.ts) so mapping every artifact to a fresh uuid
+  // isn't repeated — and thrown away — on every render.
+  const rowKeysRef = useRef<string[]>(undefined!)
+  rowKeysRef.current ??= node.artifacts.map(() => createBrowserUuid())
   const keyedArtifacts = node.artifacts.map((artifact, index) => ({
     rowKey: rowKeysRef.current[index] ?? createBrowserUuid(),
     artifact,
