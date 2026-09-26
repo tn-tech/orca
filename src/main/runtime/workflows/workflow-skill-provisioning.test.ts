@@ -164,6 +164,47 @@ describe('provisionNodeSkills — repository skills', () => {
   })
 })
 
+describe('provisionNodeSkills — interrupted installs', () => {
+  it('undoes a local install whose CLI launch threw, leaving no pending record', async () => {
+    const writeFiles = fakeSkillsCli(workspaceRoot)
+    const { ports } = createPorts({
+      runProcess: vi.fn(async (spec) => {
+        await writeFiles(spec)
+        throw new Error('spawn npx ENOENT')
+      })
+    })
+
+    await expect(provisionNodeSkills(input(), ports)).rejects.toThrow('ENOENT')
+
+    expect(existsSync(join(workspaceRoot, '.claude/skills/model-review'))).toBe(false)
+    expect(existsSync(join(workspaceRoot, '.orca/workflow-skills/pending-install.json'))).toBe(
+      false
+    )
+  })
+
+  it('rolls back a record left by a crash before the next local provision reinstalls', async () => {
+    await mkdir(join(workspaceRoot, '.claude/skills/model-review'), { recursive: true })
+    await mkdir(join(workspaceRoot, '.orca/workflow-skills'), { recursive: true })
+    await writeFile(
+      join(workspaceRoot, '.orca/workflow-skills/pending-install.json'),
+      JSON.stringify({
+        runId: 'wfr_crashed',
+        states: { '.claude/skills/model-review': 'absent', '../escape': 'absent' }
+      })
+    )
+    const { ports } = createPorts()
+
+    expect(await provisionNodeSkills(input(), ports)).toEqual({
+      kind: 'ready',
+      installed: ['model-review']
+    })
+    expect(ports.runProcess).toHaveBeenCalledTimes(1)
+    expect(existsSync(join(workspaceRoot, '.orca/workflow-skills/pending-install.json'))).toBe(
+      false
+    )
+  })
+})
+
 describe('provisionNodeSkills — plugin skills', () => {
   it('yields a trust question when the source has no trust decision on this host', async () => {
     const { ports, plugins } = createPorts({ trust: 'needs-question' })
@@ -397,23 +438,111 @@ describe('createRunSkillProvisioner — SSH workspaces', () => {
     expect(runProcess).not.toHaveBeenCalled()
   })
 
-  it('reports workflow_host_unreachable when the connection drops mid-install', async () => {
+  const PENDING_RECORD = '.orca/workflow-skills/pending-install.json'
+  const USER_LOCK = '{"user":true}'
+
+  /** The CLI writes its files on the host, then the connection is lost before it answers. */
+  async function dropMidInstall(onDrop: () => void) {
+    await writeFile(join(workspaceRoot, 'skills-lock.json'), USER_LOCK)
+    const writeFiles = fakeSkillsCli(workspaceRoot)
+    const live = relayExecEmulator(fakeSkillsCli(workspaceRoot))
+    let dropped = false
+    // Once dropped, this connection answers nothing, including the rollback attempt.
     relayExec.mockImplementation(async (request) => {
-      if (request.binary === 'npx') {
-        sshHost.provider = undefined
+      if (dropped) {
         throw new Error('SSH connection closed')
       }
-      return relayExecEmulator(fakeSkillsCli(workspaceRoot))(request)
+      if (request.binary !== 'npx') {
+        return live(request)
+      }
+      await writeFiles({ program: 'npx', args: request.args, cwd: request.cwd })
+      dropped = true
+      onDrop()
+      throw new Error('SSH connection closed')
     })
+    return sshProvisioner().provision({ runId: 'wfr_1', agent: 'claude', skills: [repoSkill] })
+  }
 
-    const outcome = await sshProvisioner().provision({
-      runId: 'wfr_1',
-      agent: 'claude',
-      skills: [repoSkill]
+  it('reports an unverifiable host, never "nothing installed", when contact drops mid-install', async () => {
+    const outcome = await dropMidInstall(() => {
+      sshHost.provider = undefined
     })
 
     expect(outcome).toMatchObject({ kind: 'failed', code: 'workflow_host_unreachable' })
+    const reason = outcome.kind === 'failed' ? outcome.reason : ''
+    expect(reason).toContain('unverifiable')
+    expect(reason).toContain('partial files may remain')
+    expect(reason).not.toContain('nothing was installed')
+    // What the interrupted CLI wrote stays on the host, recorded for rollback but not ledgered.
+    expect(existsSync(join(workspaceRoot, '.claude/skills/model-review'))).toBe(true)
+    expect(await readFile(join(workspaceRoot, 'skills-lock.json'), 'utf-8')).not.toBe(USER_LOCK)
+    expect(
+      await readFile(join(workspaceRoot, '.orca/workflow-skills/backups/skills-lock.json'), 'utf-8')
+    ).toBe(USER_LOCK)
+    expect(JSON.parse(await readFile(join(workspaceRoot, PENDING_RECORD), 'utf-8'))).toEqual({
+      runId: 'wfr_1',
+      states: {
+        '.agents/skills/model-review': 'absent',
+        '.claude/skills/model-review': 'absent',
+        'skills-lock.json': 'snapshot'
+      }
+    })
+    expect(existsSync(join(workspaceRoot, '.orca/workflow-skills/ledger.json'))).toBe(false)
+    expect(await readFile(excludePath, 'utf-8')).toBe('# user entry\n/scratch\n')
     expect(runProcess).not.toHaveBeenCalled()
+  })
+
+  it('treats a reconnect during the install (a new provider) as the same lost contact', async () => {
+    const outcome = await dropMidInstall(() => {
+      sshHost.provider = {
+        exec: relayGitExecEmulator(validateGitExecArgs),
+        execNonInteractiveOperation: relayExecEmulator(fakeSkillsCli(workspaceRoot))
+      }
+    })
+
+    expect(outcome).toMatchObject({ kind: 'failed', code: 'workflow_host_unreachable' })
+    expect(outcome.kind === 'failed' && outcome.reason).toContain('unverifiable')
+  })
+
+  it('rolls the interrupted install back on the next provision before deciding "already present"', async () => {
+    await dropMidInstall(() => {
+      sshHost.provider = undefined
+    })
+    useRelay()
+    const provisioner = sshProvisioner()
+
+    expect(
+      await provisioner.provision({ runId: 'wfr_2', agent: 'claude', skills: [repoSkill] })
+    ).toEqual({ kind: 'ready', installed: ['model-review'] })
+    // It reinstalled rather than trusting the half-written skill, and excluded what it created.
+    expect(relayExec.mock.calls.filter(([r]) => r.binary === 'npx')).toHaveLength(1)
+    expect(existsSync(join(workspaceRoot, PENDING_RECORD))).toBe(false)
+    expect(await readFile(excludePath, 'utf-8')).toContain('/.claude/skills/model-review\n')
+
+    await provisioner.release('wfr_2')
+
+    expect(await readFile(join(workspaceRoot, 'skills-lock.json'), 'utf-8')).toBe(USER_LOCK)
+    expect(existsSync(join(workspaceRoot, '.claude/skills/model-review'))).toBe(false)
+    expect(existsSync(join(workspaceRoot, '.orca/workflow-skills/backups/skills-lock.json'))).toBe(
+      false
+    )
+  })
+
+  it('rolls the interrupted install back on release once the host is reachable again', async () => {
+    await dropMidInstall(() => {
+      sshHost.provider = undefined
+    })
+    useRelay()
+
+    await sshProvisioner().release('wfr_1')
+
+    expect(existsSync(join(workspaceRoot, '.claude/skills/model-review'))).toBe(false)
+    expect(existsSync(join(workspaceRoot, '.agents/skills/model-review'))).toBe(false)
+    expect(await readFile(join(workspaceRoot, 'skills-lock.json'), 'utf-8')).toBe(USER_LOCK)
+    expect(existsSync(join(workspaceRoot, '.orca/workflow-skills/backups/skills-lock.json'))).toBe(
+      false
+    )
+    expect(existsSync(join(workspaceRoot, PENDING_RECORD))).toBe(false)
   })
 
   it('refuses a Windows SSH host, which has no POSIX shell to install with', async () => {

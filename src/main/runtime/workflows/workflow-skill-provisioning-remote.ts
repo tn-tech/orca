@@ -39,7 +39,7 @@ export type SkillHostPorts = {
   cleanup: SkillCleanupPorts
   /** Lazy: resolving a local npx scans PATH, which cleanup never needs. */
   install(): WorkflowSkillProvisioningPorts
-  /** `false` once the host is gone, so a failure mid-install reads as unreachable. */
+  /** `false` once the connection this install used is gone or replaced: contact was lost. */
   isReachable(): boolean
 }
 
@@ -58,6 +58,18 @@ export function hostUnreachableOutcome(): SkillHostFailure {
     reason:
       "The workspace's SSH host cannot be reached, so its skills were not provisioned. " +
       'Orca installs skills only on the machine that runs the node, so nothing was installed.'
+  }
+}
+
+/** Contact dropped mid-install: what the host holds now cannot be observed (never "nothing"). */
+export function hostContactLostOutcome(): SkillHostFailure {
+  return {
+    kind: 'failed',
+    code: WORKFLOW_HOST_UNREACHABLE_CODE,
+    reason:
+      "Orca lost contact with the workspace's SSH host during the skill install, so the host's " +
+      'state is unverifiable and partial files may remain. The next run or cleanup in this ' +
+      'workspace rolls them back once the host is reachable.'
   }
 }
 
@@ -107,6 +119,7 @@ export function sshSkillHost(
         args: [...(spec.args ?? [])],
         cwd: spec.cwd ?? workspaceRoot,
         timeoutMs: spec.timeoutMs ?? HOST_FILE_TIMEOUT_MS,
+        // Relays older than operation lanes ignore this and use the cwd's default lane.
         operation: SKILL_EXEC_OPERATION,
         ...(spec.input === undefined ? {} : { stdin: spec.input })
       })
@@ -126,7 +139,8 @@ export function sshSkillHost(
     cleanup,
     // Why no npxEnv: the relay starts the CLI with the host's own environment, never ours.
     install: () => ({ runProcess: exec, npxCommand: 'npx', ...cleanup, ...git, ...extras }),
-    isReachable: () => getSshGitProvider(connectionId) !== undefined
+    // A reconnect registers a new provider; the one this install spoke to is gone either way.
+    isReachable: () => getSshGitProvider(connectionId) === provider
   }
 }
 

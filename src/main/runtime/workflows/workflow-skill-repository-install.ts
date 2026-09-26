@@ -6,12 +6,16 @@ import { runKeyedSerializedOperation } from '../../cli/keyed-promise-queue'
 import { joinWorktreeRelativePath } from '../runtime-relative-paths'
 import { appendRunExcludeEntries, removeRunExcludeEntries } from './workflow-git-exclude'
 import {
+  clearPendingSkillInstall,
+  readPendingSkillInstall,
   readSkillLedger,
   referenceLedgerPath,
   releaseSkillLedgerRun,
   restoreSkillSnapshot,
   skillBackupPath,
+  writePendingSkillInstall,
   writeSkillLedger,
+  type PendingInstallState,
   type SkillLedger
 } from './workflow-skill-ledger'
 import type {
@@ -32,9 +36,6 @@ export type RepositorySkillInstall = {
   name: string
   location: string
 }
-
-/** Per candidate path: another run's ledger entry, an untracked user file, or nothing yet. */
-type CandidateState = 'shared' | 'snapshot' | 'absent'
 
 const SKILLS_CLI_TIMEOUT_MS = 5 * 60_000
 const SKILLS_LOCK_FILE = 'skills-lock.json'
@@ -73,6 +74,8 @@ export async function installRepositorySkill(
   const hostPath = (relative: string) => joinWorktreeRelativePath(workspaceRoot, relative)
   const skillPath = `${target.skillsDir}/${name}`
   const candidates = installCandidates(target, name)
+  // Before "already present": an interrupted install may have left a half-written skill here.
+  await recoverPendingSkillInstall(workspaceRoot, ports.fs)
   const ledger = await readSkillLedger(ports.fs, workspaceRoot)
 
   if (await ports.fs.exists(hostPath(skillPath))) {
@@ -95,7 +98,7 @@ export async function installRepositorySkill(
     }
   }
 
-  const states = new Map<string, CandidateState>()
+  const states = new Map<string, PendingInstallState>()
   for (const candidate of candidates) {
     if (ledger[candidate]) {
       states.set(candidate, 'shared')
@@ -107,9 +110,21 @@ export async function installRepositorySkill(
     }
   }
 
-  const failure = await runSkillsAdd(input, ports)
+  // Snapshots first: a record naming a snapshot whose copy never finished would restore a torn copy.
+  await writePendingSkillInstall(ports.fs, workspaceRoot, {
+    runId,
+    states: Object.fromEntries(states)
+  })
+  let failure: Failed | undefined
+  try {
+    failure = await runSkillsAdd(input, ports)
+  } catch (error) {
+    // Undo now if the host still answers; otherwise the pending record undoes it later.
+    await undoPendingInstall(workspaceRoot, states, ports.fs).catch(() => undefined)
+    throw error
+  }
   if (failure || !(await ports.fs.exists(hostPath(skillPath)))) {
-    await rollBack(input, states, ports)
+    await undoPendingInstall(workspaceRoot, states, ports.fs)
     return (
       failure ?? {
         kind: 'failed',
@@ -128,6 +143,26 @@ export async function installRepositorySkill(
   }
   await commitLedger(input, ledger, referenced, ports)
   return true
+}
+
+async function undoPendingInstall(
+  workspaceRoot: string,
+  states: ReadonlyMap<string, PendingInstallState>,
+  fs: WorkflowSkillProvisioningPorts['fs']
+): Promise<void> {
+  await rollBack(workspaceRoot, states, fs)
+  await clearPendingSkillInstall(fs, workspaceRoot)
+}
+
+/** Rolls back an install that a crash or lost connection interrupted, then drops its record. */
+async function recoverPendingSkillInstall(
+  workspaceRoot: string,
+  fs: WorkflowSkillProvisioningPorts['fs']
+): Promise<void> {
+  const pending = await readPendingSkillInstall(fs, workspaceRoot)
+  if (pending) {
+    await undoPendingInstall(workspaceRoot, new Map(Object.entries(pending.states)), fs)
+  }
 }
 
 async function runSkillsAdd(
@@ -167,15 +202,15 @@ async function runSkillsAdd(
 
 /** Undoes a failed or partial install: new paths go, snapshotted user files come back. */
 async function rollBack(
-  input: RepositorySkillInstall,
-  states: ReadonlyMap<string, CandidateState>,
-  ports: WorkflowSkillProvisioningPorts
+  workspaceRoot: string,
+  states: ReadonlyMap<string, PendingInstallState>,
+  fs: WorkflowSkillProvisioningPorts['fs']
 ): Promise<void> {
   for (const [candidate, state] of states) {
     if (state === 'absent') {
-      await ports.fs.removePath(joinWorktreeRelativePath(input.workspaceRoot, candidate))
+      await fs.removePath(joinWorktreeRelativePath(workspaceRoot, candidate))
     } else if (state === 'snapshot') {
-      await restoreSkillSnapshot(ports.fs, input.workspaceRoot, candidate)
+      await restoreSkillSnapshot(fs, workspaceRoot, candidate)
     }
   }
 }
@@ -188,6 +223,7 @@ async function commitLedger(
   ports: WorkflowSkillProvisioningPorts
 ): Promise<void> {
   await writeSkillLedger(ports.fs, input.workspaceRoot, ledger)
+  await clearPendingSkillInstall(ports.fs, input.workspaceRoot)
   const excluded = referenced.filter((path) => ledger[path]?.origin === 'created')
   const excludePath =
     excluded.length > 0 ? await ports.resolveGitExcludePath(input.workspaceRoot) : null
@@ -202,6 +238,7 @@ export function releaseRunSkillInstalls(
   ports: Pick<WorkflowSkillProvisioningPorts, 'fs' | 'resolveGitExcludePath'>
 ): Promise<void> {
   return withWorkspaceSkillLock(run.workspaceRoot, async () => {
+    await recoverPendingSkillInstall(run.workspaceRoot, ports.fs)
     await releaseSkillLedgerRun(ports.fs, run.workspaceRoot, run.runId)
     const excludePath = await ports.resolveGitExcludePath(run.workspaceRoot)
     if (excludePath) {

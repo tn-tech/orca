@@ -22,7 +22,7 @@ import {
   type WorkflowSkillProvisioningOutcome
 } from './workflow-skill-provisioning'
 import {
-  hostUnreachableOutcome,
+  hostContactLostOutcome,
   sshSkillHost,
   wslSkillHost,
   type SkillCleanupPorts,
@@ -153,7 +153,7 @@ export function createRunSkillProvisioner(workspace: RunWorkspaceHost): RunSkill
         return await provisionNodeSkills(input, host.install())
       } catch (error) {
         if (!host.isReachable()) {
-          return hostUnreachableOutcome()
+          return hostContactLostOutcome()
         }
         throw error
       }
