@@ -1,12 +1,20 @@
-// Workspace-scope install of one repository skill through the skills CLI, plus the durable record
-// and `.git/info/exclude` entries that let cleanup undo it (FR-018, FR-021; research R9).
+// Workspace-scope install of one repository skill through the skills CLI, recorded in the
+// workspace's skill ledger so cleanup can undo it (FR-018, FR-021; research R9).
 import type { ProcessResult } from '../../../shared/child-process/run-process'
 import { buildAgentFeatureSkillInstallArgs } from '../../../shared/agent-feature-install-commands'
 import { runKeyedSerializedOperation } from '../../cli/keyed-promise-queue'
-import { joinWorktreeRelativePath, normalizeRuntimeRelativePath } from '../runtime-relative-paths'
+import { joinWorktreeRelativePath } from '../runtime-relative-paths'
 import { appendRunExcludeEntries, removeRunExcludeEntries } from './workflow-git-exclude'
+import {
+  readSkillLedger,
+  referenceLedgerPath,
+  releaseSkillLedgerRun,
+  restoreSkillSnapshot,
+  skillBackupPath,
+  writeSkillLedger,
+  type SkillLedger
+} from './workflow-skill-ledger'
 import type {
-  WorkflowSkillFilesystem,
   WorkflowSkillProvisioningOutcome,
   WorkflowSkillProvisioningPorts
 } from './workflow-skill-provisioning'
@@ -25,12 +33,19 @@ export type RepositorySkillInstall = {
   location: string
 }
 
-const SKILLS_CLI_TIMEOUT_MS = 5 * 60_000
-const workspaceQueues = new Map<string, Promise<void>>()
-const SKILLS_LOCK_FILE = 'skills-lock.json'
+/** Per candidate path: another run's ledger entry, an untracked user file, or nothing yet. */
+type CandidateState = 'shared' | 'snapshot' | 'absent'
 
-function installRecordPath(runId: string): string {
-  return `.orca/workflow-runs/${runId}/provisioned-skills.json`
+const SKILLS_CLI_TIMEOUT_MS = 5 * 60_000
+const SKILLS_LOCK_FILE = 'skills-lock.json'
+const workspaceQueues = new Map<string, Promise<void>>()
+
+/** Concurrent `skills add` runs in one workspace race on its lock file and our ledger. */
+export function withWorkspaceSkillLock<T>(
+  workspaceRoot: string,
+  operation: () => Promise<T>
+): Promise<T> {
+  return runKeyedSerializedOperation(workspaceQueues, workspaceRoot, operation)
 }
 
 function outputTail(result: ProcessResult): string {
@@ -38,34 +53,95 @@ function outputTail(result: ProcessResult): string {
   return text ? `: ${text}` : ''
 }
 
+/** Every path `skills add` writes: the canonical copy, the agent's link, the project lock file. */
+function installCandidates(target: WorkflowSkillWorkspaceTarget, name: string): string[] {
+  return [
+    ...new Set([
+      `${CANONICAL_WORKSPACE_SKILLS_DIR}/${name}`,
+      `${target.skillsDir}/${name}`,
+      SKILLS_LOCK_FILE
+    ])
+  ]
+}
+
 /** `true` installed, `false` already present, or the failure. */
 export async function installRepositorySkill(
   input: RepositorySkillInstall,
   ports: WorkflowSkillProvisioningPorts
 ): Promise<boolean | Failed> {
-  const { target, name, location } = input
-  const hostPath = (relative: string) => joinWorktreeRelativePath(input.workspaceRoot, relative)
+  const { workspaceRoot, runId, target, name, location } = input
+  const hostPath = (relative: string) => joinWorktreeRelativePath(workspaceRoot, relative)
   const skillPath = `${target.skillsDir}/${name}`
+  const candidates = installCandidates(target, name)
+  const ledger = await readSkillLedger(ports.fs, workspaceRoot)
+
   if (await ports.fs.exists(hostPath(skillPath))) {
+    // Borrow whatever another run put here so its cleanup cannot pull it from under this one.
+    const borrowed = candidates.filter((candidate) => ledger[candidate])
+    for (const path of borrowed) {
+      referenceLedgerPath(ledger, path, runId, 'created')
+    }
+    await commitLedger(input, ledger, borrowed, ports)
     return false
   }
-  // Why: the CLI writes the canonical copy, links it into the agent dir, and a project lock file.
-  const candidates = [
-    ...new Set([`${CANONICAL_WORKSPACE_SKILLS_DIR}/${name}`, skillPath, SKILLS_LOCK_FILE])
-  ]
-  const existedBefore = new Set<string>()
-  for (const candidate of candidates) {
-    if (await ports.fs.exists(hostPath(candidate))) {
-      existedBefore.add(candidate)
+
+  const tracked = await ports.listTrackedPaths(workspaceRoot, candidates)
+  if (tracked.length > 0) {
+    return {
+      kind: 'failed',
+      reason:
+        `Skill "${name}" was not installed: the project already manages ${tracked.join(', ')} ` +
+        'in version control, and installing would modify it. Commit the skill to the project instead.'
     }
   }
+
+  const states = new Map<string, CandidateState>()
+  for (const candidate of candidates) {
+    if (ledger[candidate]) {
+      states.set(candidate, 'shared')
+    } else if (await ports.fs.exists(hostPath(candidate))) {
+      await ports.fs.copyPath(hostPath(candidate), hostPath(skillBackupPath(candidate)))
+      states.set(candidate, 'snapshot')
+    } else {
+      states.set(candidate, 'absent')
+    }
+  }
+
+  const failure = await runSkillsAdd(input, ports)
+  if (failure || !(await ports.fs.exists(hostPath(skillPath)))) {
+    await rollBack(input, states, ports)
+    return (
+      failure ?? {
+        kind: 'failed',
+        reason: `Installing skill "${name}" from ${location} did not create ${skillPath}.`
+      }
+    )
+  }
+
+  const referenced: string[] = []
+  for (const [candidate, state] of states) {
+    if (state === 'absent' && !(await ports.fs.exists(hostPath(candidate)))) {
+      continue
+    }
+    referenceLedgerPath(ledger, candidate, runId, state === 'snapshot' ? 'snapshot' : 'created')
+    referenced.push(candidate)
+  }
+  await commitLedger(input, ledger, referenced, ports)
+  return true
+}
+
+async function runSkillsAdd(
+  input: RepositorySkillInstall,
+  ports: WorkflowSkillProvisioningPorts
+): Promise<Failed | undefined> {
+  const { name, location } = input
   let args: string[]
   try {
     args = buildAgentFeatureSkillInstallArgs([name], {
       source: location,
       global: false,
       yes: true,
-      agents: [target.cliAgentKey]
+      agents: [input.target.cliAgentKey]
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -79,90 +155,57 @@ export async function installRepositorySkill(
     ...(ports.npxEnv ? { env: ports.npxEnv } : {}),
     timeoutMs: SKILLS_CLI_TIMEOUT_MS
   })
-  if (result.code !== 0) {
-    const why = result.timedOut ? 'timed out' : `exited with code ${String(result.code)}`
-    return {
-      kind: 'failed',
-      reason: `Installing skill "${name}" from ${location} ${why}${outputTail(result)}`
-    }
+  if (result.code === 0) {
+    return undefined
   }
-  if (!(await ports.fs.exists(hostPath(skillPath)))) {
-    return {
-      kind: 'failed',
-      reason: `Installing skill "${name}" from ${location} did not create ${skillPath}.`
-    }
-  }
-  const created: string[] = []
-  for (const candidate of candidates) {
-    if (!existedBefore.has(candidate) && (await ports.fs.exists(hostPath(candidate)))) {
-      created.push(candidate)
-    }
-  }
-  await recordInstalledPaths(input, created, ports)
-  return true
-}
-
-function isSafeRecordedPath(entry: unknown): entry is string {
-  if (typeof entry !== 'string') {
-    return false
-  }
-  try {
-    return normalizeRuntimeRelativePath(entry) === entry
-  } catch {
-    return false
+  const why = result.timedOut ? 'timed out' : `exited with code ${String(result.code)}`
+  return {
+    kind: 'failed',
+    reason: `Installing skill "${name}" from ${location} ${why}${outputTail(result)}`
   }
 }
 
-async function readInstallRecord(
-  fs: WorkflowSkillFilesystem,
-  recordPath: string
-): Promise<string[]> {
-  const text = await fs.readText(recordPath)
-  if (!text) {
-    return []
-  }
-  const parsed: unknown = JSON.parse(text)
-  // Why: the record sits in the agent's workspace; never let it steer a delete outside it.
-  return Array.isArray(parsed) ? parsed.filter(isSafeRecordedPath) : []
-}
-
-/** The record outlives this process, so cleanup works after a restart and without git. */
-async function recordInstalledPaths(
+/** Undoes a failed or partial install: new paths go, snapshotted user files come back. */
+async function rollBack(
   input: RepositorySkillInstall,
-  created: readonly string[],
+  states: ReadonlyMap<string, CandidateState>,
   ports: WorkflowSkillProvisioningPorts
 ): Promise<void> {
-  const recordPath = joinWorktreeRelativePath(input.workspaceRoot, installRecordPath(input.runId))
-  const recorded = await readInstallRecord(ports.fs, recordPath)
-  await ports.fs.writeText(recordPath, JSON.stringify([...new Set([...recorded, ...created])]))
-  const excludePath = await ports.resolveGitExcludePath(input.workspaceRoot)
-  if (excludePath) {
-    await appendRunExcludeEntries(excludePath, input.runId, created, ports.fs)
+  for (const [candidate, state] of states) {
+    if (state === 'absent') {
+      await ports.fs.removePath(joinWorktreeRelativePath(input.workspaceRoot, candidate))
+    } else if (state === 'snapshot') {
+      await restoreSkillSnapshot(ports.fs, input.workspaceRoot, candidate)
+    }
   }
 }
 
-/** Removes what the run installed and its exclude entries (FR-021). Idempotent. */
+/** Created paths are excluded per run; snapshotted user files keep their own git status. */
+async function commitLedger(
+  input: RepositorySkillInstall,
+  ledger: SkillLedger,
+  referenced: readonly string[],
+  ports: WorkflowSkillProvisioningPorts
+): Promise<void> {
+  await writeSkillLedger(ports.fs, input.workspaceRoot, ledger)
+  const excluded = referenced.filter((path) => ledger[path]?.origin === 'created')
+  const excludePath =
+    excluded.length > 0 ? await ports.resolveGitExcludePath(input.workspaceRoot) : null
+  if (excludePath) {
+    await appendRunExcludeEntries(excludePath, input.runId, excluded, ports.fs)
+  }
+}
+
+/** Releases the run's references, undoing paths no other run uses, and its exclude block. */
 export function releaseRunSkillInstalls(
   run: { runId: string; workspaceRoot: string },
   ports: Pick<WorkflowSkillProvisioningPorts, 'fs' | 'resolveGitExcludePath'>
 ): Promise<void> {
   return withWorkspaceSkillLock(run.workspaceRoot, async () => {
-    const recordPath = joinWorktreeRelativePath(run.workspaceRoot, installRecordPath(run.runId))
-    for (const relative of await readInstallRecord(ports.fs, recordPath)) {
-      await ports.fs.removePath(joinWorktreeRelativePath(run.workspaceRoot, relative))
-    }
-    await ports.fs.removePath(recordPath)
+    await releaseSkillLedgerRun(ports.fs, run.workspaceRoot, run.runId)
     const excludePath = await ports.resolveGitExcludePath(run.workspaceRoot)
     if (excludePath) {
       await removeRunExcludeEntries(excludePath, run.runId, ports.fs)
     }
   })
-}
-
-/** Concurrent `skills add` runs in one workspace race on its lock file and our record. */
-export function withWorkspaceSkillLock<T>(
-  workspaceRoot: string,
-  operation: () => Promise<T>
-): Promise<T> {
-  return runKeyedSerializedOperation(workspaceQueues, workspaceRoot, operation)
 }

@@ -70,3 +70,17 @@ describe('workflow git exclude entries', () => {
     expect(file.content).toContain('/b\n')
   })
 })
+
+describe('workflow git exclude entries — damaged blocks', () => {
+  it('drops only an orphaned start marker, never the user entries after it', () => {
+    const damaged = '# >>> orca workflow run wfr_1\n/.claude/skills/a\n/user-entry\n'
+    expect(withoutRunExcludeEntries(damaged, 'wfr_1')).toBe('/.claude/skills/a\n/user-entry\n')
+  })
+
+  it('replaces an orphaned start marker with a complete block when adding', () => {
+    const damaged = '# >>> orca workflow run wfr_1\n/user-entry\n'
+    expect(withRunExcludeEntries(damaged, 'wfr_1', ['a'])).toBe(
+      '/user-entry\n# >>> orca workflow run wfr_1\n/a\n# <<< orca workflow run wfr_1\n'
+    )
+  })
+})

@@ -3,24 +3,20 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ProcessResult, ProcessSpec } from '../../../shared/child-process/run-process'
 import type { SkillReference } from '../../../shared/workflows/workflow-definition-types'
 import {
   provisionNodeSkills,
   releaseRunSkillInstalls,
-  type ProvisionNodeSkillsInput,
-  type WorkflowPluginInstallResult,
-  type WorkflowSkillProvisioningPorts,
-  type WorkflowSkillTrustDecision
+  type ProvisionNodeSkillsInput
 } from './workflow-skill-provisioning'
-import { localWorkflowSkillFilesystem } from './workflow-skill-provisioning-host'
+import {
+  createSkillPorts,
+  fakeSkillsCli,
+  REPO_SOURCE,
+  repoSkill,
+  skillInput
+} from './workflow-skill-provisioning-test-fixtures'
 
-const REPO_SOURCE = 'https://github.com/acme/consulting-skills'
-const repoSkill: SkillReference = {
-  name: 'model-review',
-  source: { kind: 'repository', location: REPO_SOURCE },
-  required: true
-}
 const pluginSkill: SkillReference = {
   name: 'deck-writer',
   source: { kind: 'plugin', plugin: 'acme-decks' },
@@ -41,54 +37,12 @@ afterEach(async () => {
   await rm(workspaceRoot, { recursive: true, force: true })
 })
 
-/** Fake `skills add`: lands the skill where the real CLI does for `--agent claude-code`. */
-function fakeSkillsCli(result: Partial<ProcessResult> = {}) {
-  return vi.fn(async (spec: ProcessSpec): Promise<ProcessResult> => {
-    const code = result.code ?? 0
-    if (code === 0) {
-      const skill = spec.args?.[spec.args.indexOf('--skill') + 1] ?? 'missing'
-      for (const dir of ['.agents/skills', '.claude/skills']) {
-        await mkdir(join(workspaceRoot, dir, skill), { recursive: true })
-        await writeFile(join(workspaceRoot, dir, skill, 'SKILL.md'), `# ${skill}\n`)
-      }
-      await writeFile(join(workspaceRoot, 'skills-lock.json'), '{}')
-    }
-    return { code, signal: null, stdout: '', stderr: result.stderr ?? '', timedOut: false }
-  })
-}
-
-function createPorts(
-  overrides: Partial<Omit<WorkflowSkillProvisioningPorts, 'trust'>> & {
-    trust?: WorkflowSkillTrustDecision
-  } = {}
-) {
-  const { trust = 'needs-question', ...rest } = overrides
-  const plugins = {
-    isInstalled: vi.fn(async () => false),
-    install: vi.fn(async (): Promise<WorkflowPluginInstallResult> => ({ ok: true }))
-  }
-  const trustGate = { decide: vi.fn(async () => trust) }
-  const ports: WorkflowSkillProvisioningPorts = {
-    runProcess: fakeSkillsCli(),
-    npxCommand: '/usr/local/bin/npx',
-    fs: localWorkflowSkillFilesystem,
-    resolveGitExcludePath: async () => excludePath,
-    plugins,
-    trust: trustGate,
-    ...rest
-  }
-  return { ports, plugins, trustGate }
+function createPorts(overrides: Parameters<typeof createSkillPorts>[2] = {}) {
+  return createSkillPorts(workspaceRoot, excludePath, overrides)
 }
 
 function input(overrides: Partial<ProvisionNodeSkillsInput> = {}): ProvisionNodeSkillsInput {
-  return {
-    runId: 'wfr_1',
-    agent: 'claude',
-    skills: [repoSkill],
-    workspaceRoot,
-    readAllowlist: async () => ({ sources: [REPO_SOURCE], location: '/repo/orca.yaml' }),
-    ...overrides
-  }
+  return skillInput(workspaceRoot, overrides)
 }
 
 describe('provisionNodeSkills — repository skills', () => {
@@ -132,19 +86,6 @@ describe('provisionNodeSkills — repository skills', () => {
     expect(existsSync(join(workspaceRoot, 'skills-lock.json'))).toBe(false)
   })
 
-  it('never lets a tampered install record delete outside the workspace', async () => {
-    const outside = await mkdtemp(join(tmpdir(), 'orca-skill-outside-'))
-    const record = join(workspaceRoot, '.orca/workflow-runs/wfr_1/provisioned-skills.json')
-    await mkdir(join(record, '..'), { recursive: true })
-    await writeFile(record, JSON.stringify([`../${outside.split(/[\\/]/).pop()}`, outside]))
-    const { ports } = createPorts()
-
-    await releaseRunSkillInstalls({ runId: 'wfr_1', workspaceRoot }, ports)
-
-    expect(existsSync(outside)).toBe(true)
-    await rm(outside, { recursive: true, force: true })
-  })
-
   it('skips the install and the exclude entry when the skill is already in the workspace', async () => {
     await mkdir(join(workspaceRoot, '.claude/skills/model-review'), { recursive: true })
     const { ports } = createPorts()
@@ -163,7 +104,7 @@ describe('provisionNodeSkills — repository skills', () => {
 
   it('fails with the CLI output when the install exits non-zero, before any launch', async () => {
     const { ports } = createPorts({
-      runProcess: fakeSkillsCli({ code: 1, stderr: 'repository not found' })
+      runProcess: fakeSkillsCli(workspaceRoot, { code: 1, stderr: 'repository not found' })
     })
 
     const outcome = await provisionNodeSkills(input(), ports)

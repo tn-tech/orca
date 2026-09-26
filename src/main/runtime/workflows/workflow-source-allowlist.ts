@@ -26,6 +26,14 @@ export function isWorkflowSourceAllowed(source: string, allowlist: readonly stri
   return findAllowedWorkflowSource(source, allowlist) !== undefined
 }
 
+/** FR-015a refusal text: names the source and where the allowlist lives. */
+export function sourceNotAllowedMessage(source: string, allowlistPath: string): string {
+  return (
+    `"${source}" is not on the project allowlist. ` +
+    `Add it to workflows.allowedSources in ${allowlistPath}.`
+  )
+}
+
 /**
  * Throws `workflow_source_not_allowed` unless `source` is on `allowlist` (FR-015a). An
  * empty or missing allowlist permits nothing — there is no implicit "anything goes" default.

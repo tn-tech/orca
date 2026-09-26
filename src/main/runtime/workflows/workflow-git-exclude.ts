@@ -35,13 +35,21 @@ function joinLines(lines: readonly string[]): string {
   return lines.length === 0 ? '' : `${lines.join('\n')}\n`
 }
 
-function locateBlock(lines: readonly string[], runId: string): { start: number; end: number } {
+/** A start marker with no end marker after it is an orphan: only that line is ours to drop. */
+function locateBlock(
+  lines: readonly string[],
+  runId: string
+): { start: number; end: number } | { orphanStart: number } | undefined {
   const start = lines.indexOf(blockStart(runId))
   if (start === -1) {
-    return { start: -1, end: -1 }
+    return undefined
   }
   const end = lines.indexOf(blockEnd(runId), start + 1)
-  return { start, end: end === -1 ? lines.length - 1 : end }
+  return end === -1 ? { orphanStart: start } : { start, end }
+}
+
+function withoutLine(lines: readonly string[], index: number): string[] {
+  return [...lines.slice(0, index), ...lines.slice(index + 1)]
 }
 
 /** Adds `paths` to the run's block, creating it at the end of the file if needed. */
@@ -50,29 +58,36 @@ export function withRunExcludeEntries(
   runId: string,
   workspaceRelativePaths: readonly string[]
 ): string {
-  const lines = splitLines(content)
-  const { start, end } = locateBlock(lines, runId)
-  const existing = start === -1 ? [] : lines.slice(start + 1, end)
+  let lines = splitLines(content)
+  let block = locateBlock(lines, runId)
+  if (block && 'orphanStart' in block) {
+    lines = withoutLine(lines, block.orphanStart)
+    block = undefined
+  }
+  const existing = block ? lines.slice(block.start + 1, block.end) : []
   const additions = workspaceRelativePaths
     .map(excludePatternFor)
     .filter((pattern, index, all) => !existing.includes(pattern) && all.indexOf(pattern) === index)
   if (additions.length === 0) {
     return content
   }
-  if (start === -1) {
+  if (!block) {
     return joinLines([...lines, blockStart(runId), ...additions, blockEnd(runId)])
   }
-  return joinLines([...lines.slice(0, end), ...additions, ...lines.slice(end)])
+  return joinLines([...lines.slice(0, block.end), ...additions, ...lines.slice(block.end)])
 }
 
 /** Drops the run's whole block; everything else in the file is left byte-for-byte. */
 export function withoutRunExcludeEntries(content: string, runId: string): string {
   const lines = splitLines(content)
-  const { start, end } = locateBlock(lines, runId)
-  if (start === -1) {
+  const block = locateBlock(lines, runId)
+  if (!block) {
     return content
   }
-  return joinLines([...lines.slice(0, start), ...lines.slice(end + 1)])
+  if ('orphanStart' in block) {
+    return joinLines(withoutLine(lines, block.orphanStart))
+  }
+  return joinLines([...lines.slice(0, block.start), ...lines.slice(block.end + 1)])
 }
 
 export function appendRunExcludeEntries(

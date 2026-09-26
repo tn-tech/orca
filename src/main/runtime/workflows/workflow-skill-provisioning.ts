@@ -7,6 +7,7 @@
 //   --agent <key> -y` with the run workspace as cwd, on the execution host.
 // - `fs`: host paths for presence checks, the install record and `.git/info/exclude`.
 // - `resolveGitExcludePath(root)`: the exclude file git reads for `root`; `null` = no git.
+// - `listTrackedPaths(root, paths)`: which install targets git already tracks (never modified).
 // - `plugins`: host-scope plugin skills. `isInstalled` checks presence; `install` runs the
 //   provider's own plugin command and returns `{ ok: false, reason }` when it has none.
 // - `trust`: the per-host trust store (FR-018a). `decide({ source })` answers `trusted`,
@@ -18,6 +19,7 @@ import { installRepositorySkill, withWorkspaceSkillLock } from './workflow-skill
 import { workflowSkillWorkspaceTarget } from './workflow-skill-workspace-target'
 import {
   isWorkflowSourceAllowed,
+  sourceNotAllowedMessage,
   WORKFLOW_SOURCE_NOT_ALLOWED_CODE
 } from './workflow-source-allowlist'
 
@@ -27,6 +29,8 @@ export type WorkflowSkillFilesystem = GitExcludeFileAccess & {
   exists(path: string): Promise<boolean>
   /** Recursive; a missing path is not an error. */
   removePath(path: string): Promise<void>
+  /** Recursive copy that keeps symlinks as links; creates missing parents. */
+  copyPath(from: string, to: string): Promise<void>
 }
 
 export type WorkflowPluginInstallResult = { ok: true } | { ok: false; reason: string }
@@ -48,6 +52,8 @@ export type WorkflowSkillProvisioningPorts = {
   npxEnv?: NodeJS.ProcessEnv
   fs: WorkflowSkillFilesystem
   resolveGitExcludePath(workspaceRoot: string): Promise<string | null>
+  /** The subset of workspace-relative paths git tracks there; `[]` without git. */
+  listTrackedPaths(workspaceRoot: string, relativePaths: readonly string[]): Promise<string[]>
   plugins: WorkflowPluginSkillPort
   trust: WorkflowSkillTrustGate
 }
@@ -215,9 +221,7 @@ function checkAllowlist(
     kind: 'failed',
     code: WORKFLOW_SOURCE_NOT_ALLOWED_CODE,
     allowlistPath: allowlist.location,
-    reason:
-      `Skill "${blocked.skill.name}" comes from "${blocked.location}", which is not on the project ` +
-      `allowlist. Add it to workflows.allowedSources in ${allowlist.location}.`
+    reason: `Skill "${blocked.skill.name}" source ${sourceNotAllowedMessage(blocked.location, allowlist.location)}`
   }
 }
 

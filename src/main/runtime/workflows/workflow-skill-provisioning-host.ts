@@ -1,8 +1,8 @@
 // Picks the skill-provisioning wiring for a run workspace's execution host. Only local workspaces
 // install today; SSH and WSL workspaces are refused so nothing is ever installed on the wrong
 // machine (ssh-execution-boundary.md) — U39 plugs their ports into `hostProvisioningPorts`.
-import { lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { cp, lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import { runProcess } from '../../../shared/child-process/run-process'
 import {
   resolveCliCommand,
@@ -10,10 +10,10 @@ import {
 } from '../../../shared/node-cli-command-resolution'
 import type { SkillReference } from '../../../shared/workflows/workflow-definition-types'
 import { parseWslUncPath } from '../../../shared/wsl-paths'
-import { gitExecFileAsync } from '../../git/runner'
 import { isENOENT } from '../../ipc/filesystem-auth'
 import { joinWorktreeRelativePath } from '../runtime-relative-paths'
 import type { OrcaIgnoreTarget } from './workflow-brief-builder'
+import { listLocalTrackedPaths, resolveLocalGitExcludePath } from './workflow-skill-local-git'
 import { getRepoWorkflowSourceAllowlist } from './workflow-source-allowlist'
 import {
   provisionNodeSkills,
@@ -52,18 +52,12 @@ export const localWorkflowSkillFilesystem: WorkflowSkillFilesystem = {
   },
   async removePath(path) {
     await rm(path, { recursive: true, force: true })
+  },
+  async copyPath(from, to) {
+    await rm(to, { recursive: true, force: true })
+    await mkdir(dirname(to), { recursive: true })
+    await cp(from, to, { recursive: true, verbatimSymlinks: true })
   }
-}
-
-/** `git rev-parse --git-path` (Git 2.5+) finds the common-dir exclude file from a linked worktree. */
-async function resolveLocalGitExcludePath(workspaceRoot: string): Promise<string | null> {
-  if (!(await localWorkflowSkillFilesystem.exists(join(workspaceRoot, '.git')))) {
-    return null
-  }
-  const { stdout } = await gitExecFileAsync(['rev-parse', '--git-path', 'info/exclude'], {
-    cwd: workspaceRoot
-  })
-  return resolve(workspaceRoot, stdout.trim())
 }
 
 // Placeholders until the plugin installer and trust store land (U40): nothing reads as
@@ -99,6 +93,7 @@ const localHostPorts: HostProvisioningPorts = {
       // Why: npx is a node script; without its own node first on PATH it can load under another.
       npxEnv: withCliRuntimeOnPath(npxCommand, { ...process.env }),
       ...localCleanupPorts,
+      listTrackedPaths: listLocalTrackedPaths,
       ...pendingPluginPorts
     }
   }
@@ -163,5 +158,17 @@ export function createRunSkillProvisioner(workspace: RunWorkspaceHost): RunSkill
         )
       }
     }
+  }
+}
+
+/** Run-end cleanup. Never throws: the run's outcome is already decided. */
+export async function releaseRunSkills(
+  runId: string,
+  workspace: () => Promise<RunWorkspaceHost>
+): Promise<void> {
+  try {
+    await createRunSkillProvisioner(await workspace()).release(runId)
+  } catch (error) {
+    console.warn(`[workflow-skills] Could not reach run ${runId}'s workspace for cleanup`, error)
   }
 }

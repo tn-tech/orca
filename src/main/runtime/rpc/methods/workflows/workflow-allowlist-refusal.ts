@@ -5,7 +5,10 @@ import type {
 } from '../../../../../shared/workflows/workflow-definition-types'
 import { OrchestrationError } from '../../../orchestration/orchestration-error'
 import { joinWorktreeRelativePath } from '../../../runtime-relative-paths'
-import { WORKFLOW_SOURCE_NOT_ALLOWED_CODE } from '../../../workflows/workflow-source-allowlist'
+import {
+  sourceNotAllowedMessage,
+  WORKFLOW_SOURCE_NOT_ALLOWED_CODE
+} from '../../../workflows/workflow-source-allowlist'
 
 const SKILL_SOURCE_NOT_ALLOWLISTED_CODE = 'graph_skill_source_not_allowlisted'
 
@@ -42,8 +45,7 @@ export function throwRoleSourceNotAllowedError(repo: Repo, source: string): neve
   const allowlistPath = joinWorktreeRelativePath(repo.path, 'orca.yaml')
   throw new OrchestrationError(
     WORKFLOW_SOURCE_NOT_ALLOWED_CODE,
-    `Role import refused: "${source}" is not on the project allowlist. ` +
-      `Add it to workflows.allowedSources in ${allowlistPath}.`,
+    `Role import refused: ${sourceNotAllowedMessage(source, allowlistPath)}`,
     { source, allowlistPath }
   )
 }

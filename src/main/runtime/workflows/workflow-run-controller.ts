@@ -25,7 +25,7 @@ import {
   type WorkflowRunWorkspaceAccess
 } from './workflow-run-node-launch'
 import { WorkflowRunRecorder, type WorkflowRunChangeNotifier } from './workflow-run-recorder'
-import { createRunSkillProvisioner } from './workflow-skill-provisioning-host'
+import { releaseRunSkills } from './workflow-skill-provisioning-host'
 
 export type WorkflowRunControllerRuntime = WorkflowRunChangeNotifier & {
   waitForMessage(
@@ -67,6 +67,7 @@ export class WorkflowRunController {
   async run(): Promise<WorkflowRunState> {
     const run = this.readRun()
     if (TERMINAL_RUN_STATES.has(run.state)) {
+      await releaseRunSkills(run.id, () => this.deps.resolveWorkspace(run))
       return run.state
     }
     const session = await this.openSession(run)
@@ -75,12 +76,14 @@ export class WorkflowRunController {
         orchestrationRunId: session.engineRunId
       })
     }
-    await this.advance(session)
-    const state = await this.consumeMailbox(session)
-    if (TERMINAL_RUN_STATES.has(state)) {
-      await createRunSkillProvisioner(session.launch.workspace).release(run.id)
+    try {
+      await this.advance(session)
+      return await this.consumeMailbox(session)
+    } finally {
+      if (TERMINAL_RUN_STATES.has(this.readRun().state)) {
+        await releaseRunSkills(run.id, async () => session.launch.workspace)
+      }
     }
-    return state
   }
 
   private readRun(): RunSnapshot {

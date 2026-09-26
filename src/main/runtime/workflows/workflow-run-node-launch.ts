@@ -6,6 +6,7 @@ import type {
   SkillReference,
   Workflow
 } from '../../../shared/workflows/workflow-definition-types'
+import { childWorkspaceRepositorySkillsMessage } from '../../../shared/workflows/workflow-graph-validation'
 import type { NodeAttemptView } from '../../../shared/workflows/workflow-run-types'
 import type { OrchestrationDb } from '../orchestration/db'
 import { writeBrief, type BriefNode, type OrcaIgnoreTarget } from './workflow-brief-builder'
@@ -116,16 +117,22 @@ function nodeSkills(node: BriefNode, roles: Workflow['roles']): SkillReference[]
   return node.overrides?.skills ?? role?.skills ?? []
 }
 
-async function provisionNodeSkillsFor(
+export async function provisionNodeSkillsFor(
   ctx: WorkflowNodeLaunchContext,
   node: BriefNode,
   attemptId: string,
   agent: string
 ): Promise<WorkflowSkillProvisioningOutcome> {
+  const skills = nodeSkills(node, ctx.definition.roles)
+  // Worker-start creates the child worktree, so there is nothing to install into beforehand.
+  const needsRepositorySkills = skills.some((skill) => skill.source.kind === 'repository')
+  if (node.type === 'agent' && node.workspace === 'child' && needsRepositorySkills) {
+    return { kind: 'failed', reason: childWorkspaceRepositorySkillsMessage(node.id) }
+  }
   const outcome = await createRunSkillProvisioner(ctx.workspace).provision({
     runId: ctx.recorder.runId,
     agent,
-    skills: nodeSkills(node, ctx.definition.roles)
+    skills
   })
   if (outcome.kind === 'ready' && (outcome.installed.length > 0 || outcome.promptFallback)) {
     ctx.recorder.event(

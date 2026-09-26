@@ -169,6 +169,34 @@ function checkWorkspacePolicy(definition: Workflow): WorkflowProblem[] {
     )
 }
 
+/** Shared with the engine's provisioning-time refusal (workflow-run-node-launch.ts). */
+export function childWorkspaceRepositorySkillsMessage(nodeId: string): string {
+  return (
+    `Node "${nodeId}" runs in a child workspace and needs repository skills, which is not ` +
+    'supported yet: skills are installed into the run workspace before launch. Place the node ' +
+    'in the run workspace instead.'
+  )
+}
+
+/** A child worktree is created by worker-start, after provisioning, so it never gets the skills. */
+function checkChildWorkspaceSkills(definition: Workflow): WorkflowProblem[] {
+  return definition.nodes
+    .filter((node): node is AgentNode => node.type === 'agent' && node.workspace === 'child')
+    .filter((node) => {
+      const role = node.roleId === undefined ? undefined : definition.roles[node.roleId]
+      const skills = node.overrides?.skills ?? role?.skills ?? []
+      return skills.some((skill) => skill.source.kind === 'repository')
+    })
+    .map((node) =>
+      error({
+        code: 'graph_child_workspace_repository_skills',
+        message: childWorkspaceRepositorySkillsMessage(node.id),
+        nodeId: node.id,
+        roleId: node.roleId
+      })
+    )
+}
+
 /** Structural and semantic validation shared by the editor and the host (data-model.md). */
 export function validateWorkflowGraph(
   definition: Workflow,
@@ -185,6 +213,7 @@ export function validateWorkflowGraph(
     ...checkRoleReferences(definition, context),
     ...checkSkillAllowlist(definition, context),
     ...checkKnownAgents(definition, context),
-    ...checkWorkspacePolicy(definition)
+    ...checkWorkspacePolicy(definition),
+    ...checkChildWorkspaceSkills(definition)
   ]
 }
