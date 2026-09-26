@@ -2,20 +2,30 @@ import React from 'react'
 import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { translate } from '@/i18n/i18n'
-import WorkflowCanvas from './editor/WorkflowCanvas'
+import { useAppStore } from '@/store'
 import NodeInspector from './editor/NodeInspector'
 import ValidationProblemsPanel from './editor/ValidationProblemsPanel'
 import FileConflictDialog from './editor/FileConflictDialog'
 import WorkflowListPane from './WorkflowListPane'
+import AttemptPanel from './run-view/AttemptPanel'
+import RunCanvasOverlay from './run-view/RunCanvasOverlay'
+import RunToolbar from './run-view/RunToolbar'
 import { useWorkflowsPageController } from './use-workflows-page-controller'
 
 /** FR-001/FR-009/FR-011/FR-012: list/open/create/duplicate/delete/save a project-scoped
  *  workflow, edit it on the canvas, and see every validation problem before Run. */
 export default function WorkflowsPage(): React.JSX.Element {
   const controller = useWorkflowsPageController()
-  const { session } = controller
+  const { session, run } = controller
+  const runtimeEnvironmentId = useAppStore(
+    (s) => s.settings?.activeRuntimeEnvironmentId?.trim() || null
+  )
 
   const openName = session.openRef?.name
+  // While a run exists, a selected node shows its attempt instead of its editable settings
+  // (FR-036); edge conditions still go through NodeInspector regardless.
+  const showAttemptPanel =
+    run.snapshot !== null && Boolean(controller.selectedNodeId) && !controller.selectedEdgeId
 
   return (
     <main className="relative flex h-full min-h-0 flex-col bg-background pt-5 text-foreground md:pt-6">
@@ -68,10 +78,23 @@ export default function WorkflowsPage(): React.JSX.Element {
             </div>
           ) : (
             <>
+              <div className="shrink-0 border-b border-border px-3 py-2 md:px-5">
+                <RunToolbar
+                  runState={run.snapshot?.state}
+                  runObjective={run.snapshot?.objective}
+                  canRun={controller.canRun}
+                  starting={run.starting}
+                  stopping={run.stopping}
+                  onRun={(objective) => void run.start(objective)}
+                  onStop={() => void run.stop()}
+                  onRelayout={() => session.editor.dispatch({ type: 'auto-layout' })}
+                />
+              </div>
               <div className="flex min-h-0 flex-1">
                 <div className="min-w-0 flex-1">
-                  <WorkflowCanvas
+                  <RunCanvasOverlay
                     definition={session.editor.state.definition}
+                    snapshot={run.snapshot}
                     selectedNodeId={controller.selectedNodeId}
                     selectedEdgeId={controller.selectedEdgeId}
                     onNodeSelect={(nodeId) => {
@@ -91,15 +114,30 @@ export default function WorkflowsPage(): React.JSX.Element {
                   />
                 </div>
                 <div className="w-80 shrink-0 border-l border-border">
-                  <NodeInspector
-                    definition={session.editor.state.definition}
-                    selectedNodeId={controller.selectedNodeId}
-                    selectedEdgeId={controller.selectedEdgeId}
-                    onNodeChange={(node) => session.editor.dispatch({ type: 'update-node', node })}
-                    onEdgeConditionChange={(edgeId, condition) =>
-                      session.editor.dispatch({ type: 'update-edge-condition', edgeId, condition })
-                    }
-                  />
+                  {showAttemptPanel && controller.selectedNodeId && run.snapshot ? (
+                    <AttemptPanel
+                      definition={session.editor.state.definition}
+                      snapshot={run.snapshot}
+                      nodeId={controller.selectedNodeId}
+                      runtimeEnvironmentId={runtimeEnvironmentId}
+                    />
+                  ) : (
+                    <NodeInspector
+                      definition={session.editor.state.definition}
+                      selectedNodeId={controller.selectedNodeId}
+                      selectedEdgeId={controller.selectedEdgeId}
+                      onNodeChange={(node) =>
+                        session.editor.dispatch({ type: 'update-node', node })
+                      }
+                      onEdgeConditionChange={(edgeId, condition) =>
+                        session.editor.dispatch({
+                          type: 'update-edge-condition',
+                          edgeId,
+                          condition
+                        })
+                      }
+                    />
+                  )}
                 </div>
               </div>
               <div className="h-48 shrink-0 border-t border-border">

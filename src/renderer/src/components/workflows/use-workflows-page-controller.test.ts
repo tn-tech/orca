@@ -12,14 +12,24 @@ const {
   workflowValidateMock,
   workflowListMock,
   workflowDeleteMock,
-  workflowDuplicateMock
+  workflowDuplicateMock,
+  workflowRunStartMock,
+  workflowRunCancelMock,
+  workflowRunShowMock,
+  toastErrorMock,
+  toastMessageMock
 } = vi.hoisted(() => ({
   workflowReadMock: vi.fn(),
   workflowWriteMock: vi.fn(),
   workflowValidateMock: vi.fn(),
   workflowListMock: vi.fn(),
   workflowDeleteMock: vi.fn(),
-  workflowDuplicateMock: vi.fn()
+  workflowDuplicateMock: vi.fn(),
+  workflowRunStartMock: vi.fn(),
+  workflowRunCancelMock: vi.fn(),
+  workflowRunShowMock: vi.fn(),
+  toastErrorMock: vi.fn(),
+  toastMessageMock: vi.fn()
 }))
 
 vi.mock('@/runtime/runtime-workflow-client', () => ({
@@ -28,8 +38,13 @@ vi.mock('@/runtime/runtime-workflow-client', () => ({
   workflowValidate: workflowValidateMock,
   workflowList: workflowListMock,
   workflowDelete: workflowDeleteMock,
-  workflowDuplicate: workflowDuplicateMock
+  workflowDuplicate: workflowDuplicateMock,
+  workflowRunStart: workflowRunStartMock,
+  workflowRunCancel: workflowRunCancelMock,
+  workflowRunShow: workflowRunShowMock
 }))
+
+vi.mock('sonner', () => ({ toast: { error: toastErrorMock, message: toastMessageMock } }))
 
 const { useAppStoreMock, useActiveRepoMock, useActiveWorktreeMock } = vi.hoisted(() => ({
   useAppStoreMock: vi.fn(),
@@ -85,6 +100,11 @@ beforeEach(() => {
   workflowListMock.mockReset().mockResolvedValue({ workflows: [] })
   workflowDeleteMock.mockReset()
   workflowDuplicateMock.mockReset()
+  workflowRunStartMock.mockReset()
+  workflowRunCancelMock.mockReset()
+  workflowRunShowMock.mockReset()
+  toastErrorMock.mockReset()
+  toastMessageMock.mockReset()
   useAppStoreMock
     .mockReset()
     .mockImplementation((selector: (state: { settings: typeof settings }) => unknown) =>
@@ -201,5 +221,97 @@ describe('useWorkflowsPageController', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  describe('run', () => {
+    async function openReadyWorkflow(result: {
+      current: ReturnType<typeof useWorkflowsPageController>
+    }): Promise<void> {
+      const definition = savedWorkflow()
+      workflowReadMock.mockResolvedValue({
+        definition,
+        raw: 'raw',
+        revision: 'rev-1',
+        problems: []
+      })
+      workflowValidateMock.mockResolvedValue({ problems: [] })
+      await act(() =>
+        result.current.openWorkflow({ name: 'wf-a', source: 'project', path: '', valid: true })
+      )
+    }
+
+    it('starts a run through workflow.run.start for the open workflow', async () => {
+      workflowRunStartMock.mockResolvedValue({ runId: 'run-1' })
+      const { result } = renderHook(() => useWorkflowsPageController())
+      await openReadyWorkflow(result)
+
+      await act(() => result.current.run.start('Add CSV export'))
+
+      expect(workflowRunStartMock).toHaveBeenCalledWith(settings, {
+        repo: 'repo-1',
+        name: 'wf-a',
+        source: 'project',
+        objective: 'Add CSV export'
+      })
+      expect(result.current.run.runId).toBe('run-1')
+    })
+
+    it('reports a workflow.run.start failure as a toast without leaving `starting` stuck', async () => {
+      workflowRunStartMock.mockRejectedValue(new Error('host unreachable'))
+      const { result } = renderHook(() => useWorkflowsPageController())
+      await openReadyWorkflow(result)
+
+      await act(() => result.current.run.start('Add CSV export'))
+
+      expect(toastErrorMock).toHaveBeenCalledWith('host unreachable')
+      expect(result.current.run.runId).toBeNull()
+      expect(result.current.run.starting).toBe(false)
+    })
+
+    it('stops the active run through workflow.run.cancel', async () => {
+      workflowRunStartMock.mockResolvedValue({ runId: 'run-1' })
+      workflowRunCancelMock.mockResolvedValue({ state: 'cancelled' })
+      const { result } = renderHook(() => useWorkflowsPageController())
+      await openReadyWorkflow(result)
+      await act(() => result.current.run.start('Add CSV export'))
+
+      await act(() => result.current.run.stop())
+
+      expect(workflowRunCancelMock).toHaveBeenCalledWith(settings, 'run-1')
+    })
+
+    it('shows a gentle message instead of an error when cancel is not yet implemented', async () => {
+      workflowRunStartMock.mockResolvedValue({ runId: 'run-1' })
+      workflowRunCancelMock.mockRejectedValue(new Error('workflow_not_implemented'))
+      const { result } = renderHook(() => useWorkflowsPageController())
+      await openReadyWorkflow(result)
+      await act(() => result.current.run.start('Add CSV export'))
+
+      await act(() => result.current.run.stop())
+
+      expect(toastMessageMock).toHaveBeenCalled()
+      expect(toastErrorMock).not.toHaveBeenCalled()
+    })
+
+    it('clears the active run when the user switches to a different workflow', async () => {
+      workflowRunStartMock.mockResolvedValue({ runId: 'run-1' })
+      const { result } = renderHook(() => useWorkflowsPageController())
+      await openReadyWorkflow(result)
+      await act(() => result.current.run.start('Add CSV export'))
+      expect(result.current.run.runId).toBe('run-1')
+
+      const otherDefinition = savedWorkflow({ name: 'wf-b' })
+      workflowReadMock.mockResolvedValue({
+        definition: otherDefinition,
+        raw: 'raw',
+        revision: 'rev-2',
+        problems: []
+      })
+      await act(() =>
+        result.current.openWorkflow({ name: 'wf-b', source: 'project', path: '', valid: true })
+      )
+
+      expect(result.current.run.runId).toBeNull()
+    })
   })
 })

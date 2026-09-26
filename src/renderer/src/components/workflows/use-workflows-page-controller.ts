@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { toast } from 'sonner'
 import { useAppStore } from '@/store'
 import { useActiveRepo, useActiveWorktree } from '@/store/selectors'
+import { translate } from '@/i18n/i18n'
+import { hasRuntimeRpcErrorCode } from '@/runtime/runtime-rpc-client'
 import {
   workflowDelete,
   workflowDuplicate,
+  workflowRunCancel,
+  workflowRunStart,
   workflowValidate
 } from '@/runtime/runtime-workflow-client'
 import type { Node, WorkflowProblem } from '../../../../shared/workflows/workflow-definition-types'
@@ -17,6 +22,7 @@ import {
 import { useWorkflowEditorSession } from './use-workflow-editor-session'
 import { useWorkflowExternalChangeWatch } from './use-workflow-external-change-watch'
 import { useWorkflowListState } from './use-workflow-list-state'
+import { useWorkflowRunSnapshot } from './run-view/use-workflow-run-snapshot'
 import type { WorkflowSummary } from '@/runtime/runtime-workflow-client'
 
 const HOST_VALIDATE_DEBOUNCE_MS = 400
@@ -82,6 +88,87 @@ export function useWorkflowsPageController() {
   )
   const canRun = session.status === 'ready' && !hasBlockingWorkflowProblems(problems)
 
+  // Why scoped to `activeRunId`: a run belongs to the workflow it started against, so switching
+  // the open workflow (below) drops it rather than showing a stale run for the newly opened file.
+  const [activeRunId, setActiveRunId] = useState<string | null>(null)
+  const [runStarting, setRunStarting] = useState(false)
+  const [runStopping, setRunStopping] = useState(false)
+  const runSnapshot = useWorkflowRunSnapshot({ settings, runId: activeRunId })
+
+  const startRun = useCallback(
+    async (objective: string) => {
+      if (!repoId || !session.openRef) {
+        return
+      }
+      setRunStarting(true)
+      try {
+        const result = await workflowRunStart(settings, {
+          repo: repoId,
+          name: session.openRef.name,
+          source: session.openRef.source,
+          objective
+        })
+        setActiveRunId(result.runId)
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : translate(
+                'auto.components.workflows.use-workflows-page-controller.runStartFailed',
+                'Failed to start the run.'
+              )
+        )
+      } finally {
+        setRunStarting(false)
+      }
+    },
+    [repoId, session.openRef, settings]
+  )
+
+  const stopRun = useCallback(async () => {
+    if (!activeRunId) {
+      return
+    }
+    setRunStopping(true)
+    try {
+      await workflowRunCancel(settings, activeRunId)
+    } catch (error) {
+      // Why not surfaced as an error: `workflow.run.cancel` is a host stub today (US8); this is
+      // an expected, temporary gap rather than a failure the user needs to retry or report.
+      if (hasRuntimeRpcErrorCode(error, 'workflow_not_implemented')) {
+        toast.message(
+          translate(
+            'auto.components.workflows.use-workflows-page-controller.runStopNotImplemented',
+            "Stopping a run isn't available yet."
+          )
+        )
+        return
+      }
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : translate(
+              'auto.components.workflows.use-workflows-page-controller.runStopFailed',
+              'Failed to stop the run.'
+            )
+      )
+    } finally {
+      setRunStopping(false)
+    }
+  }, [activeRunId, settings])
+
+  const run = useMemo(
+    () => ({
+      runId: activeRunId,
+      snapshot: runSnapshot.snapshot,
+      starting: runStarting,
+      stopping: runStopping,
+      start: startRun,
+      stop: stopRun
+    }),
+    [activeRunId, runSnapshot.snapshot, runStarting, runStopping, startRun, stopRun]
+  )
+
   const focusProblem = useCallback(
     (problem: WorkflowProblem) => {
       if (problem.nodeId) {
@@ -117,6 +204,7 @@ export function useWorkflowsPageController() {
     (row: WorkflowSummary) => {
       setSelectedNodeId(undefined)
       setSelectedEdgeId(undefined)
+      setActiveRunId(null)
       void session.open({ name: row.name, source: row.source })
     },
     [session]
@@ -126,6 +214,7 @@ export function useWorkflowsPageController() {
     async (name: string, source: WorkflowRunSource) => {
       setSelectedNodeId(undefined)
       setSelectedEdgeId(undefined)
+      setActiveRunId(null)
       await session.createNew(name, source)
       await list.refresh()
     },
@@ -146,6 +235,7 @@ export function useWorkflowsPageController() {
       await list.refresh()
       setSelectedNodeId(undefined)
       setSelectedEdgeId(undefined)
+      setActiveRunId(null)
       await session.open({ name: result.name, source: row.source })
     },
     [list, repoId, session, settings]
@@ -161,6 +251,7 @@ export function useWorkflowsPageController() {
         session.close()
         setSelectedNodeId(undefined)
         setSelectedEdgeId(undefined)
+        setActiveRunId(null)
       }
       await list.refresh()
     },
@@ -173,6 +264,7 @@ export function useWorkflowsPageController() {
     session,
     problems,
     canRun,
+    run,
     selectedNodeId,
     selectedEdgeId,
     setSelectedNodeId,

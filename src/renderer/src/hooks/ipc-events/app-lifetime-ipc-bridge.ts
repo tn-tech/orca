@@ -1,6 +1,7 @@
 import type { RuntimeHostStatusSnapshot } from '../../../../shared/runtime-host-status'
 import { getTabIdsAwaitingHostHydrationRemount } from '@/lib/parked-terminal-host-hydration'
 import { emitAutomationsChangedWindowEvent } from '@/lib/automations-changed-window-event'
+import { emitWorkflowsChangedWindowEvent } from '@/lib/workflows-changed-window-event'
 import { createBackgroundSleepingAgentWakeDispatcher } from '@/lib/wake-sleeping-agents-in-background'
 import { attachMobileMarkdownBridge } from '@/runtime/mobile-markdown-bridge'
 import { resetAgentHookCompletionNotificationCoordinators } from '../agent-hook-completion-notifications'
@@ -62,6 +63,9 @@ export function installAppLifetimeIpcEvents(
   unsubs.push(
     window.api.automations.onChanged((payload) => emitAutomationsChangedWindowEvent(payload))
   )
+  // Why: desktop-local runs publish over IPC (main/window/runtime-window-lifecycle.ts), not the
+  // runtime client-event stream that registerRuntimeClientIpcBridge already bridges below.
+  unsubs.push(window.api.workflows.onChanged((payload) => emitWorkflowsChangedWindowEvent(payload)))
 
   const worktreeRuntime = createWorktreeEventRuntime(unsubs, isRuntimeEnvironmentActive)
   const statusApi = window.api.runtimeEnvironments
