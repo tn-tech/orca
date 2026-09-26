@@ -63,7 +63,7 @@ export const ROOT_HELP_TEXT_PRIMARY = [
   '  workflows resume          Resume a paused workflow run',
   '  workflows cancel          Cancel a workflow run',
   '  workflows rerun           Rerun a workflow from a given node',
-  '  workflows trust           Decide whether to trust an imported workflow source',
+  '  workflows trust           Decide whether to trust a plugin skill source on a host',
   '',
   'Projects:',
   '  project list              List durable projects known to Orca',

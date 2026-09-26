@@ -1,0 +1,164 @@
+// Per-source, per-host trust for host-scope plugin installs (FR-018a). Decisions live in
+// `workflow_source_trust`; a missing decision raises a `trust` question in the run's question
+// store, and deciding answers every pending question for that source on that host.
+//
+// Host key: `local` (the machine this runtime runs on), `ssh:<connectionId>` (the SSH target a
+// repo is bound to), `wsl:<distro>`. The table's single `source` key column holds the plain
+// source for `local` and `JSON.stringify([host, source])` elsewhere, so no schema change is needed.
+import type { RunQuestionView } from '../../../shared/workflows/workflow-run-types'
+import { parseWslUncPath } from '../../../shared/wsl-paths'
+import type { OrchestrationDb } from '../orchestration/db'
+import type { WorkflowSourceTrustDecision } from '../orchestration/db/workflow-runs/workflow-trust-store'
+import type { WorkflowRunChangeNotifier } from './workflow-run-recorder'
+import { WorkflowRunRecorder } from './workflow-run-recorder'
+import type {
+  WorkflowSkillTrustGate,
+  WorkflowSkillTrustQuestion
+} from './workflow-skill-provisioning'
+
+export const LOCAL_TRUST_HOST = 'local'
+
+export type SourceTrustDecisionView = {
+  source: string
+  host: string
+  decision: WorkflowSourceTrustDecision
+  decidedBy: string
+  decidedAt: string
+}
+
+/** Where a run workspace's nodes execute, as a trust scope. */
+export function workflowTrustHostKey(workspace: {
+  workspaceRoot: string
+  orcaIgnoreTarget: { host: 'local' } | { host: 'remote'; connectionId: string }
+}): string {
+  if (workspace.orcaIgnoreTarget.host === 'remote') {
+    return `ssh:${workspace.orcaIgnoreTarget.connectionId}`
+  }
+  const wsl = parseWslUncPath(workspace.workspaceRoot)
+  return wsl ? `wsl:${wsl.distro}` : LOCAL_TRUST_HOST
+}
+
+function trustRecordKey(host: string, source: string): string {
+  return host === LOCAL_TRUST_HOST ? source : JSON.stringify([host, source])
+}
+
+function parseTrustRecordKey(key: string): { host: string; source: string } {
+  if (key.startsWith('[')) {
+    try {
+      const parsed: unknown = JSON.parse(key)
+      if (
+        Array.isArray(parsed) &&
+        parsed.length === 2 &&
+        typeof parsed[0] === 'string' &&
+        typeof parsed[1] === 'string'
+      ) {
+        return { host: parsed[0], source: parsed[1] }
+      }
+    } catch {
+      // A plain source that merely starts with "[" is a local decision.
+    }
+  }
+  return { host: LOCAL_TRUST_HOST, source: key }
+}
+
+export function sourceTrustGate(db: OrchestrationDb, host: string): WorkflowSkillTrustGate {
+  return {
+    decide: async ({ source }) =>
+      db.getSourceTrust(trustRecordKey(host, source))?.decision ?? 'needs-question'
+  }
+}
+
+export function listSourceTrustDecisions(db: OrchestrationDb): SourceTrustDecisionView[] {
+  return db.listSourceTrust().map((view) => ({
+    ...parseTrustRecordKey(view.source),
+    decision: view.decision,
+    decidedBy: view.decidedBy,
+    decidedAt: view.decidedAt
+  }))
+}
+
+type TrustQuestionSubject = Required<Pick<WorkflowSkillTrustQuestion, 'source' | 'host'>> & {
+  skills: string[]
+  agents: string[]
+}
+
+export const TRUST_QUESTION_CHOICES = [
+  { id: 'trusted', label: 'Trust this source' },
+  { id: 'refused', label: 'Refuse' }
+] as const
+
+/** The source and host a `trust` question asks about; `undefined` for any other question. */
+export function trustQuestionSubject(question: RunQuestionView): TrustQuestionSubject | undefined {
+  const options = question.optionsJson
+  if (question.kind !== 'trust' || !options || typeof options !== 'object') {
+    return undefined
+  }
+  const subject = Array.isArray(options) ? undefined : options.trust
+  if (!subject || typeof subject !== 'object' || Array.isArray(subject)) {
+    return undefined
+  }
+  const { source, host, skills, agents } = subject
+  if (typeof source !== 'string' || typeof host !== 'string') {
+    return undefined
+  }
+  const strings = (value: unknown) =>
+    Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+  return { source, host, skills: strings(skills), agents: strings(agents) }
+}
+
+/** Reuses the attempt's pending trust question for the same source rather than asking twice. */
+export function raiseTrustQuestion(
+  db: OrchestrationDb,
+  args: { runId: string; attemptId: string; question: TrustQuestionSubject }
+): RunQuestionView {
+  const { runId, attemptId, question } = args
+  const existing = db
+    .listPendingWorkflowQuestions(runId)
+    .find(
+      (candidate) =>
+        candidate.attemptId === attemptId &&
+        trustQuestionSubject(candidate)?.source === question.source &&
+        trustQuestionSubject(candidate)?.host === question.host
+    )
+  if (existing) {
+    return existing
+  }
+  return db.createWorkflowQuestion({
+    runId,
+    attemptId,
+    kind: 'trust',
+    prompt:
+      `Trust plugin source "${question.source}" on host ${question.host}? Orca will install ` +
+      `skill(s) ${question.skills.join(', ')} there for ${question.agents.join(', ')}.`,
+    options: { choices: [...TRUST_QUESTION_CHOICES], trust: question }
+  })
+}
+
+/**
+ * Records `decision` for `source` on `host` and answers every pending trust question about it.
+ * Returns the runs whose questions were answered, so their controllers can be woken.
+ */
+export function decideSourceTrust(
+  db: OrchestrationDb,
+  notifier: WorkflowRunChangeNotifier,
+  args: { host: string; source: string; decision: WorkflowSourceTrustDecision; decidedBy: string }
+): string[] {
+  const { host, source, decision, decidedBy } = args
+  db.setSourceTrust(trustRecordKey(host, source), decision, decidedBy)
+  const runIds = new Set<string>()
+  for (const question of db.listPendingWorkflowQuestions()) {
+    const subject = trustQuestionSubject(question)
+    if (subject?.source !== source || subject.host !== host) {
+      continue
+    }
+    if (db.answerWorkflowQuestion(question.id, decision, decidedBy)?.state === 'answered') {
+      new WorkflowRunRecorder(db, notifier, question.runId).event(
+        'trust_question_answered',
+        { questionId: question.id, source, host, decision },
+        { attemptId: question.attemptId, reason: 'question' }
+      )
+      runIds.add(question.runId)
+    }
+  }
+  return [...runIds]
+}

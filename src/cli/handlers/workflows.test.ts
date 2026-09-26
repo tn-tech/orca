@@ -452,4 +452,25 @@ describe('workflows CLI handlers', () => {
       decision: 'trusted'
     })
   })
+
+  it('decides trust for a source on a named host', async () => {
+    const call = vi.fn().mockResolvedValue(success({}))
+
+    await WORKFLOW_HANDLERS['workflows trust']!(
+      context(
+        call,
+        new Map([
+          ['source', 'acme-decks@acme'],
+          ['decision', 'refused'],
+          ['host', 'ssh:devbox']
+        ])
+      )
+    )
+
+    expect(call).toHaveBeenCalledWith('workflow.trust.decide', {
+      source: 'acme-decks@acme',
+      decision: 'refused',
+      host: 'ssh:devbox'
+    })
+  })
 })

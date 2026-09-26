@@ -87,6 +87,8 @@ export const WorkflowRunEvents = z
 export const WorkflowTrustDecide = z
   .object({
     source: requiredString('Missing trust source'),
+    /** The execution host's trust key (`local`, `ssh:<id>`, `wsl:<distro>`); default `local`. */
+    host: OptionalString,
     decision: z.enum(['trusted', 'refused']).optional()
   })
   .strict()

@@ -8,13 +8,15 @@
 // - `fs`: host paths for presence checks, the install record and `.git/info/exclude`.
 // - `resolveGitExcludePath(root)`: the exclude file git reads for `root`; `null` = no git.
 // - `listTrackedPaths(root, paths)`: which install targets git already tracks (never modified).
-// - `plugins`: host-scope plugin skills. `isInstalled` checks presence; `install` runs the
-//   provider's own plugin command and returns `{ ok: false, reason }` when it has none.
-// - `trust`: the per-host trust store (FR-018a). `decide({ source })` answers `trusted`,
-//   `refused`, or `needs-question` when no decision is recorded yet.
+// - `plugins`: host-scope plugin skills (workflow-plugin-install.ts). `isInstalled` checks
+//   presence; `unavailableReason` names a verify-only provider; `install` runs the provider's
+//   own verified plugin command.
+// - `trust`: the per-host trust store (FR-018a, workflow-source-trust.ts). `decide({ source })`
+//   answers `trusted`, `refused`, or `needs-question` when no decision is recorded yet.
 import type { ProcessResult, ProcessSpec } from '../../../shared/child-process/run-process'
 import type { SkillReference } from '../../../shared/workflows/workflow-definition-types'
 import type { GitExcludeFileAccess } from './workflow-git-exclude'
+import { installPluginSkills, planPluginInstalls } from './workflow-skill-plugin-phase'
 import { installRepositorySkill, withWorkspaceSkillLock } from './workflow-skill-repository-install'
 import { workflowSkillWorkspaceTarget } from './workflow-skill-workspace-target'
 import {
@@ -37,6 +39,8 @@ export type WorkflowPluginInstallResult = { ok: true } | { ok: false; reason: st
 
 export type WorkflowPluginSkillPort = {
   isInstalled(request: { plugin: string; skill: string; agent: string }): Promise<boolean>
+  /** Install instructions when `agent` has no verified plugin command (verify-only). */
+  unavailableReason(request: { plugin: string; agent: string }): string | undefined
   install(request: { plugin: string; agent: string }): Promise<WorkflowPluginInstallResult>
 }
 
@@ -71,7 +75,13 @@ export type ProvisionNodeSkillsInput = {
 }
 
 /** FR-018a: what a person is asked before a host-scope install from `source`. */
-export type WorkflowSkillTrustQuestion = { source: string; skills: string[]; agents: string[] }
+export type WorkflowSkillTrustQuestion = {
+  source: string
+  skills: string[]
+  agents: string[]
+  /** The executing host's trust key (workflow-source-trust.ts); set by the host wiring. */
+  host?: string
+}
 
 export type WorkflowSkillProvisioningOutcome =
   | {
@@ -117,10 +127,9 @@ async function provisionSerialized(
   const target = workflowSkillWorkspaceTarget(input.agent)
 
   // Every refusal is decided before anything is installed, so a refused node leaves no trace.
-  const missingPlugins = await pluginsToInstall(input.agent, pluginSkills, ports)
-  const trustBlock = await checkPluginTrust(input.agent, missingPlugins, ports)
-  if (trustBlock) {
-    return trustBlock
+  const plugins = await planPluginInstalls(input.agent, pluginSkills, ports)
+  if ('kind' in plugins) {
+    return plugins
   }
   if (repositorySkills.length > 0) {
     const refusal = checkAllowlist(repositorySkills, await input.readAllowlist())
@@ -129,20 +138,11 @@ async function provisionSerialized(
     }
   }
 
-  const installed: string[] = []
-  for (const [plugin, skills] of missingPlugins) {
-    const result = await ports.plugins.install({ plugin, agent: input.agent })
-    if (!result.ok && skills.some((skill) => skill.required)) {
-      const names = skills.map((skill) => skill.name).join(', ')
-      return {
-        kind: 'failed',
-        reason: `Could not install plugin "${plugin}" for skill(s) ${names}: ${result.reason}`
-      }
-    }
-    if (result.ok) {
-      installed.push(...skills.map((skill) => skill.name))
-    }
+  const pluginInstall = await installPluginSkills(input.agent, plugins.missing, ports)
+  if ('kind' in pluginInstall) {
+    return pluginInstall
   }
+  const installed = [...pluginInstall.installed]
 
   if (!target) {
     const fallback = repositorySkills.map((entry) => entry.skill)
@@ -169,44 +169,6 @@ async function provisionSerialized(
   return { kind: 'ready', installed }
 }
 
-async function pluginsToInstall(
-  agent: string,
-  pluginSkills: readonly { skill: SkillReference; plugin: string }[],
-  ports: WorkflowSkillProvisioningPorts
-): Promise<Map<string, SkillReference[]>> {
-  const missing = new Map<string, SkillReference[]>()
-  for (const { skill, plugin } of pluginSkills) {
-    if (await ports.plugins.isInstalled({ plugin, skill: skill.name, agent })) {
-      continue
-    }
-    missing.set(plugin, [...(missing.get(plugin) ?? []), skill])
-  }
-  return missing
-}
-
-async function checkPluginTrust(
-  agent: string,
-  missing: ReadonlyMap<string, readonly SkillReference[]>,
-  ports: WorkflowSkillProvisioningPorts
-): Promise<WorkflowSkillProvisioningOutcome | undefined> {
-  for (const [source, skills] of missing) {
-    const decision = await ports.trust.decide({ source })
-    if (decision === 'refused') {
-      return {
-        kind: 'failed',
-        reason: `Plugin source "${source}" is not trusted on this host, so skill(s) ${skills.map((s) => s.name).join(', ')} were not installed.`
-      }
-    }
-    if (decision === 'needs-question') {
-      return {
-        kind: 'trust-required',
-        question: { source, skills: skills.map((skill) => skill.name), agents: [agent] }
-      }
-    }
-  }
-  return undefined
-}
-
 function checkAllowlist(
   repositorySkills: readonly { skill: SkillReference; location: string }[],
   allowlist: WorkflowSkillAllowlist
@@ -226,8 +188,8 @@ function checkAllowlist(
 }
 
 /**
- * Why a node cannot launch yet, or `undefined` when it can. A trust question fails the node
- * until the Waiting-and-ask flow exists (FR-018a); the reason names the source to trust.
+ * Why a node cannot launch yet, or `undefined` when it can. A trust question reads as a failure
+ * only for callers that cannot wait for the answer (FR-018a); the reason names the source.
  */
 export function provisioningBlockReason(
   outcome: WorkflowSkillProvisioningOutcome

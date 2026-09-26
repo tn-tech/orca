@@ -200,6 +200,11 @@ export class WorkflowEngine {
     return this.deps.db.getWorkflowRun(workflowRunId)
   }
 
+  /** Makes a live controller re-read its run now; a run without one catches up on rehydrate. */
+  wakeRun(workflowRunId: string): void {
+    this.active.get(workflowRunId)?.controller.wake()
+  }
+
   /** Restarts a controller for every run a prior process left non-terminal (FR-039). */
   rehydrateActiveRuns(): void {
     for (const summary of this.deps.db.listActiveWorkflowRuns()) {

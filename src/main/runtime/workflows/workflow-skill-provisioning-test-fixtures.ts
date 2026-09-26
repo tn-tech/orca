@@ -54,9 +54,17 @@ export function createSkillPorts(
   } = {}
 ) {
   const { trust = 'needs-question', ...rest } = overrides
+  // A successful install makes the plugin's skills present, as on a real host.
+  const installedPlugins = new Set<string>()
   const plugins = {
-    isInstalled: vi.fn(async () => false),
-    install: vi.fn(async (): Promise<WorkflowPluginInstallResult> => ({ ok: true }))
+    isInstalled: vi.fn(async (request: { plugin: string }) => installedPlugins.has(request.plugin)),
+    unavailableReason: vi.fn((_request: { plugin: string; agent: string }): string | undefined => {
+      return undefined
+    }),
+    install: vi.fn(async (request: { plugin: string }): Promise<WorkflowPluginInstallResult> => {
+      installedPlugins.add(request.plugin)
+      return { ok: true }
+    })
   }
   const trustGate = { decide: vi.fn(async () => trust) }
   const ports: WorkflowSkillProvisioningPorts = {

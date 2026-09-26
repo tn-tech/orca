@@ -1,11 +1,8 @@
 // Per-run deterministic loop (research R1–R3): rehydrate from the DB, drain the engine Run's
 // mailbox backlog, then sleep on the exclusive Run-mailbox waiter. worker_done drives result
 // capture and the frontier; every change is recorded and announced (WorkflowRunRecorder).
-import {
-  ACTIVE_ATTEMPT_STATES,
-  type WorkflowRunState
-} from '../../../shared/workflows/workflow-node-states'
-import type { NodeAttemptView, RunSnapshot } from '../../../shared/workflows/workflow-run-types'
+import type { WorkflowRunState } from '../../../shared/workflows/workflow-node-states'
+import type { RunSnapshot } from '../../../shared/workflows/workflow-run-types'
 import type { OrchestrationDb } from '../orchestration/db'
 import type { MessageRow } from '../orchestration/types'
 import type { MessageWaitResult } from '../runtime-message-waiters'
@@ -21,10 +18,12 @@ import { advanceRun } from './workflow-run-advance'
 import { classifyRunMail, type RunMail } from './workflow-run-mailbox-message'
 import {
   requireBriefNode,
+  resumeAnsweredTrustWaits,
   type WorkflowNodeLaunchContext,
   type WorkflowRunWorkspaceAccess
 } from './workflow-run-node-launch'
 import { WorkflowRunRecorder, type WorkflowRunChangeNotifier } from './workflow-run-recorder'
+import { settleRunIfQuiet } from './workflow-run-settlement'
 import { releaseRunSkills } from './workflow-skill-provisioning-host'
 
 export type WorkflowRunControllerRuntime = WorkflowRunChangeNotifier & {
@@ -52,10 +51,16 @@ type ControllerSession = {
 
 export class WorkflowRunController {
   private readonly abort = new AbortController()
+  private wakeSignal = new AbortController()
   private readonly recorder: WorkflowRunRecorder
 
   constructor(private readonly deps: WorkflowRunControllerDeps) {
     this.recorder = new WorkflowRunRecorder(deps.db, deps.runtime, deps.workflowRunId)
+  }
+
+  /** Re-checks persisted state now, e.g. after a trust question was answered (FR-018a). */
+  wake(): void {
+    this.wakeSignal.abort()
   }
 
   /** Leaves the run as persisted so a later controller can rehydrate it. */
@@ -134,6 +139,11 @@ export class WorkflowRunController {
       if (TERMINAL_RUN_STATES.has(state)) {
         return state
       }
+      // Also on rehydrate: an answer recorded while no controller ran resumes here.
+      if (await resumeAnsweredTrustWaits(session.launch)) {
+        await this.advance(session)
+        continue
+      }
       // Why: the backlog read and waiter registration share one tick, so no wake is lost between them.
       const batch = db.getOrCreateRunDelivery(mailbox)
       if (batch) {
@@ -143,10 +153,14 @@ export class WorkflowRunController {
         db.acknowledgeRunDelivery({ ...mailbox, deliveryId: batch.delivery.id })
         continue
       }
+      const wake = this.wakeSignal
       const woke = await runtime.waitForMessage(`run:${session.engineRunId}`, {
         exclusive: true,
-        signal: this.abort.signal
+        signal: AbortSignal.any([this.abort.signal, wake.signal])
       })
+      if (wake.signal.aborted) {
+        this.wakeSignal = new AbortController()
+      }
       if (woke === 'waiter_exists') {
         this.recorder.event('mailbox_waiter_conflict', { engineRunId: session.engineRunId })
         throw new Error(`Run ${session.engineRunId} mailbox already has another consumer.`)
@@ -260,35 +274,6 @@ export class WorkflowRunController {
   /** Advances the run until the frontier is quiet, then settles it. */
   private async advance(session: ControllerSession): Promise<void> {
     await advanceRun(session.launch)
-    this.settleRunIfQuiet()
-  }
-
-  /**
-   * Nothing active and nothing eligible: the run is over. It completes only when an End node
-   * completed; otherwise a failed node (or an unsupported node type) left End unreachable.
-   */
-  private settleRunIfQuiet(): void {
-    const run = this.readRun()
-    if (run.state !== 'running' && run.state !== 'waiting') {
-      return
-    }
-    const attempts = this.deps.db.listWorkflowAttempts(this.deps.workflowRunId)
-    // A Waiting Join alone cannot move: its pending branches have nothing left to settle them.
-    const stuckJoin = (a: NodeAttemptView) => a.nodeType === 'join' && a.state === 'waiting'
-    if (attempts.some((a) => ACTIVE_ATTEMPT_STATES.has(a.state) && !stuckJoin(a))) {
-      return
-    }
-    for (const join of attempts.filter(stuckJoin)) {
-      this.recorder.transitionAttempt(join.id, 'cancelled', { reason: 'join_unreachable' })
-    }
-    if (attempts.some((attempt) => attempt.nodeType === 'end' && attempt.state === 'completed')) {
-      this.recorder.transitionRun('completed', 'run_completed')
-      return
-    }
-    const failedNodes = attempts.filter((a) => a.state === 'failed').map((a) => a.nodeId)
-    this.recorder.transitionRun('failed', 'run_failed', {
-      reason: failedNodes.length > 0 ? 'node_failed' : 'end_unreachable',
-      failedNodes
-    })
+    settleRunIfQuiet(this.deps.db, this.recorder)
   }
 }

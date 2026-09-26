@@ -2,7 +2,8 @@
 // or a WSL distro. Each installs only on the machine that runs the node; an unreachable host
 // refuses and nothing is installed anywhere else (FR-038, ssh-execution-boundary.md).
 import { cp, lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { homedir } from 'node:os'
+import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { runProcess } from '../../../shared/child-process/run-process'
 import {
   resolveCliCommand,
@@ -11,22 +12,26 @@ import {
 import type { SkillReference } from '../../../shared/workflows/workflow-definition-types'
 import { parseWslUncPath } from '../../../shared/wsl-paths'
 import { isENOENT } from '../../ipc/filesystem-auth'
+import type { OrchestrationDb } from '../orchestration/db'
 import { joinWorktreeRelativePath } from '../runtime-relative-paths'
+import { createWorkflowPluginPort, type PluginHostAccess } from './workflow-plugin-install'
 import { WORKFLOW_HOST_UNREACHABLE_CODE } from './workflow-run-workspace'
 import { listLocalTrackedPaths, resolveLocalGitExcludePath } from './workflow-skill-local-git'
 import { getRepoWorkflowSourceAllowlist } from './workflow-source-allowlist'
+import { sourceTrustGate, workflowTrustHostKey } from './workflow-source-trust'
 import {
   provisionNodeSkills,
   releaseRunSkillInstalls,
   type WorkflowSkillFilesystem,
-  type WorkflowSkillProvisioningOutcome
+  type WorkflowSkillProvisioningOutcome,
+  type WorkflowSkillTrustGate
 } from './workflow-skill-provisioning'
 import {
   hostContactLostOutcome,
   sshSkillHost,
   wslSkillHost,
   type SkillCleanupPorts,
-  type SkillHostExtraPorts,
+  type SkillHostExtras,
   type SkillHostPorts,
   type SkillHostResolution
 } from './workflow-skill-provisioning-remote'
@@ -68,14 +73,11 @@ export const localWorkflowSkillFilesystem: WorkflowSkillFilesystem = {
   }
 }
 
-// Placeholders until the plugin installer and trust store land (U40): nothing reads as
-// installed and nothing is trusted, so a plugin skill never installs without a decision.
-const pendingPluginPorts: SkillHostExtraPorts = {
-  plugins: {
-    isInstalled: async () => false,
-    install: async () => ({ ok: false, reason: 'Plugin installs are not available yet.' })
-  },
-  trust: { decide: async () => 'needs-question' }
+// Why: with no trust store to read (cleanup-only callers), nothing is ever trusted.
+const askAlways: WorkflowSkillTrustGate = { decide: async () => 'needs-question' }
+
+function hostExtras(trust: WorkflowSkillTrustGate): SkillHostExtras {
+  return (host) => ({ plugins: createWorkflowPluginPort(host), trust })
 }
 
 const localCleanupPorts: SkillCleanupPorts = {
@@ -83,7 +85,24 @@ const localCleanupPorts: SkillCleanupPorts = {
   resolveGitExcludePath: resolveLocalGitExcludePath
 }
 
-function localHostPorts(workspaceRoot: string): SkillHostPorts {
+function localPluginHost(workspaceRoot: string): PluginHostAccess {
+  return {
+    runCli: (spec) => {
+      const program = resolveCliCommand(spec.program)
+      return runProcess({
+        ...spec,
+        program,
+        env: withCliRuntimeOnPath(program, { ...process.env })
+      })
+    },
+    fs: localWorkflowSkillFilesystem,
+    homeDir: async () => homedir(),
+    pathApi: { basename, isAbsolute, join, relative, sep },
+    workspaceRoot
+  }
+}
+
+function localHostPorts(workspaceRoot: string, extras: SkillHostExtras): SkillHostPorts {
   return {
     workspaceRoot,
     cleanup: localCleanupPorts,
@@ -96,7 +115,7 @@ function localHostPorts(workspaceRoot: string): SkillHostPorts {
         npxEnv: withCliRuntimeOnPath(npxCommand, { ...process.env }),
         ...localCleanupPorts,
         listTrackedPaths: listLocalTrackedPaths,
-        ...pendingPluginPorts
+        ...extras(localPluginHost(workspaceRoot))
       }
     },
     isReachable: () => true
@@ -111,13 +130,16 @@ type RunWorkspaceHost = {
 }
 
 /** Never falls back to local: a WSL path or SSH workspace gets its own host's ports or a refusal. */
-function hostProvisioningPorts(workspace: RunWorkspaceHost): SkillHostResolution {
+function hostProvisioningPorts(
+  workspace: RunWorkspaceHost,
+  extras: SkillHostExtras
+): SkillHostResolution {
   const target = workspace.orcaIgnoreTarget
   if (target.host === 'remote') {
-    return sshSkillHost(target.connectionId, workspace.workspaceRoot, pendingPluginPorts)
+    return sshSkillHost(target.connectionId, workspace.workspaceRoot, extras)
   }
   const wsl = parseWslUncPath(workspace.workspaceRoot)
-  return wsl ? wslSkillHost(wsl, pendingPluginPorts) : localHostPorts(workspace.workspaceRoot)
+  return wsl ? wslSkillHost(wsl, extras) : localHostPorts(workspace.workspaceRoot, extras)
 }
 
 export type RunSkillProvisioner = {
@@ -129,8 +151,14 @@ export type RunSkillProvisioner = {
   release(runId: string): Promise<void>
 }
 
-export function createRunSkillProvisioner(workspace: RunWorkspaceHost): RunSkillProvisioner {
-  const host = hostProvisioningPorts(workspace)
+/** `db` holds the per-host trust decisions (FR-018a); without it every plugin source asks. */
+export function createRunSkillProvisioner(
+  workspace: RunWorkspaceHost,
+  db?: OrchestrationDb
+): RunSkillProvisioner {
+  const trustHost = workflowTrustHostKey(workspace)
+  const trust = db ? sourceTrustGate(db, trustHost) : askAlways
+  const host = hostProvisioningPorts(workspace, hostExtras(trust))
   const target = workspace.orcaIgnoreTarget
   return {
     async provision({ runId, agent, skills }) {
@@ -150,7 +178,10 @@ export function createRunSkillProvisioner(workspace: RunWorkspaceHost): RunSkill
       })
       const input = { runId, agent, skills, workspaceRoot: host.workspaceRoot, readAllowlist }
       try {
-        return await provisionNodeSkills(input, host.install())
+        const outcome = await provisionNodeSkills(input, host.install())
+        return outcome.kind === 'trust-required'
+          ? { ...outcome, question: { ...outcome.question, host: trustHost } }
+          : outcome
       } catch (error) {
         if (!host.isReachable()) {
           return hostContactLostOutcome()

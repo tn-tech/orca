@@ -150,27 +150,40 @@ function safePluginLabel(pluginId: string, pathApi: SkillDiscoveryPathApi): stri
   return safeLabel || 'plugin'
 }
 
+/** Enabled plugins' active install paths by plugin id (`name@marketplace`), as Claude resolves them for `cwd`. */
+export function resolveClaudePluginInstallPaths(args: {
+  metadata: ClaudePluginMetadata
+  cwd: string
+  pathApi?: SkillDiscoveryPathApi
+}): Map<string, string> {
+  const pathApi = args.pathApi ?? defaultPathApi
+  const installed = parseJsonObject(args.metadata.installedPlugins)?.plugins
+  const paths = new Map<string, string>()
+  if (!installed || typeof installed !== 'object' || Array.isArray(installed)) {
+    return paths
+  }
+  const enabled = readEnabledPlugins(args.metadata.settings)
+  for (const [pluginId, rawInstalls] of Object.entries(installed)) {
+    if (enabled.get(pluginId) !== true || !Array.isArray(rawInstalls)) {
+      continue
+    }
+    const install = selectActiveInstall(rawInstalls, args.cwd, pathApi)
+    if (install) {
+      paths.set(pluginId, install.installPath)
+    }
+  }
+  return paths
+}
+
 export function resolveClaudePluginSkillSources(args: {
   metadata: ClaudePluginMetadata
   cwd: string
   pathApi?: SkillDiscoveryPathApi
 }): SkillScanRoot[] {
   const pathApi = args.pathApi ?? defaultPathApi
-  const installed = parseJsonObject(args.metadata.installedPlugins)?.plugins
-  if (!installed || typeof installed !== 'object' || Array.isArray(installed)) {
-    return []
-  }
-  const enabled = readEnabledPlugins(args.metadata.settings)
   const roots = new Map<string, SkillScanRoot>()
-  for (const [pluginId, rawInstalls] of Object.entries(installed)) {
-    if (enabled.get(pluginId) !== true || !Array.isArray(rawInstalls)) {
-      continue
-    }
-    const install = selectActiveInstall(rawInstalls, args.cwd, pathApi)
-    if (!install) {
-      continue
-    }
-    const skillsPath = pathApi.join(install.installPath, 'skills')
+  for (const [pluginId, installPath] of resolveClaudePluginInstallPaths(args)) {
+    const skillsPath = pathApi.join(installPath, 'skills')
     if (!roots.has(skillsPath)) {
       roots.set(skillsPath, {
         id: `claude-plugin-${stablePathId(skillsPath)}`,

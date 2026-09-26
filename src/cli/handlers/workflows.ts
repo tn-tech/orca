@@ -185,9 +185,11 @@ export const WORKFLOW_HANDLERS: Record<string, CommandHandler> = {
     printRawResult(result, json)
   },
   'workflows trust': async ({ flags, client, json }) => {
+    const host = getOptionalStringFlag(flags, 'host')
     const result = await client.call('workflow.trust.decide', {
       source: getRequiredStringFlag(flags, 'source'),
-      decision: getRequiredStringFlag(flags, 'decision')
+      decision: getRequiredStringFlag(flags, 'decision'),
+      ...(host ? { host } : {})
     })
     printRawResult(result, json)
   }

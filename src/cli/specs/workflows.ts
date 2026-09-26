@@ -111,13 +111,14 @@ export const WORKFLOW_COMMAND_SPECS: CommandSpec[] = [
   },
   {
     path: ['workflows', 'trust'],
-    summary: 'Decide whether to trust an imported workflow source',
-    usage: 'orca workflows trust <source> --decision trusted|refused [--json]',
-    allowedFlags: [...GLOBAL_FLAGS, 'source', 'decision'],
+    summary: 'Decide whether to trust a plugin skill source on a host',
+    usage:
+      'orca workflows trust <source> --decision trusted|refused [--host local|ssh:<id>|wsl:<distro>] [--json]',
+    allowedFlags: [...GLOBAL_FLAGS, 'source', 'decision', 'host'],
     positionalArgs: ['source'],
     examples: [
-      'orca workflows trust github.com/org/roles --decision trusted',
-      'orca workflows trust github.com/org/roles --decision refused'
+      'orca workflows trust acme-decks@acme --decision trusted',
+      'orca workflows trust acme-decks@acme --decision refused --host ssh:devbox'
     ]
   }
 ]

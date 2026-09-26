@@ -16,7 +16,8 @@ import type { BriefNode } from './workflow-brief-builder'
 import type { WorkflowOrchestrationClient } from './workflow-orchestration-client'
 import {
   provisioningBlockReason,
-  type WorkflowSkillProvisioningOutcome
+  type WorkflowSkillProvisioningOutcome,
+  type WorkflowSkillTrustQuestion
 } from './workflow-skill-provisioning'
 
 export type ResolvedNodeLaunch = {
@@ -156,11 +157,23 @@ export type DispatchWorkflowNodeArgs = {
   workspacePolicy: Workflow['workspacePolicy']
   /** Installs the node's skills for `agent` while the attempt is `provisioning` (FR-018). */
   provisionSkills?: (agent: string) => Promise<WorkflowSkillProvisioningOutcome>
+  /**
+   * Parks the still-`provisioning` attempt in `waiting` on a trust question (FR-018a). Without
+   * it, a trust question fails the node.
+   */
+  onTrustRequired?: (question: WorkflowSkillTrustQuestion) => NodeAttemptView | undefined
 }
 
 export type DispatchWorkflowNodeOutcome =
   | { ok: true; attempt: NodeAttemptView | undefined }
   | { ok: false; attempt: NodeAttemptView | undefined; failureReason: string }
+  | {
+      ok: false
+      attempt: NodeAttemptView | undefined
+      /** Not a failure: the attempt waits in `waiting` for a person to trust the source. */
+      waitingForTrust: WorkflowSkillTrustQuestion
+      failureReason?: undefined
+    }
 
 /**
  * Starts the node's worker under the engine principal and records the result on the attempt.
@@ -202,12 +215,17 @@ export async function dispatchWorkflowNode(
   }
 
   if (args.provisionSkills) {
-    let blocked: string | undefined
+    let provisioned: WorkflowSkillProvisioningOutcome
     try {
-      blocked = provisioningBlockReason(await args.provisionSkills(launch.agent))
+      provisioned = await args.provisionSkills(launch.agent)
     } catch (error) {
-      blocked = error instanceof Error ? error.message : String(error)
+      return fail(error instanceof Error ? error.message : String(error))
     }
+    if (provisioned.kind === 'trust-required' && args.onTrustRequired) {
+      const attempt = args.onTrustRequired(provisioned.question)
+      return { ok: false, attempt, waitingForTrust: provisioned.question }
+    }
+    const blocked = provisioningBlockReason(provisioned)
     if (blocked !== undefined) {
       return fail(blocked)
     }

@@ -1,12 +1,7 @@
 // Starts one frontier-eligible node: Start/End/Join settle at once; a role-dispatching node gets its
 // attempt, brief, just-in-time Task and worker (research R3, R5; FR-024, FR-026).
 import type { BriefReferenceInputs } from '../../../shared/workflows/workflow-brief-references'
-import type {
-  Node,
-  SkillReference,
-  Workflow
-} from '../../../shared/workflows/workflow-definition-types'
-import { childWorkspaceRepositorySkillsMessage } from '../../../shared/workflows/workflow-graph-validation'
+import type { Node, Workflow } from '../../../shared/workflows/workflow-definition-types'
 import type { NodeAttemptView } from '../../../shared/workflows/workflow-run-types'
 import type { OrchestrationDb } from '../orchestration/db'
 import { writeBrief, type BriefNode, type OrcaIgnoreTarget } from './workflow-brief-builder'
@@ -14,11 +9,11 @@ import type { WorkflowFilesystem } from './workflow-file-store-filesystem'
 import { createNodeTask } from './workflow-frontier-node-task'
 import { joinBranchesInput, settleJoin } from './workflow-join-settlement'
 import { loopPreviousInputs } from './workflow-loop-unrolling'
-import { dispatchWorkflowNode, resolveNodeLaunch } from './workflow-node-dispatch'
+import { resolveNodeLaunch } from './workflow-node-dispatch'
+import { dispatchBriefAttempt, nodeSkills } from './workflow-brief-attempt-dispatch'
 import type { WorkflowOrchestrationClient } from './workflow-orchestration-client'
 import type { WorkflowRunRecorder } from './workflow-run-recorder'
-import type { WorkflowSkillProvisioningOutcome } from './workflow-skill-provisioning'
-import { createRunSkillProvisioner } from './workflow-skill-provisioning-host'
+import { answeredTrustWaits, leaveRunWaitIfClear } from './workflow-trust-wait'
 
 /** Where a run's node attempts write and read their files, on the run's execution host. */
 export type WorkflowRunWorkspaceAccess = {
@@ -111,43 +106,6 @@ function startLoop(ctx: WorkflowNodeLaunchContext, node: Node): void {
   ctx.recorder.transitionAttempt(attempt.id, 'running')
 }
 
-/** Node skills replace the role's list as a whole, matching the brief (FR-017). */
-function nodeSkills(node: BriefNode, roles: Workflow['roles']): SkillReference[] {
-  const role = node.roleId === undefined ? undefined : roles[node.roleId]
-  return node.overrides?.skills ?? role?.skills ?? []
-}
-
-export async function provisionNodeSkillsFor(
-  ctx: WorkflowNodeLaunchContext,
-  node: BriefNode,
-  attemptId: string,
-  agent: string
-): Promise<WorkflowSkillProvisioningOutcome> {
-  const skills = nodeSkills(node, ctx.definition.roles)
-  // Worker-start creates the child worktree, so there is nothing to install into beforehand.
-  const needsRepositorySkills = skills.some((skill) => skill.source.kind === 'repository')
-  if (node.type === 'agent' && node.workspace === 'child' && needsRepositorySkills) {
-    return { kind: 'failed', reason: childWorkspaceRepositorySkillsMessage(node.id) }
-  }
-  const outcome = await createRunSkillProvisioner(ctx.workspace).provision({
-    runId: ctx.recorder.runId,
-    agent,
-    skills
-  })
-  if (outcome.kind === 'ready' && (outcome.installed.length > 0 || outcome.promptFallback)) {
-    ctx.recorder.event(
-      'skills_provisioned',
-      {
-        nodeId: node.id,
-        installed: outcome.installed,
-        promptFallback: outcome.promptFallback?.skills.map((skill) => skill.name) ?? []
-      },
-      { attemptId, reason: 'attempt' }
-    )
-  }
-  return outcome
-}
-
 async function launchBriefNode(
   ctx: WorkflowNodeLaunchContext,
   node: BriefNode,
@@ -195,23 +153,26 @@ async function launchBriefNode(
     ctx.recorder.failBeforeDispatch(attempt.id, errorMessage(error))
     return
   }
-  const outcome = await dispatchWorkflowNode({
-    port: ctx.client,
-    attemptStore: ctx.recorder.dispatchStore(),
-    runId: ctx.recorder.runId,
-    attemptId: attempt.id,
-    taskId,
-    node,
-    roles: ctx.definition.roles,
-    workspacePolicy: ctx.definition.workspacePolicy,
-    provisionSkills: (agent) => provisionNodeSkillsFor(ctx, node, attempt.id, agent)
-  })
-  const dispatchId = outcome.attempt?.dispatchId
-  if (outcome.ok && dispatchId) {
-    ctx.db.updateWorkflowAttempt(attempt.id, {
-      transcriptRef: { kind: 'dispatch', id: dispatchId }
-    })
+  await dispatchBriefAttempt(ctx, node, attempt.id, taskId)
+}
+
+/**
+ * Re-dispatches every attempt whose trust question was answered (FR-018a) through the normal
+ * dispatch path; `true` when any resumed. Only this run's single controller calls it, and the
+ * attempt leaves `waiting` synchronously before any await, so it never dispatches twice.
+ */
+export async function resumeAnsweredTrustWaits(ctx: WorkflowNodeLaunchContext): Promise<boolean> {
+  const resumable = answeredTrustWaits(ctx.db, ctx.recorder.runId)
+  for (const attempt of resumable) {
+    const node = requireBriefNode(ctx.definition, attempt.nodeId)
+    if (attempt.taskId) {
+      await dispatchBriefAttempt(ctx, node, attempt.id, attempt.taskId)
+    }
   }
+  if (resumable.length > 0) {
+    leaveRunWaitIfClear(ctx.db, ctx.recorder)
+  }
+  return resumable.length > 0
 }
 
 /** `iteration` is the Loop iteration for a body node, 0 elsewhere. */

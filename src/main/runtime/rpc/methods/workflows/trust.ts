@@ -3,18 +3,46 @@ import {
   WorkflowProposalAction,
   WorkflowTrustDecide
 } from '../../../../../shared/rpc-contract/workflow-run-params'
+import {
+  decideSourceTrust,
+  LOCAL_TRUST_HOST,
+  listSourceTrustDecisions
+} from '../../../workflows/workflow-source-trust'
 
-// Why: skeletons for U10; later units (source trust, P3 proposals) replace each throw.
+// Why: skeletons for U10; P3 proposals replace each throw.
 function notImplemented(): never {
   throw new Error('workflow_not_implemented')
 }
 
 export const WORKFLOW_TRUST_METHODS = [
-  defineMethod({ name: 'workflow.trust.list', params: null, handler: notImplemented }),
+  defineMethod({
+    name: 'workflow.trust.list',
+    params: null,
+    handler: (_params, { runtime }) => ({
+      decisions: listSourceTrustDecisions(runtime.getOrchestrationDb())
+    })
+  }),
+  // Also how a pending `trust` question is answered (FR-018a): every waiting node for this
+  // source on this host resumes provisioning. Deciding again revokes an earlier decision.
   defineMethod({
     name: 'workflow.trust.decide',
     params: WorkflowTrustDecide,
-    handler: notImplemented
+    handler: (params, { runtime, clientId }) => {
+      if (!params.decision) {
+        throw new Error('Missing trust decision: pass trusted or refused')
+      }
+      const runIds = decideSourceTrust(runtime.getOrchestrationDb(), runtime, {
+        host: params.host ?? LOCAL_TRUST_HOST,
+        source: params.source,
+        decision: params.decision,
+        decidedBy: clientId ?? 'user'
+      })
+      const engine = runtime.getWorkflowEngine()
+      for (const runId of runIds) {
+        engine.wakeRun(runId)
+      }
+      return {}
+    }
   }),
   defineMethod({
     name: 'workflow.proposal.accept',

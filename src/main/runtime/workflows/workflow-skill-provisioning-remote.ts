@@ -23,6 +23,7 @@ import { resolveWslInteropSpawnCwd } from '../../wsl-interop-spawn-directory'
 import { resolveWslExecutablePath } from '../../wsl/wsl-executable-path'
 import { runWslProcess } from '../../wsl/wsl-runner'
 import { WORKFLOW_HOST_UNREACHABLE_CODE } from './workflow-run-workspace'
+import type { PluginHostAccess } from './workflow-plugin-install'
 import { skillGitReads, type SkillGitHost } from './workflow-skill-git-reads'
 import { posixShellSkillFilesystem, type PosixShellRunner } from './workflow-skill-posix-filesystem'
 import type {
@@ -32,6 +33,8 @@ import type {
 
 export type SkillCleanupPorts = Pick<WorkflowSkillProvisioningPorts, 'fs' | 'resolveGitExcludePath'>
 export type SkillHostExtraPorts = Pick<WorkflowSkillProvisioningPorts, 'plugins' | 'trust'>
+/** Builds the plugin and trust ports once the host's own CLI and file access exist. */
+export type SkillHostExtras = (host: PluginHostAccess) => SkillHostExtraPorts
 
 export type SkillHostPorts = {
   /** The workspace root as its host names it: the guest path inside WSL. */
@@ -73,6 +76,20 @@ export function hostContactLostOutcome(): SkillHostFailure {
   }
 }
 
+/** `$HOME` as the host's own shell sees it, read once per install. */
+function posixHomeDir(sh: PosixShellRunner): () => Promise<string> {
+  let home: Promise<string> | undefined
+  return () => {
+    home ??= sh('printf "%s" "$HOME"', []).then((result) => {
+      if (result.code !== 0 || !result.stdout.startsWith('/')) {
+        throw new Error('Could not read $HOME on the workspace host.')
+      }
+      return result.stdout
+    })
+    return home
+  }
+}
+
 function posixGitHost(
   fs: WorkflowSkillProvisioningPorts['fs'],
   runGit: SkillGitHost['runGit']
@@ -98,7 +115,7 @@ function fromRelayExec(result: RemoteCommitMessageExecResult): ProcessResult {
 export function sshSkillHost(
   connectionId: string,
   workspaceRoot: string,
-  extras: SkillHostExtraPorts
+  extras: SkillHostExtras
 ): SkillHostResolution {
   if (isWindowsAbsolutePathLike(workspaceRoot)) {
     return {
@@ -138,7 +155,13 @@ export function sshSkillHost(
     workspaceRoot,
     cleanup,
     // Why no npxEnv: the relay starts the CLI with the host's own environment, never ours.
-    install: () => ({ runProcess: exec, npxCommand: 'npx', ...cleanup, ...git, ...extras }),
+    install: () => ({
+      runProcess: exec,
+      npxCommand: 'npx',
+      ...cleanup,
+      ...git,
+      ...extras({ runCli: exec, fs, homeDir: posixHomeDir(sh), pathApi: posix, workspaceRoot })
+    }),
     // A reconnect registers a new provider; the one this install spoke to is gone either way.
     isReachable: () => getSshGitProvider(connectionId) === provider
   }
@@ -169,7 +192,7 @@ function wslLoginPathLaunchScript(program: string): string {
   ].join('\n')
 }
 
-export function wslSkillHost(wsl: WslUncPathInfo, extras: SkillHostExtraPorts): SkillHostPorts {
+export function wslSkillHost(wsl: WslUncPathInfo, extras: SkillHostExtras): SkillHostPorts {
   const { distro, linuxPath } = wsl
   // Why plain `sh -c`, not the login shell: coreutils need no user PATH, and a non-login shell
   // prints no rc/motd banner into the stdout `readText` returns.
@@ -214,7 +237,19 @@ export function wslSkillHost(wsl: WslUncPathInfo, extras: SkillHostExtraPorts): 
   return {
     workspaceRoot: linuxPath,
     cleanup,
-    install: () => ({ runProcess: runSkillsCli, npxCommand: 'npx', ...cleanup, ...git, ...extras }),
+    install: () => ({
+      runProcess: runSkillsCli,
+      npxCommand: 'npx',
+      ...cleanup,
+      ...git,
+      ...extras({
+        runCli: runSkillsCli,
+        fs,
+        homeDir: posixHomeDir(sh),
+        pathApi: posix,
+        workspaceRoot: linuxPath
+      })
+    }),
     isReachable: () => true
   }
 }
