@@ -1,0 +1,78 @@
+# U31/T075 fixture: a loop-only bounded review loop (spec.md User Story 2), without the
+# Approval node feature-with-qa.workflow.yaml also carries (that's US5, not implemented yet).
+# start -> Loop{implement -> review, entry implement, exit review, maxIterations 3,
+# exitCondition review.approved truthy} -> end.
+version: 1
+name: review-loop
+description: Implement then review in a bounded loop, no approval gate
+workspacePolicy: run-workspace
+concurrencyLimit: 2
+
+roles:
+  developer:
+    name: Developer
+    agent: claude
+    model: opus
+    effort: high
+    systemPrompt: Implement exactly what the objective describes. Commit as you go.
+    skills: []
+  reviewer:
+    name: Reviewer
+    agent: codex
+    model: gpt-5.6-terra
+    effort: high
+    systemPrompt: Review the diff against the objective. Be adversarial.
+    skills: []
+
+nodes:
+  - { id: start, type: start, title: Start }
+  - id: review-loop
+    type: loop
+    title: Implement and review
+    body: { nodeIds: [implement, review] }
+    entryNodeId: implement
+    exitNodeId: review
+    maxIterations: 3
+    exitCondition: { path: approved, op: eq, value: true }
+  - id: implement
+    type: agent
+    title: Implement
+    roleId: developer
+    prompt: |
+      Implement: ${objective}.
+      Previous review findings, if any: ${loop.previous.review.result.findings}
+    workspace: run
+    resultContract:
+      type: object
+      required: [summary]
+      properties: { summary: { type: string } }
+    artifacts: []
+    question: { timeoutMs: 600000, escalationGraceMs: 300000 }
+  - id: review
+    type: agent
+    title: Review
+    roleId: reviewer
+    prompt: Review the implementation of ${objective}. Return approved and findings.
+    workspace: run
+    resultContract:
+      type: object
+      required: [approved, findings]
+      properties:
+        approved: { type: boolean }
+        findings: { type: array, items: { type: string } }
+    artifacts: []
+    question: { timeoutMs: 600000, escalationGraceMs: 300000 }
+  - { id: end, type: end, title: Done }
+
+edges:
+  - { id: e1, from: start, to: review-loop }
+  - { id: e2, from: implement, to: review }
+  - { id: e3, from: review, to: implement, fromPort: body }
+  - { id: e4, from: review-loop, to: end, fromPort: exit }
+
+layout:
+  start: { x: 0, y: 0 }
+  review-loop: { x: 240, y: 0 }
+  implement: { x: 280, y: 60 }
+  review: { x: 520, y: 60 }
+  end: { x: 780, y: 0 }
