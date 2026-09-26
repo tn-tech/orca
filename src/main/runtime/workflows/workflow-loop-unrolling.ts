@@ -15,7 +15,7 @@ import {
   latestAttemptByNode,
   type FrontierAttempt
 } from './workflow-frontier'
-import type { IncomingBranch } from './workflow-join-policy'
+import { JOIN_SKIPPED_REASON, type IncomingBranch } from './workflow-join-policy'
 
 export type LoopProgressAttempt = FrontierAttempt & Pick<NodeAttemptView, 'id'>
 
@@ -223,17 +223,17 @@ function loopProgress(
   if (unsettled.some((attempt) => !isWaitingJoinAttempt(definition, attempt))) {
     return
   }
-  if (unsettled.length > 0) {
-    // Only Waiting Joins remain; once nothing can settle their branches the iteration is over.
-    // The controller cancels those Joins when the run goes quiet.
-    if (!mayStillResolve(definition, loop, attempts, inIteration)) {
-      progress.settlements.push(settle(loop, loopAttemptId, 'exit_unreached', iteration, null))
-    }
+  // Only Waiting Joins remain: the iteration is over once nothing can settle their branches.
+  // The controller cancels those Joins when the run goes quiet.
+  const stuckJoins = unsettled.length > 0
+  if (stuckJoins && mayStillResolve(definition, loop, attempts, inIteration)) {
     return
   }
   const exit = inIteration.get(loop.exitNodeId)
   const bodyFailed = [...inIteration.values()].some(
-    (attempt) => attempt.state === 'failed' || attempt.state === 'cancelled'
+    (attempt) =>
+      attempt.state === 'failed' ||
+      (attempt.state === 'cancelled' && attempt.failureReason !== JOIN_SKIPPED_REASON)
   )
   if (bodyFailed) {
     progress.settlements.push(
@@ -243,7 +243,7 @@ function loopProgress(
   }
   if (!exit || exit.state !== 'completed') {
     // Skipped by an in-body condition, or blocked on an edge that can never resolve.
-    if (exit || !mayStillResolve(definition, loop, attempts, inIteration)) {
+    if (stuckJoins || exit || !mayStillResolve(definition, loop, attempts, inIteration)) {
       progress.settlements.push(settle(loop, loopAttemptId, 'exit_unreached', iteration, null))
     }
     return
