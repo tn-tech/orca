@@ -98,10 +98,21 @@ export function checkCycles(nodes: Node[], edges: Edge[]): WorkflowProblem[] {
   ]
 }
 
-/** Loop entry/exit must be inside the body; body nodes may only leave via the loop's ports. */
+/** Loop entry/exit must be inside the body; body nodes may only leave via the loop's ports;
+ *  `maxIterations` must be set (FR-006, US2 AS4 — the editor represents "unset" as `< 1`,
+ *  since the persisted schema requires a positive integer). */
 export function checkLoopNodes(nodes: Node[], edges: Edge[]): WorkflowProblem[] {
   const problems: WorkflowProblem[] = []
   for (const loop of nodes.filter((node): node is LoopNode => node.type === 'loop')) {
+    if (loop.maxIterations < 1) {
+      problems.push(
+        error({
+          code: 'graph_loop_missing_max_iterations',
+          message: `Loop "${loop.id}" needs a maximum iteration count.`,
+          nodeId: loop.id
+        })
+      )
+    }
     const body = new Set(loop.body.nodeIds)
     if (!body.has(loop.entryNodeId)) {
       problems.push(

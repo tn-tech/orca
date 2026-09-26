@@ -11,7 +11,9 @@ vi.mock('@/runtime/runtime-workflow-client', () => ({
 }))
 
 import {
+  attemptsByIteration,
   latestNodeAttempt,
+  nodeAttemptIterations,
   nodeAttemptStatuses,
   useWorkflowRunSnapshot
 } from './use-workflow-run-snapshot'
@@ -225,5 +227,37 @@ describe('nodeAttemptStatuses', () => {
 
   it('returns an empty map for a null snapshot', () => {
     expect(nodeAttemptStatuses(null)).toEqual({})
+  })
+})
+
+describe('attemptsByIteration', () => {
+  it('returns one attempt per iteration, ascending, using the latest attemptIndex within each', () => {
+    const attempts = [
+      attempt({ id: 'a', nodeId: 'review', iteration: 0, attemptIndex: 0, state: 'failed' }),
+      attempt({ id: 'b', nodeId: 'review', iteration: 1, attemptIndex: 0, state: 'failed' }),
+      attempt({ id: 'c', nodeId: 'review', iteration: 1, attemptIndex: 1, state: 'completed' }),
+      attempt({ id: 'd', nodeId: 'other', iteration: 9, attemptIndex: 0 })
+    ]
+
+    expect(attemptsByIteration(attempts, 'review').map((a) => a.id)).toEqual(['a', 'c'])
+  })
+
+  it('returns an empty list for a node with no attempts', () => {
+    expect(attemptsByIteration([attempt({ nodeId: 'review' })], 'missing')).toEqual([])
+  })
+})
+
+describe('nodeAttemptIterations', () => {
+  it('maps each Loop node to its own latest attempt iteration', () => {
+    const snapshot = snapshotFixture([
+      attempt({ nodeId: 'loop', nodeType: 'loop', iteration: 2, attemptIndex: 0 }),
+      attempt({ nodeId: 'review', nodeType: 'agent', iteration: 2, attemptIndex: 0 })
+    ])
+
+    expect(nodeAttemptIterations(snapshot)).toEqual({ loop: 2 })
+  })
+
+  it('returns an empty map for a null snapshot', () => {
+    expect(nodeAttemptIterations(null)).toEqual({})
   })
 })

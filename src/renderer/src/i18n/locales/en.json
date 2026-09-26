@@ -17186,7 +17186,8 @@
           "title": "Workflows",
           "save": "Save",
           "placeholder": "Select a workflow, or create a new one.",
-          "loading": "Loading…"
+          "loading": "Loading…",
+          "saveBlocked": "Fix the problems below before saving."
         },
         "editor": {
           "AgentNodeArtifactsField": {
@@ -17280,6 +17281,21 @@
             "edgeNotFound": "Edge \"{{id}}\" was not found in the workflow.",
             "noAgentSelected": "Select an agent before choosing a model or reasoning effort.",
             "noModelCatalog": "\"{{agent}}\" has no model catalog, so model and reasoning effort cannot be overridden."
+          },
+          "LoopNodeFields": {
+            "maxIterationsLabel": "Maximum iterations",
+            "maxIterationsRequired": "Every loop needs a maximum iteration count before it can be saved.",
+            "onCapReached": "When the cap is reached without exiting, the loop fails and the run stops.",
+            "exitConditionLabel": "Exit condition"
+          },
+          "LoopNode": {
+            "iteration": "Iteration {{n}} / {{max}}",
+            "noCap": "No cap set"
+          },
+          "workflow-loop-commands": {
+            "invalidSelection": "Select at least one existing node to wrap in a Loop.",
+            "unwrappableSelection": "Only Agent and Reflection nodes can be wrapped in a Loop.",
+            "loopTitle": "Loop"
           }
         },
         "run-view": {
@@ -17299,7 +17315,9 @@
             "result": "Result",
             "artifacts": "Artifacts",
             "openTranscript": "Open transcript",
-            "openWorkspaceDiff": "Open workspace diff"
+            "openWorkspaceDiff": "Open workspace diff",
+            "iterationLabel": "Iteration {{n}}",
+            "iterations": "Iterations"
           },
           "RunToolbar": {
             "stateQueued": "Queued",

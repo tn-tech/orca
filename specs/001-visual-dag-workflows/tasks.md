@@ -161,16 +161,16 @@ Monorepo per plan.md: shared types `src/shared/workflows/`, engine `src/main/run
 
 ### Tests for User Story 2
 
-- [ ] T073 [P] [US2] Write `src/main/runtime/workflows/workflow-loop-unrolling.test.ts`: iteration bookkeeping, exit condition true exits, false with room iterates with `loop.previous.*` inputs populated, cap reached fails the loop and run, Tasks per iteration carry `workflow_iteration`
-- [ ] T074 [P] [US2] Extend `src/renderer/src/components/workflows/editor/workflow-editor-state.test.ts`: saving a Loop without `maxIterations` is blocked with a message; drawing a back-edge outside a Loop is refused and the "wrap in Loop" action wraps the selected nodes
+- [X] T073 [P] [US2] Write `src/main/runtime/workflows/workflow-loop-unrolling.test.ts`: iteration bookkeeping, exit condition true exits, false with room iterates with `loop.previous.*` inputs populated, cap reached fails the loop and run, Tasks per iteration carry `workflow_iteration`
+- [X] T074 [P] [US2] Extend `src/renderer/src/components/workflows/editor/workflow-editor-state.test.ts`: saving a Loop without `maxIterations` is blocked with a message; drawing a back-edge outside a Loop is refused and the "wrap in Loop" action wraps the selected nodes
 - [ ] T075 [P] [US2] Extend `tests/e2e/workflows/two-node-run.e2e.test.ts` with a `feature-with-qa` loop run (approval auto-answered by the test via `workflow.run.answer`) asserting three iterations, per-iteration results in `workflow.run.show`, and that the run resumes within 5 s of the answer (SC-006)
 
 ### Implementation for User Story 2
 
-- [ ] T076 [US2] Create `src/main/runtime/workflows/workflow-loop-unrolling.ts` (iteration state per Loop node, entry/exit ports, `exitCondition` evaluation with `evaluateCondition`, `onCapReached: 'fail'`) and integrate with `workflow-frontier.ts` so body nodes are created per iteration
-- [ ] T077 [US2] Expose `loop.previous.<nodeId>` and iteration number in `workflow-brief-builder.ts` inputs and mark loop failure reason `loop_cap_reached` in `workflow-result-capture.ts`
-- [ ] T078 [P] [US2] Create `src/renderer/src/components/workflows/editor/nodes/LoopNode.tsx` (container rendering with React Flow parent/child nodes, iteration badge in run view) and `editor/LoopNodeFields.tsx` (maxIterations required, exit condition via the existing `editor/ConditionBuilder.tsx`)
-- [ ] T079 [US2] Add the "wrap selection in Loop" command and back-edge refusal message to `editor/workflow-editor-commands.ts`; show the active iteration and per-iteration results in `run-view/AttemptPanel.tsx`
+- [X] T076 [US2] Create `src/main/runtime/workflows/workflow-loop-unrolling.ts` (iteration state per Loop node, entry/exit ports, `exitCondition` evaluation with `evaluateCondition`, `onCapReached: 'fail'`) and integrate with `workflow-frontier.ts` so body nodes are created per iteration
+- [X] T077 [US2] Expose `loop.previous.<nodeId>` and iteration number in `workflow-brief-builder.ts` inputs and mark loop failure reason `loop_cap_reached` in `workflow-result-capture.ts`
+- [X] T078 [P] [US2] Create `src/renderer/src/components/workflows/editor/nodes/LoopNode.tsx` (container rendering with React Flow parent/child nodes, iteration badge in run view) and `editor/LoopNodeFields.tsx` (maxIterations required, exit condition via the existing `editor/ConditionBuilder.tsx`)
+- [X] T079 [US2] Add the "wrap selection in Loop" command and back-edge refusal message to `editor/workflow-editor-commands.ts`; show the active iteration and per-iteration results in `run-view/AttemptPanel.tsx`
 
 **Checkpoint**: The developer-to-QA loop terminates by approval or by cap in every test (SC-003).
 

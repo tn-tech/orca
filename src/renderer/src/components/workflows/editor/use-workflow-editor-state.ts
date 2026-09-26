@@ -13,6 +13,7 @@ import {
   updateNodeInDefinition,
   type WorkflowEditorProblem
 } from './workflow-editor-commands'
+import { wrapNodesInLoopInDefinition } from './workflow-loop-commands'
 
 const MAX_HISTORY_ENTRIES = 50
 
@@ -43,6 +44,9 @@ export type WorkflowEditorAction =
   | { type: 'update-edge-condition'; edgeId: string; condition?: Condition }
   | { type: 'move-node'; nodeId: string; position: { x: number; y: number } }
   | { type: 'auto-layout' }
+  /** FR-005/FR-006, US2 AS5: wraps `nodeIds` (an existing selection, or a refused back-edge's
+   *  two endpoints) in a new Loop node. */
+  | { type: 'wrap-in-loop'; nodeIds: string[] }
   /** A fresh definition arrived (reload, or a run snapshot); see FR-010 handling below. */
   | { type: 'load-definition'; definition: Workflow }
   | { type: 'undo' }
@@ -66,6 +70,28 @@ function pinnedLayout(
     }
   }
   return pinned
+}
+
+/** Dragging a Loop container moves its body nodes with it (they render at a position relative to
+ *  it in `WorkflowCanvas.tsx`, so leaving them at their old absolute position would visually
+ *  wrench them out of the box). Dragging any other node is unaffected. */
+function movedLayout(
+  definition: Workflow,
+  action: { nodeId: string; position: { x: number; y: number } }
+): Record<string, { x: number; y: number }> {
+  const moved = definition.nodes.find((node) => node.id === action.nodeId)
+  const previous = definition.layout[action.nodeId] ?? action.position
+  const delta = { x: action.position.x - previous.x, y: action.position.y - previous.y }
+  const next: Record<string, { x: number; y: number }> = { [action.nodeId]: action.position }
+  if (moved?.type === 'loop') {
+    for (const childId of moved.body.nodeIds) {
+      const childPosition = definition.layout[childId]
+      if (childPosition) {
+        next[childId] = { x: childPosition.x + delta.x, y: childPosition.y + delta.y }
+      }
+    }
+  }
+  return next
 }
 
 /** Commits a new definition (and, when it changed too, the pin set) as one undoable step. */
@@ -138,11 +164,16 @@ export function workflowEditorReducer(
     case 'move-node': {
       const nextDefinition: Workflow = {
         ...state.definition,
-        layout: { ...state.definition.layout, [action.nodeId]: action.position }
+        layout: { ...state.definition.layout, ...movedLayout(state.definition, action) }
       }
       const manualPositionIds = new Set(state.manualPositionIds)
       manualPositionIds.add(action.nodeId)
       return commit(state, nextDefinition, manualPositionIds)
+    }
+
+    case 'wrap-in-loop': {
+      const result = wrapNodesInLoopInDefinition(state.definition, action.nodeIds)
+      return result.ok ? commit(state, result.definition) : refuse(state, result.problem)
     }
 
     case 'auto-layout': {

@@ -5,6 +5,7 @@ import { translate } from '@/i18n/i18n'
 import { useAppStore } from '@/store'
 import NodeInspector from './editor/NodeInspector'
 import ValidationProblemsPanel from './editor/ValidationProblemsPanel'
+import { hasBlockingWorkflowProblems } from './editor/workflow-validation-merge'
 import FileConflictDialog from './editor/FileConflictDialog'
 import WorkflowListPane from './WorkflowListPane'
 import AttemptPanel from './run-view/AttemptPanel'
@@ -40,7 +41,19 @@ export default function WorkflowsPage(): React.JSX.Element {
           <Button
             type="button"
             size="sm"
-            disabled={!session.editor.state.dirty || session.saving}
+            disabled={
+              !session.editor.state.dirty ||
+              session.saving ||
+              hasBlockingWorkflowProblems(controller.problems)
+            }
+            title={
+              hasBlockingWorkflowProblems(controller.problems)
+                ? translate(
+                    'auto.components.workflows.WorkflowsPage.saveBlocked',
+                    'Fix the problems below before saving.'
+                  )
+                : undefined
+            }
             onClick={() => void session.save()}
           >
             {session.saving ? <Loader2 className="animate-spin" /> : null}

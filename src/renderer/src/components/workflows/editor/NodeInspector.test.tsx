@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   AgentNode,
+  LoopNode,
   StartNode,
   Workflow
 } from '../../../../../shared/workflows/workflow-definition-types'
@@ -30,6 +31,21 @@ function agentNode(patch: Partial<AgentNode> = {}): AgentNode {
 
 function startNode(): StartNode {
   return { id: 'start', type: 'start', title: 'Start' }
+}
+
+function loopNode(patch: Partial<LoopNode> = {}): LoopNode {
+  return {
+    id: 'loop',
+    type: 'loop',
+    title: 'Loop',
+    body: { nodeIds: ['implement'] },
+    entryNodeId: 'implement',
+    exitNodeId: 'implement',
+    maxIterations: 0,
+    exitCondition: { path: 'approved', op: 'truthy' },
+    onCapReached: 'fail',
+    ...patch
+  }
 }
 
 function workflow(patch: Partial<Workflow> = {}): Workflow {
@@ -106,6 +122,37 @@ describe('NodeInspector', () => {
     expect(onNodeChange).toHaveBeenLastCalledWith(
       expect.objectContaining({ id: 'start', type: 'start', title: 'Kickoff' })
     )
+  })
+
+  it('renders LoopNodeFields for a selected loop node, flagging a missing max-iterations cap', () => {
+    render(
+      <NodeInspector
+        definition={workflow({ nodes: [startNode(), loopNode()] })}
+        selectedNodeId="loop"
+        onNodeChange={vi.fn()}
+        onEdgeConditionChange={vi.fn()}
+      />
+    )
+    expect(screen.getByLabelText('Maximum iterations')).toHaveValue(null)
+    expect(
+      screen.getByText('Every loop needs a maximum iteration count before it can be saved.')
+    ).toBeInTheDocument()
+  })
+
+  it('sets a loop node maximum iteration count', () => {
+    const onNodeChange = vi.fn()
+    render(
+      <NodeInspector
+        definition={workflow({ nodes: [startNode(), loopNode()] })}
+        selectedNodeId="loop"
+        onNodeChange={onNodeChange}
+        onEdgeConditionChange={vi.fn()}
+      />
+    )
+
+    fireEvent.change(screen.getByLabelText('Maximum iterations'), { target: { value: '3' } })
+
+    expect(onNodeChange).toHaveBeenLastCalledWith(expect.objectContaining({ maxIterations: 3 }))
   })
 
   it('renders ConditionBuilder for a selected edge', () => {

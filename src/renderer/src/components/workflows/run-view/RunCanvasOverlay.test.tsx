@@ -115,6 +115,26 @@ describe('RunCanvasOverlay', () => {
     expect(workflowCanvasMock).toHaveBeenCalledWith(expect.objectContaining({ nodeStatuses: {} }))
   })
 
+  it("passes each Loop node's active iteration", () => {
+    const withLoop = snapshot()
+    withLoop.attempts.push({
+      id: 'a3',
+      runId: 'run-1',
+      nodeId: 'loop',
+      nodeType: 'loop',
+      iteration: 2,
+      attemptIndex: 0,
+      state: 'running',
+      artifactsJson: []
+    })
+
+    render(<RunCanvasOverlay definition={workflow()} snapshot={withLoop} />)
+
+    expect(workflowCanvasMock).toHaveBeenCalledWith(
+      expect.objectContaining({ nodeIterations: { loop: 2 } })
+    )
+  })
+
   it('forwards canvas interaction props through', () => {
     const onNodeSelect = vi.fn()
     render(

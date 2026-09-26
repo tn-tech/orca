@@ -11,6 +11,7 @@ import type {
 import AgentNodeFields from './AgentNodeFields'
 import ConditionBuilder from './ConditionBuilder'
 import { InspectorField } from './InspectorField'
+import LoopNodeFields from './LoopNodeFields'
 
 export type NodeInspectorProps = {
   definition: Workflow
@@ -139,6 +140,8 @@ export default function NodeInspector({
       <NodeBaseFields node={node} onChange={onNodeChange} />
       {node.type === 'agent' ? (
         <AgentNodeFields node={node} roles={definition.roles} onChange={onNodeChange} />
+      ) : node.type === 'loop' ? (
+        <LoopNodeFields node={node} onChange={onNodeChange} />
       ) : (
         <p className="text-xs text-muted-foreground">
           {translate(

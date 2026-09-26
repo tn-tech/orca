@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type {
   AgentNode,
   EndNode,
+  LoopNode,
   Role,
   StartNode,
   Workflow
@@ -60,6 +61,21 @@ function agentNode(id: string, patch: Partial<AgentNode> = {}): AgentNode {
     resultContract: { type: 'object' },
     artifacts: [],
     question: { timeoutMs: 600_000, escalationGraceMs: 300_000 },
+    ...patch
+  }
+}
+
+function loopNode(id: string, patch: Partial<LoopNode> = {}): LoopNode {
+  return {
+    id,
+    type: 'loop',
+    title: id,
+    body: { nodeIds: ['work'] },
+    entryNodeId: 'work',
+    exitNodeId: 'work',
+    maxIterations: 3,
+    exitCondition: { path: 'approved', op: 'truthy' },
+    onCapReached: 'fail',
     ...patch
   }
 }
@@ -332,5 +348,119 @@ describe('workflow editor state: delete and undo', () => {
     // 'work' is pinned again post-undo, so Re-layout must leave it exactly where it was.
     state = dispatch(state, { type: 'auto-layout' })
     expect(state.definition.layout.work).toEqual({ x: 555, y: 777 })
+  })
+})
+
+describe('workflow editor state: Loop save gating (US2 AS4)', () => {
+  it('blocks save with a message when a Loop has no maximum iteration count', () => {
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+    state = dispatch(state, { type: 'add-node', node: startNode(), position: { x: 0, y: 0 } })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: loopNode('loop', { maxIterations: 0 }),
+      position: { x: 200, y: 0 }
+    })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: agentNode('work', { overrides: { agent: 'claude' } }),
+      position: { x: 200, y: 0 }
+    })
+    state = dispatch(state, { type: 'add-node', node: endNode(), position: { x: 400, y: 0 } })
+    state = dispatch(state, { type: 'connect', from: 'start', to: 'loop' })
+    state = dispatch(state, { type: 'connect', from: 'loop', to: 'end', fromPort: 'exit' })
+
+    const problems = validateWorkflowGraph(state.definition, permissiveContext)
+
+    expect(problems).toContainEqual(
+      expect.objectContaining({ code: 'graph_loop_missing_max_iterations', nodeId: 'loop' })
+    )
+  })
+
+  it('saves cleanly once a maximum iteration count is set', () => {
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+    state = dispatch(state, { type: 'add-node', node: startNode(), position: { x: 0, y: 0 } })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: loopNode('loop', { maxIterations: 3 }),
+      position: { x: 200, y: 0 }
+    })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: agentNode('work', { overrides: { agent: 'claude' } }),
+      position: { x: 200, y: 0 }
+    })
+    state = dispatch(state, { type: 'add-node', node: endNode(), position: { x: 400, y: 0 } })
+    state = dispatch(state, { type: 'connect', from: 'start', to: 'loop' })
+    state = dispatch(state, { type: 'connect', from: 'loop', to: 'end', fromPort: 'exit' })
+
+    const problems = validateWorkflowGraph(state.definition, permissiveContext)
+
+    expect(problems.filter((p) => p.code === 'graph_loop_missing_max_iterations')).toEqual([])
+  })
+})
+
+describe('workflow editor state: wrap selection in Loop (US2 AS5)', () => {
+  it('refuses a back-edge outside a Loop, and "wrap in Loop" wraps the selected nodes', () => {
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+    state = dispatch(state, { type: 'add-node', node: startNode(), position: { x: 0, y: 0 } })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: agentNode('a', { overrides: { agent: 'claude' } }),
+      position: { x: 200, y: 0 }
+    })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: agentNode('b', { overrides: { agent: 'claude' } }),
+      position: { x: 400, y: 0 }
+    })
+    state = dispatch(state, { type: 'add-node', node: endNode(), position: { x: 600, y: 0 } })
+    state = dispatch(state, { type: 'connect', from: 'start', to: 'a' })
+    state = dispatch(state, { type: 'connect', from: 'a', to: 'b' })
+    state = dispatch(state, { type: 'connect', from: 'b', to: 'end' })
+    const edgeCountBeforeRefusal = state.definition.edges.length
+
+    state = dispatch(state, { type: 'connect', from: 'b', to: 'a' })
+
+    expect(state.definition.edges).toHaveLength(edgeCountBeforeRefusal)
+    expect(state.lastProblem?.code).toBe('graph_cycle')
+    expect(state.lastProblem?.wrapNodeIds).toEqual(['b', 'a'])
+
+    state = dispatch(state, { type: 'wrap-in-loop', nodeIds: ['a', 'b'] })
+
+    const loop = state.definition.nodes.find((node) => node.type === 'loop')
+    expect(loop).toMatchObject({
+      body: { nodeIds: ['a', 'b'] },
+      entryNodeId: 'a',
+      exitNodeId: 'b'
+    })
+    expect(state.definition.edges).toContainEqual(
+      expect.objectContaining({ from: 'start', to: loop?.id })
+    )
+    expect(state.definition.edges).toContainEqual(expect.objectContaining({ from: 'a', to: 'b' }))
+    expect(state.definition.edges).toContainEqual(
+      expect.objectContaining({ from: 'b', to: 'end', fromPort: 'exit' })
+    )
+
+    // The cycle is resolved (it's now entirely inside the Loop body); only the still-missing
+    // maxIterations cap remains (US2 AS4 — the wrap itself doesn't set one).
+    const problems = validateWorkflowGraph(state.definition, permissiveContext)
+    expect(problems.filter((p) => p.code === 'graph_cycle')).toEqual([])
+    expect(problems).toContainEqual(
+      expect.objectContaining({ code: 'graph_loop_missing_max_iterations', nodeId: loop?.id })
+    )
+  })
+
+  it('refuses to wrap a selection that includes a non-existent node', () => {
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+    state = dispatch(state, {
+      type: 'add-node',
+      node: agentNode('a', { overrides: { agent: 'claude' } }),
+      position: { x: 0, y: 0 }
+    })
+
+    state = dispatch(state, { type: 'wrap-in-loop', nodeIds: ['a', 'missing'] })
+
+    expect(state.lastProblem?.code).toBe('workflow_editor_wrap_invalid_selection')
+    expect(state.definition.nodes.some((node) => node.type === 'loop')).toBe(false)
   })
 })

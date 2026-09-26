@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { Edge, Node } from '../../../../../shared/workflows/workflow-definition-types'
-import { computeAutoLayout, WORKFLOW_NODE_WIDTH } from './workflow-auto-layout'
+import {
+  computeAutoLayout,
+  computeLoopContainerBounds,
+  WORKFLOW_LOOP_PADDING,
+  WORKFLOW_NODE_HEIGHT,
+  WORKFLOW_NODE_WIDTH
+} from './workflow-auto-layout'
 
 function startNode(id: string): Node {
   return { id, type: 'start', title: 'Start' }
@@ -58,5 +64,34 @@ describe('computeAutoLayout', () => {
 
     expect(layout.a).toBeDefined()
     expect(layout.b).toBeDefined()
+  })
+})
+
+describe('computeLoopContainerBounds', () => {
+  it('fits a single body node plus padding on every side', () => {
+    const bounds = computeLoopContainerBounds({ x: 0, y: 0 }, [{ x: 40, y: 40 }])
+
+    expect(bounds).toEqual({
+      width: 40 + WORKFLOW_NODE_WIDTH + WORKFLOW_LOOP_PADDING,
+      height: 40 + WORKFLOW_NODE_HEIGHT + WORKFLOW_LOOP_PADDING
+    })
+  })
+
+  it('grows to cover the furthest body node', () => {
+    const bounds = computeLoopContainerBounds({ x: 0, y: 0 }, [
+      { x: 40, y: 40 },
+      { x: 300, y: 40 }
+    ])
+
+    expect(bounds.width).toBe(300 + WORKFLOW_NODE_WIDTH + WORKFLOW_LOOP_PADDING)
+  })
+
+  it('falls back to a single node box when the body is empty', () => {
+    const bounds = computeLoopContainerBounds({ x: 0, y: 0 }, [])
+
+    expect(bounds).toEqual({
+      width: WORKFLOW_NODE_WIDTH + WORKFLOW_LOOP_PADDING * 2,
+      height: WORKFLOW_NODE_HEIGHT + WORKFLOW_LOOP_PADDING * 2
+    })
   })
 })

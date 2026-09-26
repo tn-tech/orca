@@ -257,6 +257,32 @@ describe('validateWorkflowGraph: loop nodes', () => {
     edge('e2', 'loop', 'end', { fromPort: 'exit' })
   ]
 
+  it('rejects a Loop with no maximum iteration count (the editor\'s "unset" sentinel)', () => {
+    const wf = workflow({
+      nodes: baseNodes(loopNode('loop', { maxIterations: 0 })),
+      edges: baseEdges
+    })
+    expect(validateWorkflowGraph(wf, permissiveContext)).toContainEqual(
+      expect.objectContaining({
+        code: 'graph_loop_missing_max_iterations',
+        nodeId: 'loop',
+        severity: 'error'
+      })
+    )
+  })
+
+  it('accepts a Loop with maxIterations of exactly 1', () => {
+    const wf = workflow({
+      nodes: baseNodes(loopNode('loop', { maxIterations: 1 })),
+      edges: baseEdges
+    })
+    expect(
+      validateWorkflowGraph(wf, permissiveContext).filter(
+        (p) => p.code === 'graph_loop_missing_max_iterations'
+      )
+    ).toEqual([])
+  })
+
   it('rejects an entryNodeId that is not inside the body', () => {
     const wf = workflow({
       nodes: baseNodes(

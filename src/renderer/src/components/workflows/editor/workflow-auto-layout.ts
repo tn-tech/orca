@@ -9,6 +9,9 @@ import type {
 export const WORKFLOW_NODE_WIDTH = 220
 export const WORKFLOW_NODE_HEIGHT = 64
 
+/** Margin between a Loop container's edge and its body nodes' bounding box (T078). */
+export const WORKFLOW_LOOP_PADDING = 40
+
 const RANK_SEPARATION = 96
 const NODE_SEPARATION = 56
 
@@ -62,4 +65,28 @@ export function computeAutoLayout(
     }
   }
   return layout
+}
+
+/**
+ * A Loop container's rendered size: the smallest box (in absolute layout coordinates, anchored
+ * at `containerPosition`) that fits every body node's box plus `WORKFLOW_LOOP_PADDING` on all
+ * sides (T078 container rendering). Body nodes drag-clamped to `extent: 'parent'` in
+ * `WorkflowCanvas.tsx` can never end up outside this box once it's computed.
+ */
+export function computeLoopContainerBounds(
+  containerPosition: { x: number; y: number },
+  bodyNodePositions: readonly { x: number; y: number }[]
+): { width: number; height: number } {
+  if (bodyNodePositions.length === 0) {
+    return {
+      width: WORKFLOW_NODE_WIDTH + WORKFLOW_LOOP_PADDING * 2,
+      height: WORKFLOW_NODE_HEIGHT + WORKFLOW_LOOP_PADDING * 2
+    }
+  }
+  const maxX = Math.max(...bodyNodePositions.map((position) => position.x + WORKFLOW_NODE_WIDTH))
+  const maxY = Math.max(...bodyNodePositions.map((position) => position.y + WORKFLOW_NODE_HEIGHT))
+  return {
+    width: maxX - containerPosition.x + WORKFLOW_LOOP_PADDING,
+    height: maxY - containerPosition.y + WORKFLOW_LOOP_PADDING
+  }
 }

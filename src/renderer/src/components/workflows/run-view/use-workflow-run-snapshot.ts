@@ -134,3 +134,45 @@ export function nodeAttemptStatuses(
   }
   return statuses
 }
+
+/** One attempt per iteration for `nodeId` — the latest `attemptIndex` within each iteration —
+ *  ascending by iteration (FR-035/US2 AS1: per-iteration results in `AttemptPanel`). */
+export function attemptsByIteration(
+  attempts: readonly NodeAttemptView[],
+  nodeId: string
+): NodeAttemptView[] {
+  const byIteration = new Map<number, NodeAttemptView>()
+  for (const attempt of attempts) {
+    if (attempt.nodeId !== nodeId) {
+      continue
+    }
+    const current = byIteration.get(attempt.iteration)
+    if (!current || attempt.attemptIndex >= current.attemptIndex) {
+      byIteration.set(attempt.iteration, attempt)
+    }
+  }
+  return [...byIteration.values()].sort((a, b) => a.iteration - b.iteration)
+}
+
+/** Every Loop node's currently active iteration — its own latest attempt's `iteration` — for the
+ *  canvas badge (T079, `WorkflowCanvas`'s `nodeIterations` prop). */
+export function nodeAttemptIterations(
+  snapshot: WorkflowRunSnapshotView | null
+): Record<string, number> {
+  if (!snapshot) {
+    return {}
+  }
+  const loopNodeIds = new Set(
+    snapshot.attempts
+      .filter((attempt) => attempt.nodeType === 'loop')
+      .map((attempt) => attempt.nodeId)
+  )
+  const iterations: Record<string, number> = {}
+  for (const nodeId of loopNodeIds) {
+    const attempt = latestNodeAttempt(snapshot.attempts, nodeId)
+    if (attempt) {
+      iterations[nodeId] = attempt.iteration
+    }
+  }
+  return iterations
+}

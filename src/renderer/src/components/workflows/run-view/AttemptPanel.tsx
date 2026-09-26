@@ -17,7 +17,7 @@ import type {
 } from '../../../../../shared/workflows/workflow-run-types'
 import { workflowNodeStatusDotClassName } from '../editor/nodes/workflow-node-run-status-style'
 import { InspectorField } from '../editor/InspectorField'
-import { latestNodeAttempt } from './use-workflow-run-snapshot'
+import { attemptsByIteration, latestNodeAttempt } from './use-workflow-run-snapshot'
 
 export type AttemptPanelProps = {
   definition: Workflow
@@ -101,6 +101,34 @@ function LaunchSummary({
   )
 }
 
+/** One row per completed/attempted loop iteration (FR-035, US2 AS1/AS3): state plus a compact
+ *  result/failure summary, so a rejected-then-approved review loop's history stays visible after
+ *  the panel moves on to showing the latest attempt above. */
+function IterationRow({ attempt }: { attempt: NodeAttemptView }): React.JSX.Element {
+  return (
+    <li className="rounded-md border border-border p-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-medium text-foreground">
+          {translate(
+            'auto.components.workflows.run-view.AttemptPanel.iterationLabel',
+            'Iteration {{n}}',
+            { n: attempt.iteration }
+          )}
+        </span>
+        <AttemptStateBadge state={attempt.state} />
+      </div>
+      {attempt.resultJson !== undefined ? (
+        <pre className="mt-1.5 max-h-24 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-muted/20 p-2 font-mono text-[11px] text-muted-foreground scrollbar-sleek">
+          {JSON.stringify(attempt.resultJson, null, 2)}
+        </pre>
+      ) : null}
+      {attempt.failureReason ? (
+        <p className="mt-1.5 text-[11px] text-destructive">{attempt.failureReason}</p>
+      ) : null}
+    </li>
+  )
+}
+
 function ArtifactRow({ artifact }: { artifact: NodeAttemptView['artifactsJson'][number] }) {
   return (
     <li className="flex items-center gap-1.5 text-xs">
@@ -126,6 +154,7 @@ export default function AttemptPanel({
 }: AttemptPanelProps): React.JSX.Element | null {
   const node = definition.nodes.find((candidate) => candidate.id === nodeId)
   const attempt = latestNodeAttempt(snapshot.attempts, nodeId)
+  const iterations = attemptsByIteration(snapshot.attempts, nodeId)
   const worktree = useWorktreeById(attempt?.workspaceWorktreeId ?? null)
   const openAllDiffs = useAppStore((state) => state.openAllDiffs)
 
@@ -169,8 +198,32 @@ export default function AttemptPanel({
     <div className="flex h-full flex-col gap-4 overflow-y-auto scrollbar-sleek p-4">
       <div className="flex items-center gap-2">
         <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{node.title}</h2>
+        {attempt.iteration > 0 ? (
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {translate(
+              'auto.components.workflows.run-view.AttemptPanel.iterationLabel',
+              'Iteration {{n}}',
+              { n: attempt.iteration }
+            )}
+          </span>
+        ) : null}
         <AttemptStateBadge state={attempt.state} />
       </div>
+
+      {iterations.length > 1 ? (
+        <InspectorField
+          label={translate(
+            'auto.components.workflows.run-view.AttemptPanel.iterations',
+            'Iterations'
+          )}
+        >
+          <ul className="space-y-1.5">
+            {iterations.map((iterationAttempt) => (
+              <IterationRow key={iterationAttempt.id} attempt={iterationAttempt} />
+            ))}
+          </ul>
+        </InspectorField>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-3">
         <LaunchSummary

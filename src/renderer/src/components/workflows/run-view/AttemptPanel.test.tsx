@@ -231,4 +231,64 @@ describe('AttemptPanel', () => {
     fireEvent.click(button)
     expect(openAllDiffsMock).toHaveBeenCalledWith('wt-1', '/repo/wt-1')
   })
+
+  it('shows the active iteration next to the state badge', () => {
+    render(
+      <AttemptPanel
+        definition={workflow()}
+        snapshot={snapshot([attempt({ iteration: 2 })])}
+        nodeId="implement"
+        runtimeEnvironmentId={null}
+      />
+    )
+
+    expect(screen.getByText('Iteration 2')).toBeInTheDocument()
+  })
+
+  it('does not show an iteration badge for a non-loop attempt (iteration 0)', () => {
+    render(
+      <AttemptPanel
+        definition={workflow()}
+        snapshot={snapshot([attempt({ iteration: 0 })])}
+        nodeId="implement"
+        runtimeEnvironmentId={null}
+      />
+    )
+
+    expect(screen.queryByText(/Iteration/)).not.toBeInTheDocument()
+  })
+
+  it('lists per-iteration results once a node has run more than one iteration', () => {
+    render(
+      <AttemptPanel
+        definition={workflow()}
+        snapshot={snapshot([
+          attempt({
+            id: 'attempt-0',
+            iteration: 0,
+            state: 'failed',
+            failureReason: 'not approved',
+            resultJson: { approved: false }
+          }),
+          attempt({
+            id: 'attempt-1',
+            iteration: 1,
+            state: 'completed',
+            resultJson: { approved: true }
+          })
+        ])}
+        nodeId="implement"
+        runtimeEnvironmentId={null}
+      />
+    )
+
+    expect(screen.getByText('Iterations')).toBeInTheDocument()
+    // The header badge (latest, iteration 1) plus one row per iteration (0 and 1).
+    expect(screen.getAllByText('Iteration 1')).toHaveLength(2)
+    expect(screen.getByText('Iteration 0')).toBeInTheDocument()
+    expect(screen.getByText('not approved')).toBeInTheDocument()
+    expect(screen.getByText(/"approved": false/)).toBeInTheDocument()
+    // Appears twice: the iteration-1 row, and the "Result" section below (same, latest attempt).
+    expect(screen.getAllByText(/"approved": true/)).toHaveLength(2)
+  })
 })

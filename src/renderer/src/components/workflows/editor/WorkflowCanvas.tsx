@@ -19,15 +19,25 @@ import type {
   Workflow
 } from '../../../../../shared/workflows/workflow-definition-types'
 import type { WorkflowAttemptState } from '../../../../../shared/workflows/workflow-node-states'
+import { computeLoopContainerBounds } from './workflow-auto-layout'
 import AgentNode, { type WorkflowAgentFlowNode } from './nodes/AgentNode'
 import EndNode, { type WorkflowEndFlowNode } from './nodes/EndNode'
+import LoopNode, { type WorkflowLoopFlowNode } from './nodes/LoopNode'
 import StartNode, { type WorkflowStartFlowNode } from './nodes/StartNode'
 
-type WorkflowFlowNode = WorkflowAgentFlowNode | WorkflowStartFlowNode | WorkflowEndFlowNode
+type WorkflowFlowNode =
+  | WorkflowAgentFlowNode
+  | WorkflowStartFlowNode
+  | WorkflowEndFlowNode
+  | WorkflowLoopFlowNode
 
-const NODE_TYPES: NodeTypes = { agent: AgentNode, start: StartNode, end: EndNode }
+const NODE_TYPES: NodeTypes = { agent: AgentNode, start: StartNode, end: EndNode, loop: LoopNode }
 
 export type WorkflowCanvasNodeStatuses = Readonly<Record<string, WorkflowAttemptState>>
+
+/** The Loop node currently active for each node id (run view only, T079); keyed by the Loop's own
+ *  id — `latestNodeAttempt`'s `iteration` for that Loop's `NodeAttemptView`. */
+export type WorkflowCanvasNodeIterations = Readonly<Record<string, number>>
 
 export type WorkflowCanvasConnection = { from: string; to: string; fromPort?: string }
 
@@ -35,6 +45,8 @@ export type WorkflowCanvasProps = {
   definition: Workflow
   /** Per-node run status (run view overlay, later unit); absent in plain editing. */
   nodeStatuses?: WorkflowCanvasNodeStatuses
+  /** Per-Loop-node active iteration (run view overlay, T079); absent in plain editing. */
+  nodeIterations?: WorkflowCanvasNodeIterations
   selectedNodeId?: string
   selectedEdgeId?: string
   onNodeSelect?: (nodeId: string | undefined) => void
@@ -49,22 +61,55 @@ function resolveAgentLabel(definition: Workflow, node: AgentNodeDefinition): str
   return node.overrides?.agent ?? role?.agent
 }
 
+/** Body-node id -> owning Loop id, so those nodes render as React Flow children (T078). */
+function loopParentMap(nodes: Workflow['nodes']): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const node of nodes) {
+    if (node.type === 'loop') {
+      for (const childId of node.body.nodeIds) {
+        map.set(childId, node.id)
+      }
+    }
+  }
+  return map
+}
+
+/**
+ * Renders every non-body node first, then Loop body nodes as React Flow children (`parentId`,
+ * position relative to the Loop, `extent: 'parent'`) — parents must precede their children in
+ * the node array regardless of `definition.nodes`' own order.
+ */
 function toFlowNodes(
   definition: Workflow,
   nodeStatuses: WorkflowCanvasNodeStatuses | undefined,
+  nodeIterations: WorkflowCanvasNodeIterations | undefined,
   selectedNodeId: string | undefined
 ): WorkflowFlowNode[] {
+  const parentOf = loopParentMap(definition.nodes)
+  const [ownNodes, bodyNodes] = [
+    definition.nodes.filter((node) => !parentOf.has(node.id)),
+    definition.nodes.filter((node) => parentOf.has(node.id))
+  ]
+
   const flowNodes: WorkflowFlowNode[] = []
-  for (const node of definition.nodes) {
-    const position = definition.layout[node.id] ?? { x: 0, y: 0 }
+  for (const node of [...ownNodes, ...bodyNodes]) {
+    const absolutePosition = definition.layout[node.id] ?? { x: 0, y: 0 }
+    const parentId = parentOf.get(node.id)
+    const parentPosition = parentId ? (definition.layout[parentId] ?? { x: 0, y: 0 }) : undefined
+    const position = parentPosition
+      ? { x: absolutePosition.x - parentPosition.x, y: absolutePosition.y - parentPosition.y }
+      : absolutePosition
     const selected = node.id === selectedNodeId
     const attemptState = nodeStatuses?.[node.id]
+    const nesting = parentId ? ({ parentId, extent: 'parent' } as const) : {}
+
     if (node.type === 'start') {
       flowNodes.push({
         id: node.id,
         type: 'start',
         position,
         selected,
+        ...nesting,
         data: { definitionNode: node, attemptState }
       })
     } else if (node.type === 'end') {
@@ -73,6 +118,7 @@ function toFlowNodes(
         type: 'end',
         position,
         selected,
+        ...nesting,
         data: { definitionNode: node, attemptState }
       })
     } else if (node.type === 'agent') {
@@ -81,14 +127,33 @@ function toFlowNodes(
         type: 'agent',
         position,
         selected,
+        ...nesting,
         data: {
           definitionNode: node,
           agentLabel: resolveAgentLabel(definition, node),
           attemptState
         }
       })
+    } else if (node.type === 'loop') {
+      const bounds = computeLoopContainerBounds(
+        absolutePosition,
+        node.body.nodeIds.map((id) => definition.layout[id] ?? { x: 0, y: 0 })
+      )
+      flowNodes.push({
+        id: node.id,
+        type: 'loop',
+        position,
+        selected,
+        style: { width: bounds.width, height: bounds.height },
+        data: {
+          definitionNode: node,
+          attemptState,
+          iteration: nodeIterations?.[node.id],
+          ...bounds
+        }
+      })
     }
-    // Router/Loop/Join/Approval/Reflection node components land in later units (T078, T087, T089, T111, T120).
+    // Router/Join/Approval/Reflection node components land in later units (T087, T089, T111, T120).
   }
   return flowNodes
 }
@@ -110,6 +175,7 @@ function toFlowEdges(definition: Workflow, selectedEdgeId: string | undefined): 
 export default function WorkflowCanvas({
   definition,
   nodeStatuses,
+  nodeIterations,
   selectedNodeId,
   selectedEdgeId,
   onNodeSelect,
@@ -118,8 +184,8 @@ export default function WorkflowCanvas({
   onConnect
 }: WorkflowCanvasProps): React.JSX.Element {
   const nodes = useMemo(
-    () => toFlowNodes(definition, nodeStatuses, selectedNodeId),
-    [definition, nodeStatuses, selectedNodeId]
+    () => toFlowNodes(definition, nodeStatuses, nodeIterations, selectedNodeId),
+    [definition, nodeStatuses, nodeIterations, selectedNodeId]
   )
   const edges = useMemo(() => toFlowEdges(definition, selectedEdgeId), [definition, selectedEdgeId])
 

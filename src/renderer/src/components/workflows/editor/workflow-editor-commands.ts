@@ -12,7 +12,14 @@ export type WorkflowEditorCommandContext = {
   agentSupportsModel: (agent: string) => boolean
 }
 
-export type WorkflowEditorProblem = { code: string; message: string }
+export type WorkflowEditorProblem = {
+  code: string
+  message: string
+  /** Present on `graph_cycle`: the two nodes a "Wrap in Loop" action would wrap (FR-005, US2
+   *  AS5) — the connection's own endpoints, which is also `chooseLoopEntryAndExit`'s fallback
+   *  entry/exit pick for a two-node selection. */
+  wrapNodeIds?: string[]
+}
 
 export type WorkflowEditorCommandResult =
   | { ok: true; definition: Workflow }
@@ -50,8 +57,9 @@ export function connectNodesInDefinition(
         code: 'graph_cycle',
         message: translate(
           'auto.components.workflows.editor.workflow-editor-commands.cycleRefused',
-          'This connection would create a cycle outside a Loop node.'
-        )
+          'This connection would create a cycle outside a Loop node. Wrap the selected nodes in a Loop instead.'
+        ),
+        wrapNodeIds: [input.from, input.to]
       }
     }
   }
