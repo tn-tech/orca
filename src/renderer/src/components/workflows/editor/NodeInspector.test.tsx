@@ -2,6 +2,7 @@
 
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type {
@@ -19,10 +20,13 @@ afterEach(() => {
   cleanup()
 })
 
-function renderInspector(props: NodeInspectorProps): void {
+function renderInspector(
+  props: Partial<NodeInspectorProps> &
+    Pick<NodeInspectorProps, 'definition' | 'onNodeChange' | 'onEdgeConditionChange'>
+): void {
   render(
     <TooltipProvider>
-      <NodeInspector {...props} />
+      <NodeInspector onSetRole={vi.fn()} onRemoveRole={vi.fn()} {...props} />
     </TooltipProvider>
   )
 }
@@ -100,15 +104,20 @@ function workflow(patch: Partial<Workflow> = {}): Workflow {
 }
 
 describe('NodeInspector', () => {
-  it('shows an empty state with nothing selected', () => {
+  it('shows the workflow-level Roles panel with nothing selected (US4 AS1)', () => {
     render(
       <NodeInspector
         definition={workflow()}
         onNodeChange={vi.fn()}
         onEdgeConditionChange={vi.fn()}
+        onSetRole={vi.fn()}
+        onRemoveRole={vi.fn()}
       />
     )
-    expect(screen.getByText('Select a node or edge to edit its settings.')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Roles' })).toBeInTheDocument()
+    expect(
+      screen.getByText('No roles yet. Create one or import from a repository.')
+    ).toBeInTheDocument()
   })
 
   it('renders AgentNodeFields for a selected agent node', () => {
@@ -118,6 +127,8 @@ describe('NodeInspector', () => {
         selectedNodeId="implement"
         onNodeChange={vi.fn()}
         onEdgeConditionChange={vi.fn()}
+        onSetRole={vi.fn()}
+        onRemoveRole={vi.fn()}
       />
     )
     expect(screen.getByDisplayValue('Implement')).toBeInTheDocument()
@@ -135,6 +146,8 @@ describe('NodeInspector', () => {
         selectedNodeId="start"
         onNodeChange={vi.fn()}
         onEdgeConditionChange={vi.fn()}
+        onSetRole={vi.fn()}
+        onRemoveRole={vi.fn()}
       />
     )
     expect(screen.getByDisplayValue('Start')).toBeInTheDocument()
@@ -152,6 +165,8 @@ describe('NodeInspector', () => {
         selectedNodeId="start"
         onNodeChange={onNodeChange}
         onEdgeConditionChange={vi.fn()}
+        onSetRole={vi.fn()}
+        onRemoveRole={vi.fn()}
       />
     )
 
@@ -169,6 +184,8 @@ describe('NodeInspector', () => {
         selectedNodeId="loop"
         onNodeChange={vi.fn()}
         onEdgeConditionChange={vi.fn()}
+        onSetRole={vi.fn()}
+        onRemoveRole={vi.fn()}
       />
     )
     expect(screen.getByLabelText('Maximum iterations')).toHaveValue(null)
@@ -185,6 +202,8 @@ describe('NodeInspector', () => {
         selectedNodeId="loop"
         onNodeChange={onNodeChange}
         onEdgeConditionChange={vi.fn()}
+        onSetRole={vi.fn()}
+        onRemoveRole={vi.fn()}
       />
     )
 
@@ -206,6 +225,8 @@ describe('NodeInspector', () => {
         selectedNodeId="join"
         onNodeChange={vi.fn()}
         onEdgeConditionChange={vi.fn()}
+        onSetRole={vi.fn()}
+        onRemoveRole={vi.fn()}
       />
     )
     expect(screen.getByRole('combobox', { name: 'Policy' })).toBeInTheDocument()
@@ -219,6 +240,8 @@ describe('NodeInspector', () => {
         selectedNodeId="router"
         onNodeChange={vi.fn()}
         onEdgeConditionChange={vi.fn()}
+        onSetRole={vi.fn()}
+        onRemoveRole={vi.fn()}
       />
     )
     expect(screen.getByRole('combobox', { name: 'Model' })).toBeInTheDocument()
@@ -233,6 +256,8 @@ describe('NodeInspector', () => {
         selectedEdgeId="edge-1"
         onNodeChange={vi.fn()}
         onEdgeConditionChange={vi.fn()}
+        onSetRole={vi.fn()}
+        onRemoveRole={vi.fn()}
       />
     )
     expect(screen.getByText('start → implement')).toBeInTheDocument()
@@ -347,6 +372,47 @@ describe('NodeInspector', () => {
       })
 
       expect(screen.queryByText(/can't load skills from a workspace/)).not.toBeInTheDocument()
+    })
+  })
+
+  describe('Roles panel wiring (US4 AS1)', () => {
+    it('creates a role from the empty state through onSetRole', async () => {
+      const user = userEvent.setup()
+      const onSetRole = vi.fn()
+      renderInspector({
+        definition: workflow(),
+        onNodeChange: vi.fn(),
+        onEdgeConditionChange: vi.fn(),
+        onSetRole
+      })
+
+      await user.click(screen.getByRole('button', { name: 'Add role' }))
+      await user.click(screen.getByRole('menuitem', { name: 'New role' }))
+      fireEvent.change(screen.getByLabelText('Id'), { target: { value: 'dev' } })
+      fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Dev' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+
+      expect(onSetRole).toHaveBeenCalledWith('dev', {
+        id: 'dev',
+        name: 'Dev',
+        agent: '',
+        systemPrompt: '',
+        skills: []
+      })
+    })
+
+    it('removes a role through onRemoveRole', () => {
+      const onRemoveRole = vi.fn()
+      renderInspector({
+        definition: workflow({ roles: { reviewer: role() } }),
+        onNodeChange: vi.fn(),
+        onEdgeConditionChange: vi.fn(),
+        onRemoveRole
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Remove role' }))
+
+      expect(onRemoveRole).toHaveBeenCalledWith('reviewer')
     })
   })
 })

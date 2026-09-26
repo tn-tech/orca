@@ -96,4 +96,30 @@ describe('SkillReferenceList (FR-015)', () => {
 
     expect(onRequestTrust).toHaveBeenCalledWith({ kind: 'plugin', plugin: 'speckit' })
   })
+
+  it('keeps an existing row mounted (no lost focus) when skills grows from outside', () => {
+    // Reproduces the reported bug: a node with no skills gets a role assigned that has some, so
+    // `skills` lengthens from a prop change, not from `addSkill`/`removeSkill`.
+    const { rerender } = renderList({ skills: [], onChange: vi.fn() })
+
+    rerender(
+      <TooltipProvider>
+        <SkillReferenceList skills={[pluginSkill()]} onChange={vi.fn()} />
+      </TooltipProvider>
+    )
+    const nameInput = screen.getByLabelText('Skill name')
+    nameInput.focus()
+    expect(document.activeElement).toBe(nameInput)
+
+    // A second, unrelated re-render (e.g. the parent re-rendering after some other state change)
+    // must not remount the row a second time either — the bug regenerated a fresh key on every
+    // render once the list had grown past what was seeded at mount.
+    rerender(
+      <TooltipProvider>
+        <SkillReferenceList skills={[pluginSkill({ name: 'a' })]} onChange={vi.fn()} />
+      </TooltipProvider>
+    )
+
+    expect(document.activeElement).toBe(nameInput)
+  })
 })

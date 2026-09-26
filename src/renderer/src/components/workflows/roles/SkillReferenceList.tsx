@@ -50,8 +50,14 @@ export default function SkillReferenceList({
   // Why: skills have no id of their own; a stable per-row key keeps a row's inputs (and focus)
   // attached to that row when a different row is removed, instead of the array index. Lazy-
   // seeded (lazy-use-ref-ratchet.test.ts) so this isn't recomputed and thrown away every render.
+  // Grown here (not just by `addSkill` below) because `skills` can also lengthen from outside —
+  // e.g. assigning a role with skills to a node that had none — and a key computed fresh every
+  // render for an index past the stored ones would remount that row on each keystroke.
   const rowKeysRef = useRef<string[]>(undefined!)
-  rowKeysRef.current ??= skills.map(() => createBrowserUuid())
+  rowKeysRef.current ??= []
+  while (rowKeysRef.current.length < skills.length) {
+    rowKeysRef.current = [...rowKeysRef.current, createBrowserUuid()]
+  }
   const keyedSkills = skills.map((skill, index) => ({
     rowKey: rowKeysRef.current[index] ?? createBrowserUuid(),
     skill,

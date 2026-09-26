@@ -2,6 +2,7 @@ import { useMemo, useReducer } from 'react'
 import type {
   Condition,
   Node,
+  Role,
   Workflow
 } from '../../../../../shared/workflows/workflow-definition-types'
 import { computeAutoLayout } from './workflow-auto-layout'
@@ -9,6 +10,8 @@ import {
   addNodeToDefinition,
   connectNodesInDefinition,
   deleteElementsFromDefinition,
+  removeRoleFromDefinition,
+  setRoleInDefinition,
   updateEdgeConditionInDefinition,
   updateNodeInDefinition,
   type WorkflowEditorProblem
@@ -47,6 +50,11 @@ export type WorkflowEditorAction =
   /** FR-005/FR-006, US2 AS5: wraps `nodeIds` (an existing selection, or a refused back-edge's
    *  two endpoints) in a new Loop node. */
   | { type: 'wrap-in-loop'; nodeIds: string[] }
+  /** US4 AS1: creates or updates a role in `definition.roles` (`roles/RolesPanel.tsx`,
+   *  `roles/RoleEditor.tsx`). */
+  | { type: 'set-role'; roleId: string; role: Role }
+  /** Removes a role and clears it from every node that referenced it. */
+  | { type: 'remove-role'; roleId: string }
   /** A fresh definition arrived (reload, or a run snapshot); see FR-010 handling below. */
   | { type: 'load-definition'; definition: Workflow }
   | { type: 'undo' }
@@ -177,6 +185,12 @@ export function workflowEditorReducer(
       const result = wrapNodesInLoopInDefinition(state.definition, action.nodeIds)
       return result.ok ? commit(state, result.definition) : refuse(state, result.problem)
     }
+
+    case 'set-role':
+      return commit(state, setRoleInDefinition(state.definition, action.roleId, action.role))
+
+    case 'remove-role':
+      return commit(state, removeRoleFromDefinition(state.definition, action.roleId))
 
     case 'auto-layout': {
       const layout = computeAutoLayout(state.definition.nodes, state.definition.edges, {

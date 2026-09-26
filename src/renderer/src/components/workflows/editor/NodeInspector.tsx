@@ -2,12 +2,15 @@ import React, { useId } from 'react'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { translate } from '@/i18n/i18n'
+import type { RuntimeWorkflowSettings } from '@/runtime/runtime-workflow-client'
 import type {
   Condition,
   Edge,
   Node,
+  Role,
   Workflow
 } from '../../../../../shared/workflows/workflow-definition-types'
+import RolesPanel, { type RoleEditorWorkflowContext } from '../roles/RolesPanel'
 import AgentNodeFields from './AgentNodeFields'
 import ConditionBuilder from './ConditionBuilder'
 import { InspectorField } from './InspectorField'
@@ -21,6 +24,14 @@ export type NodeInspectorProps = {
   selectedEdgeId?: string
   onNodeChange: (node: Node) => void
   onEdgeConditionChange: (edgeId: string, condition: Condition | undefined) => void
+  /** US4 AS1: the workflow-level roles list, shown by `RolesPanel` when nothing is selected. */
+  onSetRole: (roleId: string, role: Role) => void
+  onRemoveRole: (roleId: string) => void
+  allowlistedSources?: readonly string[]
+  repo?: string
+  settings?: RuntimeWorkflowSettings
+  workflow?: RoleEditorWorkflowContext
+  onReloadFromDisk?: () => void | Promise<void>
 }
 
 function nodeTypeLabel(type: Node['type']): string {
@@ -93,13 +104,21 @@ function countIncomingEdges(definition: Workflow, nodeId: string): number {
 }
 
 /** Edge conditions (FR-008) editable via `ConditionBuilder`; Agent node settings (FR-003/FR-004)
- *  via `AgentNodeFields`. Other node types get title/notes only until their own units land. */
+ *  via `AgentNodeFields`; the workflow's roles (US4 AS1) via `RolesPanel` when nothing is
+ *  selected. Other node types get title/notes only until their own units land. */
 export default function NodeInspector({
   definition,
   selectedNodeId,
   selectedEdgeId,
   onNodeChange,
-  onEdgeConditionChange
+  onEdgeConditionChange,
+  onSetRole,
+  onRemoveRole,
+  allowlistedSources,
+  repo,
+  settings,
+  workflow,
+  onReloadFromDisk
 }: NodeInspectorProps): React.JSX.Element {
   const edge = selectedEdgeId ? findEdge(definition, selectedEdgeId) : undefined
   const node = selectedNodeId ? definition.nodes.find((n) => n.id === selectedNodeId) : undefined
@@ -131,12 +150,16 @@ export default function NodeInspector({
 
   if (!node) {
     return (
-      <div className="flex h-full items-center justify-center p-4 text-center text-xs text-muted-foreground">
-        {translate(
-          'auto.components.workflows.editor.NodeInspector.emptyState',
-          'Select a node or edge to edit its settings.'
-        )}
-      </div>
+      <RolesPanel
+        roles={definition.roles}
+        onSetRole={onSetRole}
+        onRemoveRole={onRemoveRole}
+        allowlistedSources={allowlistedSources}
+        repo={repo}
+        settings={settings}
+        workflow={workflow}
+        onReloadFromDisk={onReloadFromDisk}
+      />
     )
   }
 

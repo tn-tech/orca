@@ -260,6 +260,8 @@ export function useWorkflowsPageController() {
 
   return {
     activeRepo,
+    repoId,
+    settings,
     list,
     session,
     problems,

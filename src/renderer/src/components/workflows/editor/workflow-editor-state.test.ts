@@ -575,3 +575,62 @@ describe('workflow editor state: dismiss-problem', () => {
     expect(next).toBe(state)
   })
 })
+
+describe('workflow editor state: set-role, remove-role (US4 AS1)', () => {
+  it('adds a new role, marking the editor dirty and bumping the revision', () => {
+    let state = createInitialWorkflowEditorState({ ...emptyWorkflow(), roles: {} })
+
+    state = dispatch(state, { type: 'set-role', roleId: 'dev', role: role() })
+
+    expect(state.definition.roles).toEqual({ dev: role() })
+    expect(state.dirty).toBe(true)
+    expect(state.revision).toBe(1)
+  })
+
+  it('replaces an existing role by id', () => {
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+
+    state = dispatch(state, {
+      type: 'set-role',
+      roleId: 'dev',
+      role: role({ name: 'Senior Dev' })
+    })
+
+    expect(state.definition.roles.dev).toEqual(role({ name: 'Senior Dev' }))
+  })
+
+  it('removes a role and clears it from every node that referenced it', () => {
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+    state = dispatch(state, {
+      type: 'add-node',
+      node: agentNode('a', { roleId: 'dev' }),
+      position: { x: 0, y: 0 }
+    })
+
+    state = dispatch(state, { type: 'remove-role', roleId: 'dev' })
+
+    expect(state.definition.roles.dev).toBeUndefined()
+    expect(state.definition.nodes.find((node) => node.id === 'a')).toMatchObject({
+      roleId: undefined
+    })
+  })
+
+  it('removing a role leaves nodes referencing a different role untouched', () => {
+    let state = createInitialWorkflowEditorState({
+      ...emptyWorkflow(),
+      roles: { dev: role(), reviewer: role({ id: 'reviewer', name: 'Reviewer' }) }
+    })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: agentNode('a', { roleId: 'reviewer' }),
+      position: { x: 0, y: 0 }
+    })
+
+    state = dispatch(state, { type: 'remove-role', roleId: 'dev' })
+
+    expect(state.definition.roles.reviewer).toBeDefined()
+    expect(state.definition.nodes.find((node) => node.id === 'a')).toMatchObject({
+      roleId: 'reviewer'
+    })
+  })
+})

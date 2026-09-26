@@ -3,9 +3,17 @@ import { translate } from '@/i18n/i18n'
 import type {
   Condition,
   Node,
+  Role,
   Workflow
 } from '../../../../../shared/workflows/workflow-definition-types'
 import { findCyclicEdge } from '../../../../../shared/workflows/workflow-graph-cycles'
+
+/** Only Agent/Router/Reflection nodes dispatch through a role (workflow-graph-validation.ts). */
+function nodeOwnRoleId(node: Node): string | undefined {
+  return node.type === 'agent' || node.type === 'router' || node.type === 'reflection'
+    ? node.roleId
+    : undefined
+}
 
 /** Same shape as `GraphValidationContext.agentSupportsModel` (src/shared), reused for FR-004. */
 export type WorkflowEditorCommandContext = {
@@ -166,4 +174,37 @@ export function getModelEffortAvailability(
     }
   }
   return { enabled: true }
+}
+
+/** Creates or replaces a role by id (US4 AS1: the workflow-level roles list, edited from
+ *  `roles/RolesPanel.tsx`). `roleId` is the stable map key; `role.id` is expected to match it. */
+export function setRoleInDefinition(definition: Workflow, roleId: string, role: Role): Workflow {
+  return { ...definition, roles: { ...definition.roles, [roleId]: role } }
+}
+
+/** Removes a role by id and clears it from every node that referenced it, so no node is left
+ *  pointing at a role no longer in `definition.roles`. */
+export function removeRoleFromDefinition(definition: Workflow, roleId: string): Workflow {
+  const { [roleId]: _removed, ...roles } = definition.roles
+  const nodes = definition.nodes.map((node) => {
+    if (nodeOwnRoleId(node) !== roleId) {
+      return node
+    }
+    // Why not a cast: `nodeOwnRoleId` already narrowed `node` to a role-dispatching type, but
+    // that narrowing doesn't survive being returned through the plain `Node` union above — the
+    // per-type spread below re-establishes it without asserting anything.
+    switch (node.type) {
+      case 'agent':
+      case 'router':
+      case 'reflection':
+        return { ...node, roleId: undefined }
+      case 'start':
+      case 'end':
+      case 'loop':
+      case 'join':
+      case 'approval':
+        return node
+    }
+  })
+  return { ...definition, roles, nodes }
 }

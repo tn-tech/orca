@@ -17421,7 +17421,9 @@
             "roleNameLabel": "Role name",
             "versionLabel": "Version (optional)",
             "cancel": "Cancel",
-            "submit": "Import"
+            "submit": "Import",
+            "reimportTitle": "Re-import role from repository",
+            "reimportDescription": "The source must be on the project allowlist. If your local edits differ from what was last imported, they're kept as-is and you'll be offered an explicit choice to overwrite them with the upstream version instead."
           },
           "RoleEditor": {
             "nameLabel": "Name",
@@ -17429,7 +17431,12 @@
             "skillsLabel": "Skills",
             "importFromRepository": "Import from repository…",
             "originSummary": "Imported from {{source}} @ {{version}} on {{importedAt}}.",
-            "locallyModified": "Locally modified"
+            "locallyModified": "Locally modified",
+            "reimportNeedsSave": "Save your changes before re-importing — the check runs against the saved file.",
+            "reimportNeedsFirstSave": "Save the workflow at least once before re-importing.",
+            "reimport": "Re-import…",
+            "upstreamKept": "Your local changes were kept. Version {{version}} is available upstream but was not applied.",
+            "overwriteLocal": "Overwrite local changes"
           },
           "SkillReferenceList": {
             "addSkill": "Add skill",
@@ -17463,6 +17470,22 @@
             "noAgents": "None yet.",
             "refuse": "Refuse",
             "trust": "Trust"
+          },
+          "RolesPanel": {
+            "newRoleErrorRequired": "Enter an id and a name.",
+            "newRoleErrorTaken": "A role with this id already exists.",
+            "heading": "Roles",
+            "addRole": "Add role",
+            "newRole": "New role",
+            "importRole": "Import from repository…",
+            "empty": "No roles yet. Create one or import from a repository.",
+            "imported": "Imported",
+            "removeRole": "Remove role",
+            "newRoleTitle": "New role",
+            "newRoleIdLabel": "Id",
+            "newRoleNameLabel": "Name",
+            "cancel": "Cancel",
+            "create": "Create"
           }
         }
       }

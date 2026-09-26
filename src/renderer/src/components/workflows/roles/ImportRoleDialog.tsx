@@ -13,18 +13,34 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { translate } from '@/i18n/i18n'
 import { hasRuntimeRpcErrorCode } from '@/runtime/runtime-rpc-client'
-import { workflowImportRole, type RuntimeWorkflowSettings } from '@/runtime/runtime-workflow-client'
-import type { Role } from '../../../../../shared/workflows/workflow-definition-types'
+import {
+  workflowImportRole,
+  type RuntimeWorkflowSettings,
+  type WorkflowImportRoleResult
+} from '@/runtime/runtime-workflow-client'
+import type { WorkflowRunSource } from '../../../../../shared/workflows/workflow-run-types'
+
+/** Present for a re-import (FR-016): writes straight into the saved workflow file instead of
+ *  only fetching and returning the role. `expectedRevision` should be the draft's current saved
+ *  revision — the caller is responsible for only offering this once the draft is clean, since the
+ *  engine's hash check runs against what's actually on disk. */
+export type ImportRoleDialogTarget = {
+  workflow: string
+  workflowSource?: WorkflowRunSource
+  expectedRevision?: string
+}
 
 export type ImportRoleDialogProps = {
   open: boolean
   repo: string
   settings: RuntimeWorkflowSettings
-  /** Pre-filled for a re-import (FR-016): update an already-imported role from its own source. */
   initialSource?: string
-  initialRoleName?: string
+  /** Fixed for a re-import: the role's own id (its source repo's file stem), never its display
+   *  `name` — re-import must target the exact same role slot, not whatever the user might type. */
+  fixedRoleName?: string
+  target?: ImportRoleDialogTarget
   onOpenChange: (open: boolean) => void
-  onImported: (role: Role) => void
+  onImported: (result: WorkflowImportRoleResult) => void
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -53,15 +69,20 @@ function allowlistPathFromError(error: unknown): string | undefined {
     : undefined
 }
 
-/** Imports (or re-imports, to update) a role from an allowlisted repository location (FR-015a,
- *  FR-016). Refuses client-side on an obviously empty field; the host is authoritative on the
- *  allowlist and always names where to add the source on refusal. */
+/**
+ * Imports a role from an allowlisted repository location (FR-015a). Without `target`, only
+ * fetches and returns the role — the caller inserts it into its own draft. With `target`, writes
+ * straight into that saved workflow file (FR-016): the result carries a `revision` on success, or
+ * `availableVersion` (no `revision`) when a locally modified copy was kept instead and the
+ * upstream version wasn't applied — `RoleEditor` handles that outcome, not this dialog.
+ */
 export default function ImportRoleDialog({
   open,
   repo,
   settings,
   initialSource,
-  initialRoleName,
+  fixedRoleName,
+  target,
   onOpenChange,
   onImported
 }: ImportRoleDialogProps): React.JSX.Element {
@@ -71,14 +92,15 @@ export default function ImportRoleDialog({
   // Why no reset-on-`open` effect: the caller remounts this dialog with a fresh `key` each time
   // it opens (WorkflowNameDialog's own convention), so these are only ever read once per open.
   const [source, setSource] = useState(initialSource ?? '')
-  const [roleName, setRoleName] = useState(initialRoleName ?? '')
+  const [roleName, setRoleName] = useState(fixedRoleName ?? '')
   const [version, setVersion] = useState('')
   const [error, setError] = useState<string | undefined>()
   const [submitting, setSubmitting] = useState(false)
 
   const handleSubmit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault()
-    if (!source.trim() || !roleName.trim()) {
+    const effectiveRoleName = fixedRoleName ?? roleName
+    if (!source.trim() || !effectiveRoleName.trim()) {
       setError(
         translate(
           'auto.components.workflows.roles.ImportRoleDialog.errorRequired',
@@ -93,10 +115,17 @@ export default function ImportRoleDialog({
       const result = await workflowImportRole(settings, {
         repo,
         source: source.trim(),
-        roleName: roleName.trim(),
-        version: version.trim() || undefined
+        roleName: effectiveRoleName.trim(),
+        version: version.trim() || undefined,
+        ...(target
+          ? {
+              workflow: target.workflow,
+              workflowSource: target.workflowSource,
+              expectedRevision: target.expectedRevision
+            }
+          : {})
       })
-      onImported(result.role)
+      onImported(result)
       onOpenChange(false)
     } catch (err) {
       const allowlistPath = allowlistPathFromError(err)
@@ -128,16 +157,26 @@ export default function ImportRoleDialog({
         <form onSubmit={(event) => void handleSubmit(event)}>
           <DialogHeader>
             <DialogTitle>
-              {translate(
-                'auto.components.workflows.roles.ImportRoleDialog.title',
-                'Import role from repository'
-              )}
+              {target
+                ? translate(
+                    'auto.components.workflows.roles.ImportRoleDialog.reimportTitle',
+                    'Re-import role from repository'
+                  )
+                : translate(
+                    'auto.components.workflows.roles.ImportRoleDialog.title',
+                    'Import role from repository'
+                  )}
             </DialogTitle>
             <DialogDescription>
-              {translate(
-                'auto.components.workflows.roles.ImportRoleDialog.description',
-                'The source must be on the project allowlist. Re-importing the same role updates it and flags local changes since the last import.'
-              )}
+              {target
+                ? translate(
+                    'auto.components.workflows.roles.ImportRoleDialog.reimportDescription',
+                    "The source must be on the project allowlist. If your local edits differ from what was last imported, they're kept as-is and you'll be offered an explicit choice to overwrite them with the upstream version instead."
+                  )
+                : translate(
+                    'auto.components.workflows.roles.ImportRoleDialog.description',
+                    'The source must be on the project allowlist.'
+                  )}
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3 py-4">
@@ -169,8 +208,9 @@ export default function ImportRoleDialog({
               </Label>
               <Input
                 id={roleNameId}
-                value={roleName}
+                value={fixedRoleName ?? roleName}
                 onChange={(event) => setRoleName(event.target.value)}
+                disabled={fixedRoleName !== undefined}
                 aria-invalid={error ? true : undefined}
               />
             </div>

@@ -157,6 +157,25 @@ export default function WorkflowsPage(): React.JSX.Element {
                           condition
                         })
                       }
+                      onSetRole={(roleId, role) =>
+                        session.editor.dispatch({ type: 'set-role', roleId, role })
+                      }
+                      onRemoveRole={(roleId) =>
+                        session.editor.dispatch({ type: 'remove-role', roleId })
+                      }
+                      repo={controller.repoId}
+                      settings={controller.settings}
+                      workflow={
+                        session.openRef
+                          ? {
+                              name: session.openRef.name,
+                              source: session.openRef.source,
+                              revision: session.documentRevision,
+                              dirty: session.editor.state.dirty
+                            }
+                          : undefined
+                      }
+                      onReloadFromDisk={session.reloadFromDisk}
                     />
                   )}
                 </div>

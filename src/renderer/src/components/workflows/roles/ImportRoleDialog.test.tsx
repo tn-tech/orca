@@ -58,7 +58,7 @@ describe('ImportRoleDialog (FR-015a, FR-016)', () => {
     fireEvent.change(screen.getByLabelText('Role name'), { target: { value: 'reviewer' } })
     fireEvent.click(screen.getByRole('button', { name: 'Import' }))
 
-    await waitFor(() => expect(onImported).toHaveBeenCalledWith(role()))
+    await waitFor(() => expect(onImported).toHaveBeenCalledWith({ role: role() }))
     expect(workflowImportRoleMock).toHaveBeenCalledWith(settings, {
       repo: 'repo-1',
       source: 'https://example.com/repo',
@@ -66,6 +66,62 @@ describe('ImportRoleDialog (FR-015a, FR-016)', () => {
       version: undefined
     })
     expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('re-import fixes the role name to the role id, disables the field, and targets the saved workflow', async () => {
+    workflowImportRoleMock.mockResolvedValue({ role: role(), revision: 'rev-2' })
+    const onImported = vi.fn()
+    render(
+      <ImportRoleDialog
+        open
+        repo="repo-1"
+        settings={settings}
+        initialSource="https://example.com/repo"
+        fixedRoleName="reviewer"
+        target={{ workflow: 'demo', workflowSource: 'project', expectedRevision: 'rev-1' }}
+        onOpenChange={vi.fn()}
+        onImported={onImported}
+      />
+    )
+
+    const roleNameInput = screen.getByLabelText('Role name')
+    expect(roleNameInput).toHaveValue('reviewer')
+    expect(roleNameInput).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+
+    await waitFor(() =>
+      expect(onImported).toHaveBeenCalledWith({ role: role(), revision: 'rev-2' })
+    )
+    expect(workflowImportRoleMock).toHaveBeenCalledWith(settings, {
+      repo: 'repo-1',
+      source: 'https://example.com/repo',
+      roleName: 'reviewer',
+      version: undefined,
+      workflow: 'demo',
+      workflowSource: 'project',
+      expectedRevision: 'rev-1'
+    })
+  })
+
+  it("does not overclaim what happens to local edits — the re-import description doesn't promise an automatic overwrite", () => {
+    render(
+      <ImportRoleDialog
+        open
+        repo="repo-1"
+        settings={settings}
+        fixedRoleName="reviewer"
+        target={{ workflow: 'demo' }}
+        onOpenChange={vi.fn()}
+        onImported={vi.fn()}
+      />
+    )
+
+    expect(
+      screen.getByText(
+        "The source must be on the project allowlist. If your local edits differ from what was last imported, they're kept as-is and you'll be offered an explicit choice to overwrite them with the upstream version instead."
+      )
+    ).toBeInTheDocument()
   })
 
   it('refuses submission with a required-fields message when either field is blank', () => {

@@ -55,7 +55,13 @@ export type WorkflowReadResult = {
 export type WorkflowWriteResult = { revision: string }
 export type WorkflowValidateResult = { problems: WorkflowProblem[] }
 export type WorkflowDuplicateResult = { name: string; revision: string }
-export type WorkflowImportRoleResult = { role: Role }
+export type WorkflowImportRoleResult = {
+  role: Role
+  /** Present when `workflow` was given and the write succeeded — the new content-hash revision. */
+  revision?: string
+  /** Present when a locally modified role was kept instead: the upstream commit not applied. */
+  availableVersion?: string
+}
 export type WorkflowDraftResult = { definition: Workflow; problems: WorkflowProblem[] }
 
 export function workflowList(
@@ -108,7 +114,20 @@ export function workflowDuplicate(
 
 export function workflowImportRole(
   settings: RuntimeWorkflowSettings,
-  params: { repo: string; source: string; roleName: string; version?: string }
+  params: {
+    repo: string
+    source: string
+    roleName: string
+    /** A branch or tag name in the role repository; omitted means its default branch. */
+    version?: string
+    /** Take upstream even when the local copy of the role was modified since its last import. */
+    overwriteLocal?: boolean
+    /** Named to copy the fetched role straight into that workflow file (a re-import); omitted to
+     *  only fetch and return the role for the caller to insert into its own draft. */
+    workflow?: string
+    workflowSource?: WorkflowRunSource
+    expectedRevision?: string
+  }
 ): Promise<WorkflowImportRoleResult> {
   return callWorkflowRpc(settings, 'workflow.importRole', params)
 }
