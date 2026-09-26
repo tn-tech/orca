@@ -17151,6 +17151,183 @@
         "9a4c6b2d7e": "Skill sharing",
         "3d8e5f1b9c": "Share skills behind an unlisted link and install them on any machine you use.",
         "c5b3e8a17d": "Sign in to Orca"
+      },
+      "workflows": {
+        "WorkflowDeleteDialog": {
+          "title": "Delete workflow?",
+          "description": "\"{{name}}\" will be deleted from disk. This cannot be undone.",
+          "cancel": "Cancel",
+          "confirm": "Delete"
+        },
+        "WorkflowListPane": {
+          "heading": "Workflows",
+          "new": "New workflow",
+          "empty": "No workflows yet. Create one to get started.",
+          "personalBadge": "Personal",
+          "rowActions": "Workflow actions",
+          "duplicate": "Duplicate",
+          "delete": "Delete",
+          "createTitle": "New workflow",
+          "createSubmit": "Create",
+          "duplicateTitle": "Duplicate workflow",
+          "duplicateSubmit": "Duplicate"
+        },
+        "WorkflowNameDialog": {
+          "errorRequired": "Enter a name.",
+          "errorInvalid": "Name cannot contain \"/\", \"\\\", \"..\" or leading/trailing spaces.",
+          "errorNameTaken": "A workflow named \"{{name}}\" already exists there.",
+          "nameLabel": "Name",
+          "sourceLabel": "Location",
+          "sourceProject": "Project (shared, committed)",
+          "sourcePersonal": "Personal (this machine only)",
+          "cancel": "Cancel"
+        },
+        "WorkflowsPage": {
+          "title": "Workflows",
+          "save": "Save",
+          "placeholder": "Select a workflow, or create a new one.",
+          "loading": "Loading…"
+        },
+        "editor": {
+          "AgentNodeArtifactsField": {
+            "label": "Artifacts",
+            "pathPlaceholder": "workspace-relative path",
+            "required": "Required",
+            "removeArtifact": "Remove artifact",
+            "addArtifact": "Add artifact"
+          },
+          "AgentNodeFields": {
+            "selectModelForEffort": "Select a model before choosing reasoning effort.",
+            "noEffortLevels": "\"{{model}}\" has no reasoning effort levels.",
+            "agentLabel": "Agent",
+            "selectAgent": "Select agent",
+            "modelLabel": "Model",
+            "selectModel": "Select a model",
+            "effortLabel": "Reasoning effort",
+            "selectEffort": "Select reasoning effort",
+            "promptLabel": "Prompt",
+            "workspaceLabel": "Workspace",
+            "workspaceRun": "Run workspace",
+            "workspaceChild": "Child workspace"
+          },
+          "AgentNodeResultContractField": {
+            "invalidJson": "Not valid JSON.",
+            "mustBeObject": "The result contract must be a JSON object.",
+            "mustBeObjectType": "The result contract needs \"type\": \"object\".",
+            "label": "Result contract (JSON schema)"
+          },
+          "ConditionBuilder": {
+            "opEq": "equals",
+            "opNeq": "not equals",
+            "opGt": "greater than",
+            "opGte": "greater than or equal",
+            "opLt": "less than",
+            "opLte": "less than or equal",
+            "opTruthy": "is truthy",
+            "opFalsy": "is falsy",
+            "opContains": "contains",
+            "opLengthGt": "length greater than",
+            "pathPlaceholder": "result path (e.g. approved)",
+            "pathLabel": "Result path",
+            "opLabel": "Comparison",
+            "valuePlaceholder": "value",
+            "valueLabel": "Comparison value",
+            "removeRow": "Remove condition",
+            "unsupportedShape": "This edge's condition can't be shown here; adding a condition below replaces it.",
+            "unconditioned": "No condition — this edge always fires.",
+            "addRow": "Add condition",
+            "matchAll": "Match all",
+            "matchAny": "Match any",
+            "negate": "Negate (NOT)"
+          },
+          "FileConflictDialog": {
+            "descriptionSave": "\"{{name}}\" changed on disk since it was opened, so this save was not written. Reload to see the newer version, or overwrite it with your changes.",
+            "descriptionExternal": "\"{{name}}\" changed on disk while you had unsaved changes open. Reload to see the newer version, or overwrite it with your changes.",
+            "title": "This workflow changed on disk",
+            "cancel": "Keep editing",
+            "reload": "Reload",
+            "overwrite": "Overwrite"
+          },
+          "NodeInspector": {
+            "typeStart": "Start",
+            "typeEnd": "End",
+            "typeAgent": "Agent",
+            "typeRouter": "Router",
+            "typeLoop": "Loop",
+            "typeJoin": "Join",
+            "typeApproval": "Approval",
+            "typeReflection": "Reflection",
+            "titleLabel": "Title",
+            "notesLabel": "Notes",
+            "edgeHeading": "Edge condition",
+            "edgeSubheading": "{{from}} → {{to}}",
+            "emptyState": "Select a node or edge to edit its settings.",
+            "typeNotYetSupported": "Detailed settings for this node type land in a later unit."
+          },
+          "ValidationProblemsPanel": {
+            "locationNode": "Node \"{{id}}\"",
+            "locationEdge": "Edge \"{{id}}\"",
+            "locationRole": "Role \"{{id}}\"",
+            "empty": "No problems found.",
+            "summary": "{{errorCount}} error(s), {{warningCount}} warning(s)"
+          },
+          "AgentNode": {
+            "noAgent": "No agent selected"
+          },
+          "workflow-editor-commands": {
+            "cycleRefused": "This connection would create a cycle outside a Loop node.",
+            "nodeNotFound": "Node \"{{id}}\" was not found in the workflow.",
+            "edgeNotFound": "Edge \"{{id}}\" was not found in the workflow.",
+            "noAgentSelected": "Select an agent before choosing a model or reasoning effort.",
+            "noModelCatalog": "\"{{agent}}\" has no model catalog, so model and reasoning effort cannot be overridden."
+          }
+        },
+        "run-view": {
+          "AttemptPanel": {
+            "statePending": "Pending",
+            "stateProvisioning": "Provisioning",
+            "stateRunning": "Running",
+            "stateWaiting": "Waiting",
+            "stateCompleted": "Completed",
+            "stateFailed": "Failed",
+            "stateSkipped": "Skipped",
+            "stateCancelled": "Cancelled",
+            "stateUnverifiable": "Unverifiable",
+            "notStarted": "This node hasn't run yet.",
+            "requested": "Requested",
+            "effective": "Effective",
+            "result": "Result",
+            "artifacts": "Artifacts",
+            "openTranscript": "Open transcript",
+            "openWorkspaceDiff": "Open workspace diff"
+          },
+          "RunToolbar": {
+            "stateQueued": "Queued",
+            "stateRunning": "Running",
+            "statePaused": "Paused",
+            "stateWaiting": "Waiting",
+            "stateCompleted": "Completed",
+            "stateFailed": "Failed",
+            "stateCancelled": "Cancelled",
+            "objectiveLabel": "Objective",
+            "objectivePlaceholder": "What should this run accomplish?",
+            "stop": "Stop",
+            "run": "Run",
+            "relayout": "Re-layout"
+          }
+        },
+        "use-workflow-editor-session": {
+          "saveFailed": "Failed to save workflow.",
+          "reloadFailed": "Failed to reload the workflow from disk.",
+          "overwriteFailed": "Failed to overwrite the workflow on disk.",
+          "startTitle": "Start",
+          "endTitle": "End"
+        },
+        "use-workflows-page-controller": {
+          "runStartFailed": "Failed to start the run.",
+          "runStopNotImplemented": "Stopping a run isn't available yet.",
+          "runStopFailed": "Failed to stop the run."
+        }
       }
     },
     "i18n": {
