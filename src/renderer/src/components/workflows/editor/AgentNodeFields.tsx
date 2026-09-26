@@ -30,6 +30,7 @@ export type AgentNodeFieldsProps = {
   node: AgentNode
   roles: Workflow['roles']
   onChange: (node: AgentNode) => void
+  allowlistedSources?: readonly string[]
 }
 
 /** No role id is a valid empty string per `RolesSchema` (`min(1)`), so a distinct sentinel picks
@@ -65,7 +66,8 @@ function roleFieldLabel(field: RoleOverridableField): string {
 export default function AgentNodeFields({
   node,
   roles,
-  onChange
+  onChange,
+  allowlistedSources
 }: AgentNodeFieldsProps): React.JSX.Element {
   const systemPromptId = useId()
   const role = node.roleId ? roles[node.roleId] : undefined
@@ -171,6 +173,7 @@ export default function AgentNodeFields({
         <SkillReferenceList
           skills={effectiveSkills}
           onChange={(skills) => onChange(withRoleDispatchOverrides(node, { skills }))}
+          allowlistedSources={allowlistedSources}
         />
       </InspectorField>
 

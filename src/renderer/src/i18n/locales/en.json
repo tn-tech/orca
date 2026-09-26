@@ -17415,7 +17415,6 @@
             "errorNotAllowedWithPath": "\"{{source}}\" is not on the project allowlist. Add it to workflows.allowedSources in {{path}}.",
             "errorNotAllowed": "\"{{source}}\" is not on the project allowlist.",
             "title": "Import role from repository",
-            "description": "The source must be on the project allowlist. Re-importing the same role updates it and flags local changes since the last import.",
             "sourceLabel": "Source",
             "sourcePlaceholder": "https://github.com/org/repo",
             "roleNameLabel": "Role name",
@@ -17423,7 +17422,8 @@
             "cancel": "Cancel",
             "submit": "Import",
             "reimportTitle": "Re-import role from repository",
-            "reimportDescription": "The source must be on the project allowlist. If your local edits differ from what was last imported, they're kept as-is and you'll be offered an explicit choice to overwrite them with the upstream version instead."
+            "reimportDescription": "The source must be on the project allowlist. If your local edits differ from what was last imported, they're kept as-is and you'll be offered an explicit choice to overwrite them with the upstream version instead.",
+            "description": "The source must be on the project allowlist."
           },
           "RoleEditor": {
             "nameLabel": "Name",
@@ -17436,7 +17436,8 @@
             "reimportNeedsFirstSave": "Save the workflow at least once before re-importing.",
             "reimport": "Re-import…",
             "upstreamKept": "Your local changes were kept. Version {{version}} is available upstream but was not applied.",
-            "overwriteLocal": "Overwrite local changes"
+            "overwriteLocal": "Overwrite local changes",
+            "overwriteNeedsSave": "Save your changes first — overwriting reloads the workflow from disk and would discard them."
           },
           "SkillReferenceList": {
             "addSkill": "Add skill",
@@ -17485,7 +17486,8 @@
             "newRoleIdLabel": "Id",
             "newRoleNameLabel": "Name",
             "cancel": "Cancel",
-            "create": "Create"
+            "create": "Create",
+            "importRoleIdTaken": "A role named \"{{id}}\" already exists. Open it and use Re-import instead."
           }
         }
       }

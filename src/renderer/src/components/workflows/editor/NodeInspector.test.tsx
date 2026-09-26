@@ -373,6 +373,33 @@ describe('NodeInspector', () => {
 
       expect(screen.queryByText(/can't load skills from a workspace/)).not.toBeInTheDocument()
     })
+
+    it('threads allowlistedSources through to the skills list on an Agent node', () => {
+      renderInspector({
+        definition: workflow({
+          nodes: [
+            { id: 'start', type: 'start', title: 'Start' },
+            agentNode({
+              overrides: {
+                skills: [
+                  {
+                    name: 'plan',
+                    source: { kind: 'repository', location: 'https://example.com/not-allowlisted' },
+                    required: true
+                  }
+                ]
+              }
+            })
+          ]
+        }),
+        selectedNodeId: 'implement',
+        onNodeChange: vi.fn(),
+        onEdgeConditionChange: vi.fn(),
+        allowlistedSources: ['https://example.com/allowed']
+      })
+
+      expect(screen.getByText('https://example.com/not-allowlisted')).toBeInTheDocument()
+    })
   })
 
   describe('Roles panel wiring (US4 AS1)', () => {

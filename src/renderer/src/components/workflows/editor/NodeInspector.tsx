@@ -168,7 +168,12 @@ export default function NodeInspector({
       <h2 className="text-sm font-semibold">{nodeTypeLabel(node.type)}</h2>
       <NodeBaseFields node={node} onChange={onNodeChange} />
       {node.type === 'agent' ? (
-        <AgentNodeFields node={node} roles={definition.roles} onChange={onNodeChange} />
+        <AgentNodeFields
+          node={node}
+          roles={definition.roles}
+          onChange={onNodeChange}
+          allowlistedSources={allowlistedSources}
+        />
       ) : node.type === 'loop' ? (
         <LoopNodeFields node={node} onChange={onNodeChange} />
       ) : node.type === 'join' ? (

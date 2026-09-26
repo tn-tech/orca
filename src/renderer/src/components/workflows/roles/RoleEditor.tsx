@@ -131,19 +131,26 @@ export default function RoleEditor({
     onChange({ ...result.role, id: role.id })
   }
 
+  // Why not `else`: the engine always writes and returns `revision` once `workflow` is given —
+  // `availableVersion` rides *alongside* it, not instead of it, when a locally modified copy was
+  // kept (workflow-role-import-method.ts's `mergeResult`). Checking `revision` first and
+  // returning would skip the kept-local notice on every real re-import that has one.
   async function handleReimportResult(result: WorkflowImportRoleResult): Promise<void> {
     if (result.revision !== undefined) {
-      setPendingUpstreamVersion(undefined)
       await onReloadFromDisk?.()
-      return
     }
-    if (result.availableVersion !== undefined) {
-      setPendingUpstreamVersion(result.availableVersion)
-    }
+    setPendingUpstreamVersion(result.availableVersion)
   }
 
   async function handleOverwrite(): Promise<void> {
-    if (!repo || !settings || !workflow || !role.origin) {
+    if (
+      !repo ||
+      !settings ||
+      !workflow ||
+      workflow.dirty ||
+      !role.origin ||
+      pendingUpstreamVersion === undefined
+    ) {
       return
     }
     setOverwriteSubmitting(true)
@@ -153,15 +160,18 @@ export default function RoleEditor({
         repo,
         source: role.origin.source,
         roleName: role.id,
+        // Why: pins to the exact commit the kept-local notice named, not the repository's
+        // current default branch, which may have moved again since that notice was shown.
+        version: pendingUpstreamVersion,
         workflow: workflow.name,
         workflowSource: workflow.source,
         expectedRevision: workflow.revision ?? undefined,
         overwriteLocal: true
       })
       if (result.revision !== undefined) {
-        setPendingUpstreamVersion(undefined)
         await onReloadFromDisk?.()
       }
+      setPendingUpstreamVersion(result.availableVersion)
     } catch (err) {
       setOverwriteError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -281,7 +291,15 @@ export default function RoleEditor({
                 type="button"
                 variant="destructive"
                 size="sm"
-                disabled={overwriteSubmitting}
+                disabled={overwriteSubmitting || !workflow || workflow.dirty}
+                title={
+                  workflow?.dirty
+                    ? translate(
+                        'auto.components.workflows.roles.RoleEditor.overwriteNeedsSave',
+                        'Save your changes first — overwriting reloads the workflow from disk and would discard them.'
+                      )
+                    : undefined
+                }
                 onClick={() => void handleOverwrite()}
               >
                 {overwriteSubmitting ? <Loader2 className="animate-spin" /> : null}
@@ -290,6 +308,14 @@ export default function RoleEditor({
                   'Overwrite local changes'
                 )}
               </Button>
+              {workflow?.dirty ? (
+                <p className="text-muted-foreground">
+                  {translate(
+                    'auto.components.workflows.roles.RoleEditor.overwriteNeedsSave',
+                    'Save your changes first — overwriting reloads the workflow from disk and would discard them.'
+                  )}
+                </p>
+              ) : null}
             </div>
           ) : null}
         </div>

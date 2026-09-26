@@ -39,6 +39,11 @@ export type ImportRoleDialogProps = {
    *  `name` — re-import must target the exact same role slot, not whatever the user might type. */
   fixedRoleName?: string
   target?: ImportRoleDialogTarget
+  /** Client-side pre-check, run before the RPC (no `target`, plain fetch, only): the fetched
+   *  role's id equals `roleName` exactly (workflow-role-import.ts), so a caller inserting it into
+   *  a draft under a fresh id can catch a collision with an existing role here and refuse with a
+   *  clear message, instead of silently overwriting a role the RPC has no way to know about. */
+  refuseRoleName?: (roleName: string) => string | undefined
   onOpenChange: (open: boolean) => void
   onImported: (result: WorkflowImportRoleResult) => void
 }
@@ -83,6 +88,7 @@ export default function ImportRoleDialog({
   initialSource,
   fixedRoleName,
   target,
+  refuseRoleName,
   onOpenChange,
   onImported
 }: ImportRoleDialogProps): React.JSX.Element {
@@ -107,6 +113,11 @@ export default function ImportRoleDialog({
           'Enter a source and a role name.'
         )
       )
+      return
+    }
+    const refusal = refuseRoleName?.(effectiveRoleName.trim())
+    if (refusal) {
+      setError(refusal)
       return
     }
     setSubmitting(true)

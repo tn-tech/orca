@@ -178,4 +178,32 @@ describe('RolesPanel (US4 AS1)', () => {
       expect(screen.getByRole('heading', { name: 'Imported Role' })).toBeInTheDocument()
     )
   })
+
+  it('refuses to replace an existing role when the imported id collides, instead of silently overwriting it', async () => {
+    const user = userEvent.setup()
+    workflowImportRoleMock.mockResolvedValue({
+      role: role({ name: 'Upstream Reviewer', systemPrompt: 'Upstream prompt.' })
+    })
+    const onSetRole = vi.fn()
+    renderPanel({
+      roles: { reviewer: role({ systemPrompt: 'My locally edited prompt.' }) },
+      onSetRole,
+      repo: 'repo-1',
+      settings: { activeRuntimeEnvironmentId: null }
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Add role' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Import from repository…' }))
+    fireEvent.change(screen.getByLabelText('Source'), {
+      target: { value: 'https://example.com/repo' }
+    })
+    fireEvent.change(screen.getByLabelText('Role name'), { target: { value: 'reviewer' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+
+    expect(
+      screen.getByText('A role named "reviewer" already exists. Open it and use Re-import instead.')
+    ).toBeInTheDocument()
+    expect(workflowImportRoleMock).not.toHaveBeenCalled()
+    expect(onSetRole).not.toHaveBeenCalled()
+  })
 })

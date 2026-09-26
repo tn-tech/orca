@@ -163,6 +163,7 @@ export default function WorkflowsPage(): React.JSX.Element {
                       onRemoveRole={(roleId) =>
                         session.editor.dispatch({ type: 'remove-role', roleId })
                       }
+                      allowlistedSources={controller.allowlistedSources}
                       repo={controller.repoId}
                       settings={controller.settings}
                       workflow={

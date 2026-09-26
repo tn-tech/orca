@@ -226,8 +226,16 @@ describe('RoleEditor (FR-015, FR-016)', () => {
       await waitFor(() => expect(onReloadFromDisk).toHaveBeenCalled())
     })
 
-    it('offers an explicit overwrite when the engine kept local edits and reports an available upstream version', async () => {
-      workflowImportRoleMock.mockResolvedValue({ role: importedRole(), availableVersion: 'v2' })
+    it('offers an explicit overwrite when the engine keeps local edits, still reloading for the revision it wrote (real contract: revision and availableVersion both present)', async () => {
+      // workflow-role-import-method.ts's mergeResult: the engine always writes and returns
+      // `revision` once `workflow` is given; `availableVersion` rides alongside it, not instead
+      // of it, when the local copy was kept. A mock with only `availableVersion` (no `revision`)
+      // is a shape the real contract never produces.
+      workflowImportRoleMock.mockResolvedValue({
+        role: importedRole(),
+        revision: 'rev-2',
+        availableVersion: 'v2'
+      })
       const onReloadFromDisk = vi.fn()
       renderEditor({
         role: importedRole(),
@@ -240,30 +248,88 @@ describe('RoleEditor (FR-015, FR-016)', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Re-import…' }))
       fireEvent.click(screen.getByRole('button', { name: 'Import' }))
 
-      await waitFor(() =>
-        expect(
-          screen.getByText(
-            'Your local changes were kept. Version v2 is available upstream but was not applied.'
-          )
-        ).toBeInTheDocument()
-      )
-      expect(onReloadFromDisk).not.toHaveBeenCalled()
+      await waitFor(() => expect(onReloadFromDisk).toHaveBeenCalledTimes(1))
+      expect(
+        screen.getByText(
+          'Your local changes were kept. Version v2 is available upstream but was not applied.'
+        )
+      ).toBeInTheDocument()
 
-      workflowImportRoleMock.mockResolvedValue({ role: importedRole(), revision: 'rev-2' })
+      workflowImportRoleMock.mockResolvedValue({ role: importedRole(), revision: 'rev-3' })
       fireEvent.click(screen.getByRole('button', { name: 'Overwrite local changes' }))
 
+      // Pins to the exact version the notice named (FR-016 minor: don't drop `version`), not the
+      // repository's current default branch, which may have moved again since the notice showed.
       await waitFor(() =>
         expect(workflowImportRoleMock).toHaveBeenLastCalledWith(settings, {
           repo: 'repo-1',
           source: 'https://example.com/repo',
           roleName: 'reviewer',
+          version: 'v2',
           workflow: 'demo',
           workflowSource: 'project',
           expectedRevision: 'rev-1',
           overwriteLocal: true
         })
       )
-      await waitFor(() => expect(onReloadFromDisk).toHaveBeenCalled())
+      await waitFor(() => expect(onReloadFromDisk).toHaveBeenCalledTimes(2))
+      expect(
+        screen.queryByText(
+          'Your local changes were kept. Version v2 is available upstream but was not applied.'
+        )
+      ).not.toBeInTheDocument()
+    })
+
+    it('disables the overwrite action once the draft becomes dirty after the kept-local notice appears', async () => {
+      workflowImportRoleMock.mockResolvedValue({
+        role: importedRole(),
+        revision: 'rev-2',
+        availableVersion: 'v2'
+      })
+      const onReloadFromDisk = vi.fn()
+      const { rerender } = render(
+        <TooltipProvider>
+          <RoleEditor
+            onChange={vi.fn()}
+            role={importedRole()}
+            repo="repo-1"
+            settings={settings}
+            workflow={cleanWorkflow()}
+            onReloadFromDisk={onReloadFromDisk}
+          />
+        </TooltipProvider>
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Re-import…' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Overwrite local changes' })).toBeInTheDocument()
+      )
+
+      rerender(
+        <TooltipProvider>
+          <RoleEditor
+            onChange={vi.fn()}
+            role={importedRole()}
+            repo="repo-1"
+            settings={settings}
+            workflow={cleanWorkflow({ dirty: true })}
+            onReloadFromDisk={onReloadFromDisk}
+          />
+        </TooltipProvider>
+      )
+
+      const overwriteButton = screen.getByRole('button', { name: 'Overwrite local changes' })
+      expect(overwriteButton).toBeDisabled()
+      expect(
+        screen.getByText(
+          'Save your changes first — overwriting reloads the workflow from disk and would discard them.'
+        )
+      ).toBeInTheDocument()
+
+      fireEvent.click(overwriteButton)
+      // Only the earlier re-import call happened; the disabled button never fired a second one.
+      expect(workflowImportRoleMock).toHaveBeenCalledTimes(1)
     })
   })
 })

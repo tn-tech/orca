@@ -22,6 +22,7 @@ import {
 import { useWorkflowEditorSession } from './use-workflow-editor-session'
 import { useWorkflowExternalChangeWatch } from './use-workflow-external-change-watch'
 import { useWorkflowListState } from './use-workflow-list-state'
+import { useWorkflowSourceAllowlist } from './use-workflow-source-allowlist'
 import { useWorkflowRunSnapshot } from './run-view/use-workflow-run-snapshot'
 import type { WorkflowSummary } from '@/runtime/runtime-workflow-client'
 
@@ -42,6 +43,7 @@ export function useWorkflowsPageController() {
 
   const list = useWorkflowListState(settings, repoId)
   const session = useWorkflowEditorSession({ settings, repoId })
+  const allowlistedSources = useWorkflowSourceAllowlist(settings, repoId)
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>()
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | undefined>()
@@ -262,6 +264,7 @@ export function useWorkflowsPageController() {
     activeRepo,
     repoId,
     settings,
+    allowlistedSources,
     list,
     session,
     problems,

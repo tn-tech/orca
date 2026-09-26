@@ -124,6 +124,53 @@ describe('ImportRoleDialog (FR-015a, FR-016)', () => {
     ).toBeInTheDocument()
   })
 
+  it('refuses submission when refuseRoleName flags a collision, without calling the RPC', () => {
+    const refuseRoleName = vi.fn(() => 'A role named "reviewer" already exists.')
+    render(
+      <ImportRoleDialog
+        open
+        repo="repo-1"
+        settings={settings}
+        refuseRoleName={refuseRoleName}
+        onOpenChange={vi.fn()}
+        onImported={vi.fn()}
+      />
+    )
+
+    fireEvent.change(screen.getByLabelText('Source'), {
+      target: { value: 'https://example.com/repo' }
+    })
+    fireEvent.change(screen.getByLabelText('Role name'), { target: { value: 'reviewer' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+
+    expect(screen.getByText('A role named "reviewer" already exists.')).toBeInTheDocument()
+    expect(refuseRoleName).toHaveBeenCalledWith('reviewer')
+    expect(workflowImportRoleMock).not.toHaveBeenCalled()
+  })
+
+  it('submits when refuseRoleName finds nothing wrong', async () => {
+    workflowImportRoleMock.mockResolvedValue({ role: role() })
+    const onImported = vi.fn()
+    render(
+      <ImportRoleDialog
+        open
+        repo="repo-1"
+        settings={settings}
+        refuseRoleName={() => undefined}
+        onOpenChange={vi.fn()}
+        onImported={onImported}
+      />
+    )
+
+    fireEvent.change(screen.getByLabelText('Source'), {
+      target: { value: 'https://example.com/repo' }
+    })
+    fireEvent.change(screen.getByLabelText('Role name'), { target: { value: 'reviewer' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+
+    await waitFor(() => expect(onImported).toHaveBeenCalledWith({ role: role() }))
+  })
+
   it('refuses submission with a required-fields message when either field is blank', () => {
     render(
       <ImportRoleDialog

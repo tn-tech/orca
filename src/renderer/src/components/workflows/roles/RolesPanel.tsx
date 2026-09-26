@@ -229,6 +229,15 @@ export default function RolesPanel({
           open={importOpen}
           repo={repo}
           settings={settings}
+          refuseRoleName={(roleName) =>
+            roles[roleName]
+              ? translate(
+                  'auto.components.workflows.roles.RolesPanel.importRoleIdTaken',
+                  'A role named "{{id}}" already exists. Open it and use Re-import instead.',
+                  { id: roleName }
+                )
+              : undefined
+          }
           onOpenChange={setImportOpen}
           onImported={(result) => {
             onSetRole(result.role.id, result.role)
