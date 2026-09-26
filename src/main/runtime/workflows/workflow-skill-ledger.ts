@@ -186,3 +186,28 @@ export async function clearPendingSkillInstall(
 ): Promise<void> {
   await fs.removePath(joinWorktreeRelativePath(workspaceRoot, PENDING_INSTALL_PATH))
 }
+
+/**
+ * Whether the recorded install already committed: a path it found absent or snapshotted now
+ * carries its run in the ledger. Only a commit writes those, since `shared` paths are excluded.
+ */
+export function isPendingInstallCommitted(
+  pending: PendingSkillInstall,
+  ledger: SkillLedger
+): boolean {
+  return Object.entries(pending.states).some(
+    ([path, state]) => state !== 'shared' && ledger[path]?.runs.includes(pending.runId) === true
+  )
+}
+
+/** Drops leftover backups (e.g. from a torn record) when no ledger entry restores from one. */
+export async function removeUnneededSkillBackups(
+  fs: WorkflowSkillFilesystem,
+  workspaceRoot: string,
+  ledger: SkillLedger
+): Promise<void> {
+  if (Object.values(ledger).some((entry) => entry.origin === 'snapshot')) {
+    return
+  }
+  await fs.removePath(joinWorktreeRelativePath(workspaceRoot, BACKUP_DIR))
+}

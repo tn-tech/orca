@@ -7,10 +7,12 @@ import { joinWorktreeRelativePath } from '../runtime-relative-paths'
 import { appendRunExcludeEntries, removeRunExcludeEntries } from './workflow-git-exclude'
 import {
   clearPendingSkillInstall,
+  isPendingInstallCommitted,
   readPendingSkillInstall,
   readSkillLedger,
   referenceLedgerPath,
   releaseSkillLedgerRun,
+  removeUnneededSkillBackups,
   restoreSkillSnapshot,
   skillBackupPath,
   writePendingSkillInstall,
@@ -160,9 +162,20 @@ async function recoverPendingSkillInstall(
   fs: WorkflowSkillProvisioningPorts['fs']
 ): Promise<void> {
   const pending = await readPendingSkillInstall(fs, workspaceRoot)
-  if (pending) {
-    await undoPendingInstall(workspaceRoot, new Map(Object.entries(pending.states)), fs)
+  if (!pending) {
+    return
   }
+  const ledger = await readSkillLedger(fs, workspaceRoot)
+  // Contact lost between the ledger write and the record clear: the install is committed.
+  if (pending.runId && isPendingInstallCommitted(pending, ledger)) {
+    await clearPendingSkillInstall(fs, workspaceRoot)
+    return
+  }
+  if (!pending.runId) {
+    // Torn record: the CLI never ran, but snapshots taken just before it may be orphaned.
+    await removeUnneededSkillBackups(fs, workspaceRoot, ledger)
+  }
+  await undoPendingInstall(workspaceRoot, new Map(Object.entries(pending.states)), fs)
 }
 
 async function runSkillsAdd(

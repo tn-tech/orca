@@ -182,6 +182,24 @@ describe('provisionNodeSkills — interrupted installs', () => {
     )
   })
 
+  it('drops a torn record and its orphaned backups when no ledger entry needs them', async () => {
+    await mkdir(join(workspaceRoot, '.orca/workflow-skills/backups'), { recursive: true })
+    await writeFile(join(workspaceRoot, '.orca/workflow-skills/backups/skills-lock.json'), '{}')
+    await writeFile(
+      join(workspaceRoot, '.orca/workflow-skills/pending-install.json'),
+      '{"runId":"wf'
+    )
+    const { ports } = createPorts()
+
+    expect(await provisionNodeSkills(input(), ports)).toMatchObject({ kind: 'ready' })
+    expect(existsSync(join(workspaceRoot, '.orca/workflow-skills/backups/skills-lock.json'))).toBe(
+      false
+    )
+    expect(existsSync(join(workspaceRoot, '.orca/workflow-skills/pending-install.json'))).toBe(
+      false
+    )
+  })
+
   it('rolls back a record left by a crash before the next local provision reinstalls', async () => {
     await mkdir(join(workspaceRoot, '.claude/skills/model-review'), { recursive: true })
     await mkdir(join(workspaceRoot, '.orca/workflow-skills'), { recursive: true })
@@ -543,6 +561,49 @@ describe('createRunSkillProvisioner — SSH workspaces', () => {
       false
     )
     expect(existsSync(join(workspaceRoot, PENDING_RECORD))).toBe(false)
+  })
+
+  it('keeps an install whose ledger was written when contact drops before the record clears', async () => {
+    await writeFile(join(workspaceRoot, 'skills-lock.json'), USER_LOCK)
+    const live = relayExecEmulator(fakeSkillsCli(workspaceRoot))
+    let dropped = false
+    relayExec.mockImplementation(async (request) => {
+      const clearsRecord =
+        request.args.at(-1)?.endsWith('pending-install.json') && request.args[1].startsWith('rm ')
+      if (dropped || clearsRecord) {
+        dropped = true
+        sshHost.provider = undefined
+        throw new Error('SSH connection closed')
+      }
+      return live(request)
+    })
+
+    const dropOutcome = await sshProvisioner().provision({
+      runId: 'wfr_1',
+      agent: 'claude',
+      skills: [repoSkill]
+    })
+    expect(dropOutcome.kind === 'failed' && dropOutcome.reason).toContain('unverifiable')
+    expect(existsSync(join(workspaceRoot, PENDING_RECORD))).toBe(true)
+    expect(existsSync(join(workspaceRoot, '.orca/workflow-skills/ledger.json'))).toBe(true)
+
+    useRelay()
+    const provisioner = sshProvisioner()
+    // The committed install is kept and borrowed, not rolled back and reinstalled.
+    expect(
+      await provisioner.provision({ runId: 'wfr_2', agent: 'claude', skills: [repoSkill] })
+    ).toEqual({ kind: 'ready', installed: [] })
+    expect(relayExec.mock.calls.some(([r]) => r.binary === 'npx')).toBe(false)
+    expect(existsSync(join(workspaceRoot, PENDING_RECORD))).toBe(false)
+    expect(existsSync(join(workspaceRoot, '.claude/skills/model-review'))).toBe(true)
+
+    await provisioner.release('wfr_2')
+    await provisioner.release('wfr_1')
+
+    // The user's untracked file survives both releases (FR-021).
+    expect(await readFile(join(workspaceRoot, 'skills-lock.json'), 'utf-8')).toBe(USER_LOCK)
+    expect(existsSync(join(workspaceRoot, '.claude/skills/model-review'))).toBe(false)
+    expect(existsSync(join(workspaceRoot, '.orca/workflow-skills/ledger.json'))).toBe(false)
   })
 
   it('refuses a Windows SSH host, which has no POSIX shell to install with', async () => {
