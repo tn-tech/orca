@@ -90,14 +90,19 @@ export const WORKFLOW_HANDLERS: Record<string, CommandHandler> = {
   },
   'workflows validate': async ({ flags, client, cwd, json }) => {
     const repo = resolveWorkflowRepoSelector(flags, cwd)
-    const read = await client.call<{ definition: unknown }>('workflow.read', {
-      repo,
-      name: getRequiredStringFlag(flags, 'name')
-    })
-    const result = await client.call<{ problems: WorkflowProblem[] }>('workflow.validate', {
-      repo,
-      definition: read.result.definition
-    })
+    const read = await client.call<{ definition: unknown; problems: WorkflowProblem[] }>(
+      'workflow.read',
+      { repo, name: getRequiredStringFlag(flags, 'name') }
+    )
+    // Why: an unparsed file has no definition to validate — workflow.validate refuses that
+    // combination with invalid_argument, so the read's own problems are the answer instead.
+    const result =
+      read.result.definition === undefined
+        ? { ...read, result: { problems: read.result.problems } }
+        : await client.call<{ problems: WorkflowProblem[] }>('workflow.validate', {
+            repo,
+            definition: read.result.definition
+          })
     printResult(result, json, formatWorkflowValidate)
     if (result.result.problems.some((problem) => problem.severity === 'error')) {
       process.exitCode = 1

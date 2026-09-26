@@ -137,6 +137,27 @@ describe('workflows CLI handlers', () => {
     expect(process.exitCode).toBe(1)
   })
 
+  it('prints the read problems and exits 1 when the file has no definition, without calling workflow.validate', async () => {
+    const readProblems = [
+      { code: 'workflow_file_version_unsupported', message: 'bad version', severity: 'error' }
+    ]
+    const call = vi
+      .fn()
+      .mockResolvedValueOnce(success({ definition: undefined, problems: readProblems }))
+
+    await WORKFLOW_HANDLERS['workflows validate']!(context(call, new Map([['name', 'release']])))
+
+    expect(call).toHaveBeenCalledTimes(1)
+    expect(call).toHaveBeenCalledWith('workflow.read', { repo: 'path:/repo', name: 'release' })
+    expect(call).not.toHaveBeenCalledWith('workflow.validate', expect.anything())
+    expect(printResult).toHaveBeenCalledWith(
+      expect.objectContaining({ result: { problems: readProblems } }),
+      false,
+      formatWorkflowValidate
+    )
+    expect(process.exitCode).toBe(1)
+  })
+
   it('starts a workflow run with an optional concurrency override', async () => {
     const call = vi.fn().mockResolvedValue(success({ runId: 'run-1' }))
 
