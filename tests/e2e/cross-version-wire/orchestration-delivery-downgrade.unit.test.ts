@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import { OrchestrationDb } from '../../../src/main/runtime/orchestration/db'
+import { SCHEMA_VERSION } from '../../../src/main/runtime/orchestration/db/contract-constants'
 import { importReleaseCheckoutModule, materializeReleaseCheckout } from './release-checkout'
 
 // Pin the last pre-v41 implementation: this contract specifically exercises status-only readers.
@@ -47,7 +48,9 @@ test('pre-v41 code opens, acknowledges and writes a v41 database, then current c
     db.close()
 
     db = new OldDb(path)
-    expect(db.db.pragma('user_version', { simple: true })).toBe(41)
+    // The pre-v41 reader must not touch the stamp current code wrote; it must reflect whatever
+    // SCHEMA_VERSION the current codebase is at, not the version current when this test was written.
+    expect(db.db.pragma('user_version', { simple: true })).toBe(SCHEMA_VERSION)
     // Old readers retain their original replay semantics, but can acknowledge either stored batch.
     db.acknowledgeRunDelivery({ ...params, deliveryId: oldBatch.delivery.id })
     expect(db.getOrCreateRunDelivery(params)?.delivery.id).toBe(currentBatch.delivery.id)
