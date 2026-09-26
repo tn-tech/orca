@@ -427,12 +427,15 @@ describe('workflow editor state: wrap selection in Loop (US2 AS5)', () => {
 
     state = dispatch(state, { type: 'wrap-in-loop', nodeIds: ['a', 'b'] })
 
-    const loop = state.definition.nodes.find((node) => node.type === 'loop')
+    const loop = state.definition.nodes.find((node): node is LoopNode => node.type === 'loop')
     expect(loop).toMatchObject({
       body: { nodeIds: ['a', 'b'] },
       entryNodeId: 'a',
       exitNodeId: 'b'
     })
+    if (!loop) {
+      throw new Error('expected a Loop node to exist after wrapping')
+    }
     expect(state.definition.edges).toContainEqual(
       expect.objectContaining({ from: 'start', to: loop?.id })
     )
@@ -448,6 +451,14 @@ describe('workflow editor state: wrap selection in Loop (US2 AS5)', () => {
     expect(problems).toContainEqual(
       expect.objectContaining({ code: 'graph_loop_missing_max_iterations', nodeId: loop?.id })
     )
+
+    // Setting the cap is enough for a fully clean result — every accepted wrap must be able to
+    // reach this state (review round 1).
+    state = dispatch(state, {
+      type: 'update-node',
+      node: { ...loop, maxIterations: 3 }
+    })
+    expect(validateWorkflowGraph(state.definition, permissiveContext)).toEqual([])
   })
 
   it('refuses to wrap a selection that includes a non-existent node', () => {
@@ -462,5 +473,105 @@ describe('workflow editor state: wrap selection in Loop (US2 AS5)', () => {
 
     expect(state.lastProblem?.code).toBe('workflow_editor_wrap_invalid_selection')
     expect(state.definition.nodes.some((node) => node.type === 'loop')).toBe(false)
+  })
+
+  it('refuses a fan-in selection (two distinct external entries) without mutating anything', () => {
+    // start -> a, start -> d, a -> c, d -> c: wrapping {a, d, c} would otherwise collapse both
+    // "start -> a" and "start -> d" onto "start -> loop", stranding "d" (review round 1, finding 1).
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+    state = dispatch(state, { type: 'add-node', node: startNode(), position: { x: 0, y: 0 } })
+    for (const id of ['a', 'd', 'c']) {
+      state = dispatch(state, {
+        type: 'add-node',
+        node: agentNode(id, { overrides: { agent: 'claude' } }),
+        position: { x: 0, y: 0 }
+      })
+    }
+    state = dispatch(state, { type: 'add-node', node: endNode(), position: { x: 0, y: 0 } })
+    state = dispatch(state, { type: 'connect', from: 'start', to: 'a' })
+    state = dispatch(state, { type: 'connect', from: 'start', to: 'd' })
+    state = dispatch(state, { type: 'connect', from: 'a', to: 'c' })
+    state = dispatch(state, { type: 'connect', from: 'd', to: 'c' })
+    state = dispatch(state, { type: 'connect', from: 'c', to: 'end' })
+    const definitionBeforeWrap = state.definition
+
+    state = dispatch(state, { type: 'wrap-in-loop', nodeIds: ['a', 'd', 'c'] })
+
+    expect(state.lastProblem?.code).toBe('workflow_editor_wrap_multiple_entries')
+    expect(state.definition).toBe(definitionBeforeWrap)
+    expect(state.definition.nodes.some((node) => node.type === 'loop')).toBe(false)
+  })
+
+  it('refuses an external edge into a non-entry selected node without rewriting it', () => {
+    // start -> a, a -> b, b -> end, plus z -> b: "z" looks like it feeds "b", but wrapping {a, b}
+    // would silently rewrite it to feed "a" instead once collapsed onto "start -> loop"
+    // (review round 1, finding 2) — refuse instead.
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+    state = dispatch(state, { type: 'add-node', node: startNode(), position: { x: 0, y: 0 } })
+    for (const id of ['a', 'b', 'z']) {
+      state = dispatch(state, {
+        type: 'add-node',
+        node: agentNode(id, { overrides: { agent: 'claude' } }),
+        position: { x: 0, y: 0 }
+      })
+    }
+    state = dispatch(state, { type: 'add-node', node: endNode(), position: { x: 0, y: 0 } })
+    state = dispatch(state, { type: 'connect', from: 'start', to: 'a' })
+    state = dispatch(state, { type: 'connect', from: 'a', to: 'b' })
+    state = dispatch(state, { type: 'connect', from: 'b', to: 'end' })
+    state = dispatch(state, { type: 'connect', from: 'z', to: 'b' })
+    const definitionBeforeWrap = state.definition
+
+    state = dispatch(state, { type: 'wrap-in-loop', nodeIds: ['a', 'b'] })
+
+    expect(state.lastProblem?.code).toBe('workflow_editor_wrap_multiple_entries')
+    expect(state.definition).toBe(definitionBeforeWrap)
+    expect(state.definition.edges).toContainEqual(expect.objectContaining({ from: 'z', to: 'b' }))
+  })
+
+  it('refuses a disconnected selection without mutating anything', () => {
+    // {a, b} and {x, y} are two unrelated pairs; wrapping all four at once has no single body.
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+    for (const id of ['a', 'b', 'x', 'y']) {
+      state = dispatch(state, {
+        type: 'add-node',
+        node: agentNode(id, { overrides: { agent: 'claude' } }),
+        position: { x: 0, y: 0 }
+      })
+    }
+    state = dispatch(state, { type: 'connect', from: 'a', to: 'b' })
+    state = dispatch(state, { type: 'connect', from: 'x', to: 'y' })
+    const definitionBeforeWrap = state.definition
+
+    state = dispatch(state, { type: 'wrap-in-loop', nodeIds: ['a', 'b', 'x', 'y'] })
+
+    expect(state.lastProblem?.code).toBe('workflow_editor_wrap_disconnected_selection')
+    expect(state.definition).toBe(definitionBeforeWrap)
+  })
+})
+
+describe('workflow editor state: dismiss-problem', () => {
+  it('clears the last refused command without touching anything else', () => {
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+    state = dispatch(state, {
+      type: 'add-node',
+      node: agentNode('a', { overrides: { agent: 'claude' } }),
+      position: { x: 0, y: 0 }
+    })
+    state = dispatch(state, { type: 'update-node', node: agentNode('missing') })
+    expect(state.lastProblem?.code).toBe('workflow_editor_node_not_found')
+
+    state = dispatch(state, { type: 'dismiss-problem' })
+
+    expect(state.lastProblem).toBeUndefined()
+    expect(state.definition.nodes.map((node) => node.id)).toEqual(['a'])
+  })
+
+  it('is a no-op when there is nothing to dismiss', () => {
+    const state = createInitialWorkflowEditorState(emptyWorkflow())
+
+    const next = dispatch(state, { type: 'dismiss-problem' })
+
+    expect(next).toBe(state)
   })
 })

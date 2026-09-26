@@ -17295,7 +17295,14 @@
           "workflow-loop-commands": {
             "invalidSelection": "Select at least one existing node to wrap in a Loop.",
             "unwrappableSelection": "Only Agent and Reflection nodes can be wrapped in a Loop.",
-            "loopTitle": "Loop"
+            "loopTitle": "Loop",
+            "disconnectedSelection": "The selected nodes must form a single connected group to wrap in a Loop.",
+            "multipleEntries": "These nodes have more than one incoming connection from outside the selection; a Loop can only have one entry point.",
+            "multipleExits": "These nodes have more than one outgoing connection to outside the selection; a Loop can only have one exit point."
+          },
+          "WorkflowEditorProblemNotice": {
+            "wrapInLoop": "Wrap in Loop",
+            "dismiss": "Dismiss"
           }
         },
         "run-view": {

@@ -62,7 +62,7 @@ function resolveAgentLabel(definition: Workflow, node: AgentNodeDefinition): str
 }
 
 /** Body-node id -> owning Loop id, so those nodes render as React Flow children (T078). */
-function loopParentMap(nodes: Workflow['nodes']): Map<string, string> {
+export function loopParentMap(nodes: Workflow['nodes']): Map<string, string> {
   const map = new Map<string, string>()
   for (const node of nodes) {
     if (node.type === 'loop') {
@@ -75,6 +75,28 @@ function loopParentMap(nodes: Workflow['nodes']): Map<string, string> {
 }
 
 /**
+ * React Flow reports a child node's position relative to its parent (`parentId`), but
+ * `definition.layout` is absolute canvas coordinates for every node alike (review round 1,
+ * finding 3: storing the relative value as-is corrupted the layout, double-offsetting the node
+ * on the next render and collapsing the Loop's computed container bounds). Converts a drag's
+ * reported position back to absolute before it reaches `onNodeDragStop`; a no-op for any node
+ * without a Loop parent.
+ */
+export function toAbsoluteNodePosition(
+  layout: Workflow['layout'],
+  parentOf: ReadonlyMap<string, string>,
+  nodeId: string,
+  reportedPosition: { x: number; y: number }
+): { x: number; y: number } {
+  const parentId = parentOf.get(nodeId)
+  if (!parentId) {
+    return reportedPosition
+  }
+  const parentPosition = layout[parentId] ?? { x: 0, y: 0 }
+  return { x: reportedPosition.x + parentPosition.x, y: reportedPosition.y + parentPosition.y }
+}
+
+/**
  * Renders every non-body node first, then Loop body nodes as React Flow children (`parentId`,
  * position relative to the Loop, `extent: 'parent'`) — parents must precede their children in
  * the node array regardless of `definition.nodes`' own order.
@@ -83,9 +105,9 @@ function toFlowNodes(
   definition: Workflow,
   nodeStatuses: WorkflowCanvasNodeStatuses | undefined,
   nodeIterations: WorkflowCanvasNodeIterations | undefined,
-  selectedNodeId: string | undefined
+  selectedNodeId: string | undefined,
+  parentOf: ReadonlyMap<string, string>
 ): WorkflowFlowNode[] {
-  const parentOf = loopParentMap(definition.nodes)
   const [ownNodes, bodyNodes] = [
     definition.nodes.filter((node) => !parentOf.has(node.id)),
     definition.nodes.filter((node) => parentOf.has(node.id))
@@ -183,9 +205,10 @@ export default function WorkflowCanvas({
   onNodeDragStop,
   onConnect
 }: WorkflowCanvasProps): React.JSX.Element {
+  const parentOf = useMemo(() => loopParentMap(definition.nodes), [definition.nodes])
   const nodes = useMemo(
-    () => toFlowNodes(definition, nodeStatuses, nodeIterations, selectedNodeId),
-    [definition, nodeStatuses, nodeIterations, selectedNodeId]
+    () => toFlowNodes(definition, nodeStatuses, nodeIterations, selectedNodeId, parentOf),
+    [definition, nodeStatuses, nodeIterations, selectedNodeId, parentOf]
   )
   const edges = useMemo(() => toFlowEdges(definition, selectedEdgeId), [definition, selectedEdgeId])
 
@@ -196,11 +219,14 @@ export default function WorkflowCanvas({
       }
       for (const change of changes) {
         if (change.type === 'position' && change.dragging === false && change.position) {
-          onNodeDragStop(change.id, change.position)
+          onNodeDragStop(
+            change.id,
+            toAbsoluteNodePosition(definition.layout, parentOf, change.id, change.position)
+          )
         }
       }
     },
-    [onNodeDragStop]
+    [definition.layout, onNodeDragStop, parentOf]
   )
 
   const handleConnect: OnConnect = useCallback(

@@ -53,6 +53,8 @@ export type WorkflowEditorAction =
   /** A write to disk just succeeded for the current definition; clears dirty without touching
    *  history/revision so undo and the "unsaved changes" state stay independently correct. */
   | { type: 'mark-saved' }
+  /** The user closed the last-refused-command notice (US2 AS5) without acting on it. */
+  | { type: 'dismiss-problem' }
 
 export function createInitialWorkflowEditorState(definition: Workflow): WorkflowEditorState {
   return { definition, manualPositionIds: new Set(), history: [], dirty: false, revision: 0 }
@@ -219,6 +221,9 @@ export function workflowEditorReducer(
 
     case 'mark-saved':
       return state.dirty ? { ...state, dirty: false } : state
+
+    case 'dismiss-problem':
+      return state.lastProblem ? { ...state, lastProblem: undefined } : state
   }
 }
 

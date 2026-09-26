@@ -5,6 +5,7 @@ import { translate } from '@/i18n/i18n'
 import { useAppStore } from '@/store'
 import NodeInspector from './editor/NodeInspector'
 import ValidationProblemsPanel from './editor/ValidationProblemsPanel'
+import WorkflowEditorProblemNotice from './editor/WorkflowEditorProblemNotice'
 import { hasBlockingWorkflowProblems } from './editor/workflow-validation-merge'
 import FileConflictDialog from './editor/FileConflictDialog'
 import WorkflowListPane from './WorkflowListPane'
@@ -103,6 +104,13 @@ export default function WorkflowsPage(): React.JSX.Element {
                   onRelayout={() => session.editor.dispatch({ type: 'auto-layout' })}
                 />
               </div>
+              <WorkflowEditorProblemNotice
+                problem={session.editor.state.lastProblem}
+                onWrapInLoop={(nodeIds) =>
+                  session.editor.dispatch({ type: 'wrap-in-loop', nodeIds })
+                }
+                onDismiss={() => session.editor.dispatch({ type: 'dismiss-problem' })}
+              />
               <div className="flex min-h-0 flex-1">
                 <div className="min-w-0 flex-1">
                   <RunCanvasOverlay
