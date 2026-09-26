@@ -13,7 +13,7 @@ const RoleOriginSchema = z
   })
   .strict()
 
-const RoleFileSchema = z
+export const RoleFileSchema = z
   .object({
     name: z.string().min(1),
     agent: z.string().min(1),

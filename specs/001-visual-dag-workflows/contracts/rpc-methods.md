@@ -16,7 +16,7 @@ Host capability: `workflow.engine.v1` (`WORKFLOW_ENGINE_RUNTIME_CAPABILITY`).
 | `workflow.validate` | `{ repo, definition }` | `{ problems: Problem[] }` |
 | `workflow.delete` | `{ repo, name, source? }` | `{}` |
 | `workflow.duplicate` | `{ repo, name, source?, newName }` | `{ name, revision }` (error `workflow_name_taken`) |
-| `workflow.importRole` | `{ repo, source, roleName, version? }` | `{ role }` (error `workflow_source_not_allowed`) |
+| `workflow.importRole` | `{ repo, source, roleName, version?, workflow?, workflowSource?, expectedRevision? }` | `{ role, revision? }` (error `workflow_source_not_allowed`); reads `roles/<roleName>.role.yaml` at the cloned source; with `workflow`, copies the role into that file and returns its new revision |
 | `workflow.draft` (P3) | `{ repo, objective }` | `{ definition, problems }` |
 
 `Problem = { code, message, nodeId?, edgeId?, roleId?, severity: 'error'|'warning' }`.

@@ -23,6 +23,7 @@ import { getRepoWorkflowSourceAllowlist } from '../../../workflows/workflow-sour
 import { agentSupportsModel, isKnownAgent } from './workflow-agent-catalog-support'
 import { disallowedSourceProblems, throwSourceNotAllowedError } from './workflow-allowlist-refusal'
 import { serializeWorkflowFile } from './workflow-file-serialization'
+import { importRoleIntoRepo } from './workflow-role-import-method'
 import {
   readNamedWorkflow,
   resolveWorkflowSource,
@@ -182,7 +183,10 @@ export const WORKFLOW_DEFINITION_METHODS = [
   defineMethod({
     name: 'workflow.importRole',
     params: WorkflowImportRole,
-    handler: notImplemented
+    handler: async (params, { runtime }) => {
+      const repo = await runtime.showRepo(params.repo)
+      return importRoleIntoRepo(repo, params)
+    }
   }),
   defineMethod({ name: 'workflow.draft', params: WorkflowDraft, handler: notImplemented })
 ]

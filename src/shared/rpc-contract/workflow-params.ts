@@ -61,7 +61,12 @@ export const WorkflowImportRole = z
     repo: requiredString('Missing repo selector'),
     source: requiredString('Missing role source'),
     roleName: requiredString('Missing role name'),
-    version: OptionalString
+    version: OptionalString,
+    // Optional target: when named, the role is copied into that workflow file and the result
+    // carries its new revision; otherwise only the imported role is returned.
+    workflow: OptionalString,
+    workflowSource: WorkflowSource.optional(),
+    expectedRevision: OptionalString
   })
   .strict()
 

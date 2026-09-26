@@ -36,3 +36,14 @@ export function throwSourceNotAllowedError(
     { problems, allowlistPath }
   )
 }
+
+/** FR-015a refusal for `workflow.importRole`: names the refused source and the allowlist file. */
+export function throwRoleSourceNotAllowedError(repo: Repo, source: string): never {
+  const allowlistPath = joinWorktreeRelativePath(repo.path, 'orca.yaml')
+  throw new OrchestrationError(
+    WORKFLOW_SOURCE_NOT_ALLOWED_CODE,
+    `Role import refused: "${source}" is not on the project allowlist. ` +
+      `Add it to workflows.allowedSources in ${allowlistPath}.`,
+    { source, allowlistPath }
+  )
+}
