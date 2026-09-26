@@ -9,7 +9,9 @@ const RoleOriginSchema = z
     source: z.string().min(1),
     version: z.string().min(1),
     importedAt: z.string().min(1),
-    localModified: z.boolean()
+    localModified: z.boolean(),
+    // Hash of the role content as imported; absent on roles imported before it existed.
+    contentHash: z.string().min(1).optional()
   })
   .strict()
 

@@ -16,13 +16,11 @@ import {
   deleteWorkflow,
   listWorkflows,
   readWorkflow,
-  resolveWorkflowFilePath,
-  writeWorkflow
+  resolveWorkflowFilePath
 } from '../../../workflows/workflow-file-store'
 import { getRepoWorkflowSourceAllowlist } from '../../../workflows/workflow-source-allowlist'
 import { agentSupportsModel, isKnownAgent } from './workflow-agent-catalog-support'
-import { disallowedSourceProblems, throwSourceNotAllowedError } from './workflow-allowlist-refusal'
-import { serializeWorkflowFile } from './workflow-file-serialization'
+import { saveWorkflowDefinition } from './workflow-definition-save'
 import { importRoleIntoRepo } from './workflow-role-import-method'
 import {
   readNamedWorkflow,
@@ -96,26 +94,13 @@ export const WORKFLOW_DEFINITION_METHODS = [
     handler: async (params, { runtime }) => {
       const definition = requireDefinition(params.definition, 'workflow.write')
       const repo = await runtime.showRepo(params.repo)
-      const source = params.source ?? 'project'
-      const allowlistedSources = await getRepoWorkflowSourceAllowlist(repo)
-      const problems = validateWorkflowGraph(definition, {
-        agentSupportsModel,
-        isKnownAgent,
-        allowlistedSources
-      })
-      // FR-015a: a non-allowlisted repository skill/role source refuses the save outright rather
-      // than landing on disk as a reported "invalid" problem.
-      if (disallowedSourceProblems(problems).length > 0) {
-        throwSourceNotAllowedError(repo, definition, problems)
-      }
-      const raw = serializeWorkflowFile(definition)
-      const result = await writeWorkflow(
+      const result = await saveWorkflowDefinition({
         repo,
-        source,
-        params.name,
-        raw,
-        params.expectedRevision ?? null
-      )
+        source: params.source ?? 'project',
+        name: params.name,
+        definition,
+        expectedRevision: params.expectedRevision ?? null
+      })
       return { revision: result.revision }
     }
   }),
@@ -159,18 +144,14 @@ export const WORKFLOW_DEFINITION_METHODS = [
       const newName = params.newName ?? ''
       // The copy's file stem is newName; its declared name must match, or the two would disagree.
       const renamed: Workflow = { ...original.definition, name: newName }
-      const allowlistedSources = await getRepoWorkflowSourceAllowlist(repo)
-      const problems = validateWorkflowGraph(renamed, {
-        agentSupportsModel,
-        isKnownAgent,
-        allowlistedSources
-      })
-      if (disallowedSourceProblems(problems).length > 0) {
-        throwSourceNotAllowedError(repo, renamed, problems)
-      }
-      const raw = serializeWorkflowFile(renamed)
       try {
-        const result = await writeWorkflow(repo, source, newName, raw, null)
+        const result = await saveWorkflowDefinition({
+          repo,
+          source,
+          name: newName,
+          definition: renamed,
+          expectedRevision: null
+        })
         return { name: newName, revision: result.revision }
       } catch (error) {
         if (error instanceof Error && error.message === 'workflow_file_conflict') {

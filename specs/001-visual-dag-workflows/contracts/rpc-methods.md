@@ -16,7 +16,7 @@ Host capability: `workflow.engine.v1` (`WORKFLOW_ENGINE_RUNTIME_CAPABILITY`).
 | `workflow.validate` | `{ repo, definition }` | `{ problems: Problem[] }` |
 | `workflow.delete` | `{ repo, name, source? }` | `{}` |
 | `workflow.duplicate` | `{ repo, name, source?, newName }` | `{ name, revision }` (error `workflow_name_taken`) |
-| `workflow.importRole` | `{ repo, source, roleName, version?, workflow?, workflowSource?, expectedRevision? }` | `{ role, revision? }` (error `workflow_source_not_allowed`); reads `roles/<roleName>.role.yaml` at the cloned source; with `workflow`, copies the role into that file and returns its new revision |
+| `workflow.importRole` | `{ repo, source, roleName, version?, overwriteLocal?, workflow?, workflowSource?, expectedRevision? }` | `{ role, revision?, availableVersion? }` (errors `workflow_source_not_allowed`, `workflow_role_not_found`, `workflow_role_invalid`, `workflow_role_version_not_found`, `workflow_role_version_unsupported`); reads `roles/<roleName>.role.yaml` from the source cloned on the execution host. `version` is a branch or tag name (not supported for SSH repositories, whose relay only allows a plain clone). With `workflow`, copies the role into that file and returns its new revision. A local copy whose content no longer matches `origin.contentHash` (or has no hash) is kept and flagged `localModified` with its old origin, and `availableVersion` names the upstream commit not applied; `overwriteLocal: true` takes upstream instead |
 | `workflow.draft` (P3) | `{ repo, objective }` | `{ definition, problems }` |
 
 `Problem = { code, message, nodeId?, edgeId?, roleId?, severity: 'error'|'warning' }`.

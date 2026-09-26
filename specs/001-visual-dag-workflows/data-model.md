@@ -29,8 +29,12 @@ Role
   effort?: string
   systemPrompt: string
   skills: SkillReference[]
-  origin?: { source: string; version: string; importedAt: ISO date; localModified: boolean }
+  origin?: { source: string; version: string; importedAt: ISO date; localModified: boolean;
+             contentHash?: string }
 ```
+`origin.version` is the commit the role was read at. `contentHash` is a stable sha256 of the role
+content as imported; a role whose content no longer hashes to it (or that has no hash) counts as
+locally modified, and re-import keeps it unless `overwriteLocal` is set.
 
 ### SkillReference
 ```

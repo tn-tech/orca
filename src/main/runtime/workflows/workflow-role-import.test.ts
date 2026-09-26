@@ -1,85 +1,28 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { Role, Workflow } from '../../../shared/workflows/workflow-definition-types'
+import type { Role } from '../../../shared/workflows/workflow-definition-types'
 import { gitExecFileAsync } from '../../git/runner'
 import { localRoleFetchHost, type RoleFetchHost } from './workflow-role-fetch-host'
+import { fetchRoleForImport, RoleSourceNotAllowedError } from './workflow-role-import'
+import { roleContentHash, withImportedRole } from './workflow-role-import-merge'
 import {
-  fetchRoleForImport,
-  RoleSourceNotAllowedError,
-  withImportedRole
-} from './workflow-role-import'
+  fakeRoleFetchHost,
+  IMPORT_NOW,
+  ROLE_SOURCE,
+  roleYaml,
+  SHA_1,
+  SHA_2,
+  workflowWithRoles
+} from './workflow-role-import-test-fixtures'
 
-const SOURCE = 'https://github.com/acme/roles'
-const SHA_1 = 'a'.repeat(40)
-const SHA_2 = 'b'.repeat(40)
-const NOW = new Date('2026-09-27T10:00:00.000Z')
-
-function roleYaml(systemPrompt: string, skillLocation = SOURCE): string {
-  return [
-    'name: Engagement Manager',
-    'agent: claude',
-    'model: opus',
-    `systemPrompt: ${JSON.stringify(systemPrompt)}`,
-    'skills:',
-    '  - name: deck-review',
-    '    source: { kind: plugin, plugin: consulting }',
-    '  - name: model-check',
-    `    source: { kind: repository, location: "${skillLocation}" }`
-  ].join('\n')
+function deps(host: RoleFetchHost, allowlist: string[] = [ROLE_SOURCE]) {
+  return { getHost: () => host, allowlist, now: IMPORT_NOW }
 }
 
-function workflowWithRoles(roles: Workflow['roles'] = {}): Workflow {
-  return {
-    version: 1,
-    name: 'demo',
-    workspacePolicy: 'run-workspace',
-    roles,
-    nodes: [
-      { id: 'start', type: 'start', title: 'Start' },
-      { id: 'end', type: 'end', title: 'End' }
-    ],
-    edges: [{ id: 'e1', from: 'start', to: 'end' }],
-    layout: {}
-  }
-}
-
-/** Serves `files` as the upstream repository at `sha`; records every git call and temp dir. */
-function fakeHost(
-  root: string,
-  upstream: { files: Record<string, string>; sha: string }
-): RoleFetchHost & { gitCalls: string[][]; tempDirs: string[] } {
-  const gitCalls: string[][] = []
-  const tempDirs: string[] = []
-  return {
-    gitCalls,
-    tempDirs,
-    joinPath: (dir, relative) => join(dir, ...relative.split('/')),
-    async createTempDir() {
-      const dir = await mkdtemp(join(root, 'import-'))
-      tempDirs.push(dir)
-      return dir
-    },
-    async runGit(args, cwd) {
-      gitCalls.push(args)
-      if (args[0] === 'clone') {
-        const destination = join(cwd, args.at(-1) ?? '')
-        for (const [relative, content] of Object.entries(upstream.files)) {
-          await mkdir(join(destination, relative, '..'), { recursive: true })
-          await writeFile(join(destination, relative), content)
-        }
-        return ''
-      }
-      return `${upstream.sha}\n`
-    },
-    readFile: (path) => readFile(path, 'utf-8'),
-    removeDir: (path) => rm(path, { recursive: true, force: true })
-  }
-}
-
-describe('workflow role import', () => {
+describe('workflow role import: fetch', () => {
   let root: string
 
   beforeEach(async () => {
@@ -90,195 +33,160 @@ describe('workflow role import', () => {
     await rm(root, { recursive: true, force: true })
   })
 
-  async function importInto(
-    definition: Workflow,
-    upstream: { files: Record<string, string>; sha: string },
-    request: { version?: string } = {}
-  ): Promise<ReturnType<typeof withImportedRole> & { host: ReturnType<typeof fakeHost> }> {
-    const host = fakeHost(root, upstream)
-    const fetched = await fetchRoleForImport(
-      { source: SOURCE, roleName: 'manager', ...request },
-      { host, allowlist: [SOURCE], now: NOW }
-    )
-    return { ...withImportedRole(definition, fetched), host }
-  }
-
   it('copies the role into the definition with its origin and cleans up the checkout', async () => {
-    const { definition, role, host } = await importInto(workflowWithRoles(), {
+    const host = fakeRoleFetchHost(root, {
       files: { 'roles/manager.role.yaml': roleYaml('Run the engagement.') },
       sha: SHA_1
     })
+    const fetched = await fetchRoleForImport(
+      { source: ROLE_SOURCE, roleName: 'manager' },
+      deps(host)
+    )
+    const { definition, role } = withImportedRole(workflowWithRoles(), fetched)
 
-    const expected: Role = {
-      id: 'manager',
+    const content = {
       name: 'Engagement Manager',
       agent: 'claude',
       model: 'opus',
       systemPrompt: 'Run the engagement.',
       skills: [
-        { name: 'deck-review', source: { kind: 'plugin', plugin: 'consulting' }, required: true },
-        { name: 'model-check', source: { kind: 'repository', location: SOURCE }, required: true }
-      ],
+        {
+          name: 'deck-review',
+          source: { kind: 'plugin' as const, plugin: 'consulting' },
+          required: true
+        },
+        {
+          name: 'model-check',
+          source: { kind: 'repository' as const, location: ROLE_SOURCE },
+          required: true
+        }
+      ]
+    }
+    const expected: Role = {
+      id: 'manager',
+      ...content,
       origin: {
-        source: SOURCE,
+        source: ROLE_SOURCE,
         version: SHA_1,
-        importedAt: NOW.toISOString(),
-        localModified: false
+        importedAt: IMPORT_NOW.toISOString(),
+        localModified: false,
+        contentHash: roleContentHash(content)
       }
     }
     expect(role).toEqual(expected)
     expect(definition.roles.manager).toEqual(expected)
-    expect(host.gitCalls[0]).toEqual(['clone', '--quiet', '--depth', '1', '--', SOURCE, 'repo'])
+    expect(host.cloneCalls).toEqual([{ source: ROLE_SOURCE, version: undefined }])
+    expect(host.gitCalls).toEqual([['rev-parse', 'HEAD']])
     expect(await readdir(root)).toEqual([])
   })
 
-  it('clones the requested version and records the resolved commit', async () => {
-    const { role, host } = await importInto(
-      workflowWithRoles(),
-      { files: { 'roles/manager.role.yaml': roleYaml('v2') }, sha: SHA_2 },
-      { version: 'v2.0' }
+  it('clones the matching allowlist entry and passes the requested version through', async () => {
+    const host = fakeRoleFetchHost(root, {
+      files: { 'roles/manager.role.yaml': roleYaml('v2') },
+      sha: SHA_2
+    })
+    const fetched = await fetchRoleForImport(
+      { source: `${ROLE_SOURCE}.git/`, roleName: 'manager', version: 'v2.0' },
+      deps(host)
     )
-    expect(host.gitCalls[0]).toEqual([
-      'clone',
-      '--quiet',
-      '--depth',
-      '1',
-      '--branch',
-      'v2.0',
-      '--',
-      SOURCE,
-      'repo'
-    ])
-    expect(role.origin?.version).toBe(SHA_2)
+    expect(host.cloneCalls).toEqual([{ source: ROLE_SOURCE, version: 'v2.0' }])
+    expect(fetched).toMatchObject({ source: ROLE_SOURCE, version: SHA_2 })
   })
 
-  it('re-import updates an unmodified role to the new upstream version', async () => {
-    const first = await importInto(workflowWithRoles(), {
-      files: { 'roles/manager.role.yaml': roleYaml('Old prompt.') },
-      sha: SHA_1
-    })
-    const second = await importInto(first.definition, {
-      files: { 'roles/manager.role.yaml': roleYaml('New prompt.') },
-      sha: SHA_2
-    })
-    expect(second.role.systemPrompt).toBe('New prompt.')
-    expect(second.role.origin).toMatchObject({ version: SHA_2, localModified: false })
-  })
-
-  it('re-import keeps a locally edited role and flags localModified when it differs', async () => {
-    const first = await importInto(workflowWithRoles(), {
-      files: { 'roles/manager.role.yaml': roleYaml('Upstream prompt.') },
-      sha: SHA_1
-    })
-    const edited = workflowWithRoles({
-      manager: { ...first.role, systemPrompt: 'My local prompt.' }
-    })
-
-    // Same upstream commit: the difference can only be a local edit.
-    const second = await importInto(edited, {
-      files: { 'roles/manager.role.yaml': roleYaml('Upstream prompt.') },
-      sha: SHA_1
-    })
-    expect(second.role.systemPrompt).toBe('My local prompt.')
-    expect(second.role.origin).toMatchObject({ version: SHA_1, localModified: true })
-
-    // Upstream moved on: the local edit is still kept and still flagged, against the new version.
-    const third = await importInto(second.definition, {
-      files: { 'roles/manager.role.yaml': roleYaml('Upstream v2.') },
-      sha: SHA_2
-    })
-    expect(third.role.systemPrompt).toBe('My local prompt.')
-    expect(third.role.origin).toMatchObject({ version: SHA_2, localModified: true })
-  })
-
-  it('re-import clears localModified once the local copy matches upstream again', async () => {
-    const first = await importInto(workflowWithRoles(), {
-      files: { 'roles/manager.role.yaml': roleYaml('Same.') },
-      sha: SHA_1
-    })
-    const flagged = workflowWithRoles({
-      manager: { ...first.role, origin: { ...first.role.origin!, localModified: true } }
-    })
-    const second = await importInto(flagged, {
-      files: { 'roles/manager.role.yaml': roleYaml('Same.') },
-      sha: SHA_1
-    })
-    expect(second.role.origin?.localModified).toBe(false)
-  })
-
-  it('refuses a non-allowlisted role source before fetching anything', async () => {
-    const host = fakeHost(root, { files: {}, sha: SHA_1 })
+  it('refuses a non-allowlisted role source before resolving the host', async () => {
+    let resolved = false
     const attempt = fetchRoleForImport(
       { source: 'https://github.com/evil/roles', roleName: 'manager' },
-      { host, allowlist: [SOURCE], now: NOW }
+      {
+        getHost: () => {
+          resolved = true
+          throw new Error('host unavailable')
+        },
+        allowlist: [ROLE_SOURCE],
+        now: IMPORT_NOW
+      }
     )
     await expect(attempt).rejects.toBeInstanceOf(RoleSourceNotAllowedError)
     await expect(attempt).rejects.toMatchObject({ source: 'https://github.com/evil/roles' })
-    expect(host.gitCalls).toEqual([])
+    expect(resolved).toBe(false)
   })
 
   it('refuses a role whose repository skill source is not allowlisted', async () => {
-    const host = fakeHost(root, {
+    const host = fakeRoleFetchHost(root, {
       files: { 'roles/manager.role.yaml': roleYaml('x', 'https://github.com/evil/skills') },
       sha: SHA_1
     })
-    const attempt = fetchRoleForImport(
-      { source: SOURCE, roleName: 'manager' },
-      { host, allowlist: [SOURCE], now: NOW }
-    )
-    await expect(attempt).rejects.toMatchObject({ source: 'https://github.com/evil/skills' })
+    await expect(
+      fetchRoleForImport({ source: ROLE_SOURCE, roleName: 'manager' }, deps(host))
+    ).rejects.toMatchObject({ source: 'https://github.com/evil/skills' })
     expect(await readdir(root)).toEqual([])
   })
 
   it('rejects role names that could escape the roles directory', async () => {
-    const host = fakeHost(root, { files: {}, sha: SHA_1 })
+    const host = fakeRoleFetchHost(root, { files: {}, sha: SHA_1 })
     for (const roleName of ['../secret', 'a/b', 'a\\b', '.hidden', '-x']) {
       await expect(
-        fetchRoleForImport({ source: SOURCE, roleName }, { host, allowlist: [SOURCE], now: NOW })
+        fetchRoleForImport({ source: ROLE_SOURCE, roleName }, deps(host))
       ).rejects.toThrow('workflow_role_name_invalid')
     }
-    expect(host.gitCalls).toEqual([])
+    expect(host.cloneCalls).toEqual([])
   })
 
   it('reports a missing role file and an invalid one distinctly', async () => {
-    const missing = fakeHost(root, { files: {}, sha: SHA_1 })
+    const missing = fakeRoleFetchHost(root, { files: {}, sha: SHA_1 })
     await expect(
-      fetchRoleForImport(
-        { source: SOURCE, roleName: 'manager' },
-        { host: missing, allowlist: [SOURCE], now: NOW }
-      )
+      fetchRoleForImport({ source: ROLE_SOURCE, roleName: 'manager' }, deps(missing))
     ).rejects.toThrow('workflow_role_not_found')
 
-    const invalid = fakeHost(root, {
+    const invalid = fakeRoleFetchHost(root, {
       files: { 'roles/manager.role.yaml': 'name: Only a name\n' },
       sha: SHA_1
     })
     await expect(
-      fetchRoleForImport(
-        { source: SOURCE, roleName: 'manager' },
-        { host: invalid, allowlist: [SOURCE], now: NOW }
-      )
+      fetchRoleForImport({ source: ROLE_SOURCE, roleName: 'manager' }, deps(invalid))
     ).rejects.toMatchObject({ code: 'workflow_role_invalid' })
     expect(await readdir(root)).toEqual([])
   })
 
-  it('fetches from a real git repository with the local host', async () => {
-    const upstreamDir = join(root, 'upstream')
-    await mkdir(join(upstreamDir, 'roles'), { recursive: true })
-    await writeFile(join(upstreamDir, 'roles', 'manager.role.yaml'), roleYaml('Real.', 'unused'))
-    const git = (args: string[]): Promise<{ stdout: string }> =>
-      gitExecFileAsync(args, { cwd: upstreamDir })
-    await git(['init', '--quiet'])
-    await git(['add', '.'])
-    await git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'roles'])
-    const sha = (await git(['rev-parse', 'HEAD'])).stdout.trim()
-    const source = pathToFileURL(upstreamDir).href
+  describe('with a real git repository and the local host', () => {
+    let source: string
+    let sha: string
 
-    const fetched = await fetchRoleForImport(
-      { source, roleName: 'manager' },
-      { host: localRoleFetchHost, allowlist: [source, 'unused'], now: NOW }
-    )
-    expect(fetched.content.systemPrompt).toBe('Real.')
-    expect(fetched.version).toBe(sha)
+    beforeEach(async () => {
+      const upstreamDir = join(root, 'upstream')
+      await mkdir(join(upstreamDir, 'roles'), { recursive: true })
+      await writeFile(join(upstreamDir, 'roles', 'manager.role.yaml'), roleYaml('Real.', 'unused'))
+      const git = (args: string[]): Promise<{ stdout: string }> =>
+        gitExecFileAsync(args, { cwd: upstreamDir })
+      await git(['init', '--quiet'])
+      await git(['add', '.'])
+      await git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'roles'])
+      await git(['tag', 'v1'])
+      sha = (await git(['rev-parse', 'HEAD'])).stdout.trim()
+      source = pathToFileURL(upstreamDir).href
+    })
+
+    it('fetches the default branch and a named tag', async () => {
+      for (const version of [undefined, 'v1']) {
+        const fetched = await fetchRoleForImport(
+          { source, roleName: 'manager', version },
+          deps(localRoleFetchHost, [source, 'unused'])
+        )
+        expect(fetched.content.systemPrompt).toBe('Real.')
+        expect(fetched.version).toBe(sha)
+      }
+    })
+
+    it('maps an unknown version to a clear error', async () => {
+      await expect(
+        fetchRoleForImport(
+          { source, roleName: 'manager', version: 'no-such-tag' },
+          deps(localRoleFetchHost, [source, 'unused'])
+        )
+      ).rejects.toMatchObject({
+        code: 'workflow_role_version_not_found',
+        message: expect.stringContaining('"no-such-tag" is not a branch or tag')
+      })
+    })
   })
 })

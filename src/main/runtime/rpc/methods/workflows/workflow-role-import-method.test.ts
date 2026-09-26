@@ -28,11 +28,14 @@ describe('workflow.importRole', () => {
   let root: string
   let repo: Repo
   let roleSource: string
+  let upstreamGit: (args: string[]) => Promise<unknown>
+  let upstreamDir: string
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'orca-import-role-rpc-'))
     const repoPath = join(root, 'project')
     const upstream = join(root, 'roles-repo')
+    upstreamDir = upstream
     await mkdir(repoPath)
     await mkdir(join(upstream, 'roles'), { recursive: true })
     await writeFile(join(upstream, 'roles', 'reviewer.role.yaml'), ROLE_YAML)
@@ -40,6 +43,7 @@ describe('workflow.importRole', () => {
     await git(['init', '--quiet'])
     await git(['add', '.'])
     await git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'roles'])
+    upstreamGit = git
     roleSource = pathToFileURL(upstream).href
     repo = { id: 'repo-1', path: repoPath, displayName: 'Repo', badgeColor: '#000', addedAt: 0 }
   })
@@ -55,6 +59,30 @@ describe('workflow.importRole', () => {
       showRepo: vi.fn().mockResolvedValue(repo)
     } as unknown as OrcaRuntimeService
     return new RpcDispatcher({ runtime, methods: WORKFLOW_DEFINITION_METHODS })
+  }
+
+  async function writeDemo(d: RpcDispatcher, roles: Record<string, unknown>): Promise<void> {
+    const existing = await readWorkflow(repo, 'project', 'demo').catch(() => undefined)
+    const response = await d.dispatch(
+      makeRequest('workflow.write', {
+        repo: 'path:unused',
+        name: 'demo',
+        ...(existing ? { expectedRevision: existing.revision } : {}),
+        definition: {
+          version: 1,
+          name: 'demo',
+          workspacePolicy: 'run-workspace',
+          roles,
+          nodes: [
+            { id: 'start', type: 'start', title: 'Start' },
+            { id: 'end', type: 'end', title: 'End' }
+          ],
+          edges: [{ id: 'e1', from: 'start', to: 'end' }],
+          layout: {}
+        }
+      })
+    )
+    expect(response.ok).toBe(true)
   }
 
   async function allowlist(sources: string[]): Promise<void> {
@@ -105,24 +133,7 @@ describe('workflow.importRole', () => {
   it('copies the role into the named workflow file and bumps its revision', async () => {
     await allowlist([roleSource])
     const d = dispatcher()
-    await d.dispatch(
-      makeRequest('workflow.write', {
-        repo: 'path:unused',
-        name: 'demo',
-        definition: {
-          version: 1,
-          name: 'demo',
-          workspacePolicy: 'run-workspace',
-          roles: {},
-          nodes: [
-            { id: 'start', type: 'start', title: 'Start' },
-            { id: 'end', type: 'end', title: 'End' }
-          ],
-          edges: [{ id: 'e1', from: 'start', to: 'end' }],
-          layout: {}
-        }
-      })
-    )
+    await writeDemo(d, {})
     const before = (await readWorkflow(repo, 'project', 'demo')).revision
 
     const response = await d.dispatch(
@@ -141,5 +152,47 @@ describe('workflow.importRole', () => {
       systemPrompt: 'Review the model.',
       origin: { source: roleSource, localModified: false }
     })
+  })
+
+  it('keeps an edited role on re-import, reports the upstream commit, and overwrites on request', async () => {
+    await allowlist([roleSource])
+    const d = dispatcher()
+    await writeDemo(d, {})
+    const importRole = (extra: Record<string, unknown> = {}) =>
+      d.dispatch(
+        makeRequest('workflow.importRole', {
+          repo: 'path:unused',
+          source: roleSource,
+          roleName: 'reviewer',
+          workflow: 'demo',
+          ...extra
+        })
+      )
+    await importRole()
+    const first = (await readWorkflow(repo, 'project', 'demo')).definition?.roles.reviewer
+    await writeDemo(d, { reviewer: { ...first, systemPrompt: 'My local prompt.' } })
+
+    await writeFile(
+      join(upstreamDir, 'roles', 'reviewer.role.yaml'),
+      ROLE_YAML.replace('Review the model.', 'Review v2.')
+    )
+    await upstreamGit(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qam', 'v2'])
+
+    const kept = await importRole()
+    const keptRole = (await readWorkflow(repo, 'project', 'demo')).definition?.roles.reviewer
+    expect(kept).toMatchObject({ ok: true, result: { availableVersion: expect.any(String) } })
+    expect(keptRole).toMatchObject({
+      systemPrompt: 'My local prompt.',
+      origin: { version: first?.origin?.version, localModified: true }
+    })
+
+    const overwritten = await importRole({ overwriteLocal: true })
+    expect(overwritten.ok && overwritten.result).not.toHaveProperty('availableVersion')
+    const overwrittenRole = (await readWorkflow(repo, 'project', 'demo')).definition?.roles.reviewer
+    expect(overwrittenRole).toMatchObject({
+      systemPrompt: 'Review v2.',
+      origin: { localModified: false }
+    })
+    expect(overwrittenRole?.origin?.version).not.toBe(first?.origin?.version)
   })
 })

@@ -12,10 +12,18 @@ export function normalizeWorkflowSourceUrl(source: string): string {
     .replace(/\/+$/, '')
 }
 
+/** The allowlist entry `source` exact-matches after normalisation, if any. */
+export function findAllowedWorkflowSource(
+  source: string,
+  allowlist: readonly string[]
+): string | undefined {
+  const normalized = normalizeWorkflowSourceUrl(source)
+  return allowlist.find((entry) => normalizeWorkflowSourceUrl(entry) === normalized)
+}
+
 /** True when `source` exact-matches (after normalisation) an allowlist entry. */
 export function isWorkflowSourceAllowed(source: string, allowlist: readonly string[]): boolean {
-  const normalized = normalizeWorkflowSourceUrl(source)
-  return allowlist.some((entry) => normalizeWorkflowSourceUrl(entry) === normalized)
+  return findAllowedWorkflowSource(source, allowlist) !== undefined
 }
 
 /**
