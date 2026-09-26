@@ -16,13 +16,19 @@ import {
 
 const MAX_HISTORY_ENTRIES = 50
 
+/** One undo step: `manualPositionIds` travels with `definition` so undo can't desync the two. */
+type WorkflowEditorHistoryEntry = {
+  definition: Workflow
+  manualPositionIds: ReadonlySet<string>
+}
+
 /** Editor state: the definition being edited plus bookkeeping the file format doesn't carry. */
 export type WorkflowEditorState = {
   definition: Workflow
   /** Node ids the user dragged this session (FR-010: "Re-layout" must leave these alone). */
   manualPositionIds: ReadonlySet<string>
-  /** Undo stack of prior definitions, most recent last. */
-  history: readonly Workflow[]
+  /** Undo stack of prior (definition, manualPositionIds) pairs, most recent last. */
+  history: readonly WorkflowEditorHistoryEntry[]
   dirty: boolean
   revision: number
   /** The problem from the last refused command (e.g. a cycle), cleared on the next success. */
@@ -59,11 +65,21 @@ function pinnedLayout(
   return pinned
 }
 
-function commit(state: WorkflowEditorState, definition: Workflow): WorkflowEditorState {
+/** Commits a new definition (and, when it changed too, the pin set) as one undoable step. */
+function commit(
+  state: WorkflowEditorState,
+  definition: Workflow,
+  manualPositionIds: ReadonlySet<string> = state.manualPositionIds
+): WorkflowEditorState {
+  const previousEntry: WorkflowEditorHistoryEntry = {
+    definition: state.definition,
+    manualPositionIds: state.manualPositionIds
+  }
   return {
     ...state,
     definition,
-    history: [...state.history, state.definition].slice(-MAX_HISTORY_ENTRIES),
+    manualPositionIds,
+    history: [...state.history, previousEntry].slice(-MAX_HISTORY_ENTRIES),
     dirty: true,
     revision: state.revision + 1,
     lastProblem: undefined
@@ -99,7 +115,7 @@ export function workflowEditorReducer(
       for (const nodeId of action.nodeIds ?? []) {
         manualPositionIds.delete(nodeId)
       }
-      return { ...commit(state, nextDefinition), manualPositionIds }
+      return commit(state, nextDefinition, manualPositionIds)
     }
 
     case 'update-node': {
@@ -123,7 +139,7 @@ export function workflowEditorReducer(
       }
       const manualPositionIds = new Set(state.manualPositionIds)
       manualPositionIds.add(action.nodeId)
-      return { ...commit(state, nextDefinition), manualPositionIds }
+      return commit(state, nextDefinition, manualPositionIds)
     }
 
     case 'auto-layout': {
@@ -158,7 +174,8 @@ export function workflowEditorReducer(
       }
       return {
         ...state,
-        definition: previous,
+        definition: previous.definition,
+        manualPositionIds: previous.manualPositionIds,
         history: state.history.slice(0, -1),
         dirty: true,
         revision: state.revision + 1,

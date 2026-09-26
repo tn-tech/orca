@@ -263,4 +263,56 @@ describe('workflow editor state: delete and undo', () => {
 
     expect(state.definition.nodes).toHaveLength(0)
   })
+
+  it('undoing a move restores both the position and the pin state', () => {
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+    state = dispatch(state, { type: 'add-node', node: startNode(), position: { x: 0, y: 0 } })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: agentNode('work', { overrides: { agent: 'claude' } }),
+      position: { x: 200, y: 0 }
+    })
+    state = dispatch(state, { type: 'connect', from: 'start', to: 'work' })
+    expect(state.manualPositionIds.has('work')).toBe(false)
+
+    state = dispatch(state, { type: 'move-node', nodeId: 'work', position: { x: 555, y: 777 } })
+    expect(state.manualPositionIds.has('work')).toBe(true)
+    expect(state.definition.layout.work).toEqual({ x: 555, y: 777 })
+
+    state = dispatch(state, { type: 'undo' })
+
+    expect(state.definition.layout.work).toEqual({ x: 200, y: 0 })
+    expect(state.manualPositionIds.has('work')).toBe(false)
+
+    // 'work' is unpinned again post-undo, so Re-layout is free to move it off the stale (200, 0).
+    state = dispatch(state, { type: 'auto-layout' })
+    expect(state.definition.layout.work).not.toEqual({ x: 200, y: 0 })
+  })
+
+  it('undoing a delete restores both the node and its pin state', () => {
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+    state = dispatch(state, { type: 'add-node', node: startNode(), position: { x: 0, y: 0 } })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: agentNode('work', { overrides: { agent: 'claude' } }),
+      position: { x: 200, y: 0 }
+    })
+    state = dispatch(state, { type: 'connect', from: 'start', to: 'work' })
+    state = dispatch(state, { type: 'move-node', nodeId: 'work', position: { x: 555, y: 777 } })
+    expect(state.manualPositionIds.has('work')).toBe(true)
+
+    state = dispatch(state, { type: 'delete-elements', nodeIds: ['work'] })
+    expect(state.definition.nodes.map((node) => node.id)).toEqual(['start'])
+    expect(state.manualPositionIds.has('work')).toBe(false)
+
+    state = dispatch(state, { type: 'undo' })
+
+    expect(state.definition.nodes.map((node) => node.id)).toEqual(['start', 'work'])
+    expect(state.definition.layout.work).toEqual({ x: 555, y: 777 })
+    expect(state.manualPositionIds.has('work')).toBe(true)
+
+    // 'work' is pinned again post-undo, so Re-layout must leave it exactly where it was.
+    state = dispatch(state, { type: 'auto-layout' })
+    expect(state.definition.layout.work).toEqual({ x: 555, y: 777 })
+  })
 })
