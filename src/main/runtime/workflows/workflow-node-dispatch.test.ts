@@ -119,7 +119,8 @@ describe('dispatchWorkflowNode', () => {
       attemptId: 'wfa_1',
       taskId: 'task_1',
       node: { ...baseNode, roleId: 'implementer' },
-      roles
+      roles,
+      workspacePolicy: 'run-workspace'
     })
 
     expect(outcome.ok).toBe(true)
@@ -183,7 +184,8 @@ describe('dispatchWorkflowNode', () => {
       attemptId: 'wfa_1',
       taskId: 'task_1',
       node: { ...baseNode, roleId: 'scribe' },
-      roles
+      roles,
+      workspacePolicy: 'run-workspace'
     })
 
     // Exact-object equality: this fails if `model`/`effort` leak into the call, since the role
@@ -211,7 +213,8 @@ describe('dispatchWorkflowNode', () => {
       attemptId: 'wfa_1',
       taskId: 'task_1',
       node: baseNode, // no roleId, no overrides.agent
-      roles
+      roles,
+      workspacePolicy: 'run-workspace'
     })
 
     expect(outcome).toMatchObject({ ok: false, failureReason: expect.stringMatching(/no agent/) })
@@ -240,7 +243,8 @@ describe('dispatchWorkflowNode', () => {
       attemptId: 'wfa_1',
       taskId: 'task_1',
       node: { ...baseNode, roleId: 'implementer' },
-      roles
+      roles,
+      workspacePolicy: 'run-workspace'
     })
 
     expect(outcome).toMatchObject({
@@ -273,7 +277,8 @@ describe('dispatchWorkflowNode', () => {
       attemptId: 'wfa_1',
       taskId: 'task_1',
       node: { ...baseNode, roleId: 'implementer' },
-      roles
+      roles,
+      workspacePolicy: 'run-workspace'
     })
 
     expect(outcome).toMatchObject({
@@ -285,5 +290,96 @@ describe('dispatchWorkflowNode', () => {
       dispatchId: 'wdp_3'
     })
     expect(attemptStore.transitionWorkflowAttempt).toHaveBeenNthCalledWith(2, 'wfa_1', 'failed')
+  })
+
+  it('requests a child worktree and records the placed worktree id (US3 AS5, FR-025)', async () => {
+    const attemptStore = createAttemptStore()
+    const call = vi.fn(async () => ({
+      ...READY_RESULT,
+      dispatchId: 'wdp_4',
+      effects: [{ kind: 'worktree', action: 'created_child', id: 'repo-1::/tmp/child' }]
+    }))
+
+    const outcome = await dispatchWorkflowNode({
+      port: { call },
+      attemptStore,
+      runId: 'wfr_1',
+      attemptId: 'wfa_1',
+      taskId: 'task_1',
+      node: { ...baseNode, roleId: 'implementer', workspace: 'child' },
+      roles,
+      workspacePolicy: 'run-workspace'
+    })
+
+    expect(outcome.ok).toBe(true)
+    expect(call).toHaveBeenCalledWith('orchestration.workerStart', {
+      from: engineCoordinatorHandle('wfr_1'),
+      task: 'task_1',
+      agent: 'claude',
+      worktree: 'new-child',
+      model: 'sonnet',
+      effort: 'high'
+    })
+    expect(attemptStore.updateWorkflowAttempt).toHaveBeenCalledWith('wfa_1', {
+      dispatchId: 'wdp_4',
+      requestedLaunch: { agent: 'claude', model: 'sonnet', effort: 'high' },
+      effectiveLaunch: { agent: 'claude', model: 'sonnet', effort: 'high' },
+      workspaceWorktreeId: 'repo-1::/tmp/child'
+    })
+  })
+
+  it('does not record a worktree id for a run-workspace node even if the receipt has one', async () => {
+    const attemptStore = createAttemptStore()
+    const call = vi.fn(async () => ({
+      ...READY_RESULT,
+      effects: [{ kind: 'worktree', action: 'reused', id: 'repo-1::/tmp/run' }]
+    }))
+
+    await dispatchWorkflowNode({
+      port: { call },
+      attemptStore,
+      runId: 'wfr_1',
+      attemptId: 'wfa_1',
+      taskId: 'task_1',
+      node: { ...baseNode, roleId: 'implementer' },
+      roles,
+      workspacePolicy: 'run-workspace'
+    })
+
+    expect(call).toHaveBeenCalledWith(
+      'orchestration.workerStart',
+      expect.not.objectContaining({ worktree: expect.anything() })
+    )
+    expect(attemptStore.updateWorkflowAttempt).toHaveBeenCalledWith('wfa_1', {
+      dispatchId: 'wdp_1',
+      requestedLaunch: { agent: 'claude', model: 'sonnet', effort: 'high' },
+      effectiveLaunch: { agent: 'claude', model: 'sonnet', effort: 'high' }
+    })
+  })
+
+  it('refuses a child workspace under an in-place workspace policy, without calling workerStart (FR-041)', async () => {
+    const attemptStore = createAttemptStore()
+    const call = vi.fn(async () => READY_RESULT)
+
+    const outcome = await dispatchWorkflowNode({
+      port: { call },
+      attemptStore,
+      runId: 'wfr_1',
+      attemptId: 'wfa_1',
+      taskId: 'task_1',
+      node: { ...baseNode, roleId: 'implementer', workspace: 'child' },
+      roles,
+      workspacePolicy: 'in-place'
+    })
+
+    expect(outcome).toMatchObject({
+      ok: false,
+      failureReason: expect.stringMatching(/child workspace.*"in-place"/)
+    })
+    expect(call).not.toHaveBeenCalled()
+    expect(attemptStore.transitionWorkflowAttempt).toHaveBeenNthCalledWith(2, 'wfa_1', 'failed')
+    expect(attemptStore.updateWorkflowAttempt).toHaveBeenCalledWith('wfa_1', {
+      failureReason: expect.stringMatching(/child workspace.*"in-place"/)
+    })
   })
 })

@@ -11,6 +11,7 @@ import type { AgentLaunchPreferences } from '../../../../../../shared/agent-sess
 import type { TuiAgent } from '../../../../../../shared/tui-agent'
 import type { OrcaRuntimeService } from '../../../../orca-runtime'
 import type { OrchestrationDb } from '../../../../orchestration/db'
+import { isEngineCoordinatorHandle } from '../../../../workflows/workflow-engine-principal'
 import type { WorkerEffect, WorkerSetupReceipt } from './worker-topology'
 
 export async function createWorkerWorktree(args: {
@@ -68,7 +69,9 @@ export async function createWorkerWorktree(args: {
     lineage: {
       parentWorktree: requestedWorktree === 'new-child' ? coordinatorWorktree.id : undefined,
       noParent: requestedWorktree === 'new-top-level',
-      callerTerminalHandle: params.from
+      // The workflow engine's `--from` handle is not a real terminal (U08): only pass it along
+      // for lineage capture when a real caller terminal could actually resolve it.
+      ...(isEngineCoordinatorHandle(params.from) ? {} : { callerTerminalHandle: params.from })
     }
   })
   const terminalHandle = created.startupTerminal?.handle

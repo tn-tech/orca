@@ -23,3 +23,8 @@ export function asWorkflowEnginePrincipal(
 ): WorkflowEnginePrincipal | undefined {
   return principal?.kind === 'workflow-engine' ? principal : undefined
 }
+
+/** True for a `--from` handle the engine itself generated, never a real terminal. */
+export function isEngineCoordinatorHandle(handle: string): boolean {
+  return handle.startsWith(ENGINE_COORDINATOR_PREFIX)
+}

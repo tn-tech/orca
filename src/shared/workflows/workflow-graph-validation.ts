@@ -148,6 +148,11 @@ function checkKnownAgents(
   return problems
 }
 
+/** Shared with the engine's defensive dispatch-time refusal (workflow-node-dispatch.ts). */
+export function childWorkspaceDisallowedMessage(nodeId: string): string {
+  return `Node "${nodeId}" requests a child workspace, which "in-place" workflows disallow.`
+}
+
 /** Child workspaces need a dedicated worktree, which `in-place` workflows never get. */
 function checkWorkspacePolicy(definition: Workflow): WorkflowProblem[] {
   if (definition.workspacePolicy !== 'in-place') {
@@ -158,7 +163,7 @@ function checkWorkspacePolicy(definition: Workflow): WorkflowProblem[] {
     .map((node) =>
       error({
         code: 'graph_child_workspace_disallowed',
-        message: `Node "${node.id}" requests a child workspace, which "in-place" workflows disallow.`,
+        message: childWorkspaceDisallowedMessage(node.id),
         nodeId: node.id
       })
     )

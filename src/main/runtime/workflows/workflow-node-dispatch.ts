@@ -5,6 +5,7 @@ import {
   getAgentSessionOptionCatalog
 } from '../../../shared/agent-session-option-catalog'
 import type { Workflow } from '../../../shared/workflows/workflow-definition-types'
+import { childWorkspaceDisallowedMessage } from '../../../shared/workflows/workflow-graph-validation'
 import type { WorkflowAttemptState } from '../../../shared/workflows/workflow-node-states'
 import type {
   NodeAttemptView,
@@ -47,6 +48,8 @@ type ParsedWorkerStartResult = {
   lastError?: string
   requested?: WorkerStartLaunchSelection
   effective?: WorkerStartLaunchSelection | null
+  /** The worktree the placement effect landed on, whether created or reused. */
+  worktreeId?: string
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -68,6 +71,19 @@ function asLaunchSelection(value: unknown): WorkerStartLaunchSelection | undefin
   return { agent, model, effort }
 }
 
+/** The worker-start receipt's `effects` always includes one `kind: 'worktree'` entry — created or reused. */
+function extractWorktreeEffectId(effects: unknown): string | undefined {
+  if (!Array.isArray(effects)) {
+    return undefined
+  }
+  for (const effect of effects) {
+    if (isPlainObject(effect) && effect.kind === 'worktree' && typeof effect.id === 'string') {
+      return effect.id
+    }
+  }
+  return undefined
+}
+
 /** `orchestration.workerStart`'s result is `unknown` on the wire; pull out only what dispatch needs. */
 function parseWorkerStartResult(result: unknown): ParsedWorkerStartResult {
   if (!isPlainObject(result)) {
@@ -76,14 +92,16 @@ function parseWorkerStartResult(result: unknown): ParsedWorkerStartResult {
   const dispatchId = typeof result.dispatchId === 'string' ? result.dispatchId : undefined
   const state = typeof result.state === 'string' ? result.state : undefined
   const lastError = typeof result.lastError === 'string' ? result.lastError : undefined
+  const worktreeId = extractWorktreeEffectId(result.effects)
   const launch = result.launch
   if (!isPlainObject(launch)) {
-    return { dispatchId, state, lastError }
+    return { dispatchId, state, lastError, worktreeId }
   }
   return {
     dispatchId,
     state,
     lastError,
+    worktreeId,
     requested: asLaunchSelection(launch.requested),
     effective: launch.effective === null ? null : asLaunchSelection(launch.effective)
   }
@@ -117,6 +135,7 @@ export type WorkflowAttemptDispatchStore = {
       requestedLaunch?: WorkflowLaunchReceipt
       effectiveLaunch?: WorkflowLaunchReceipt
       failureReason?: string
+      workspaceWorktreeId?: string
     }
   ): NodeAttemptView | undefined
 }
@@ -130,6 +149,7 @@ export type DispatchWorkflowNodeArgs = {
   taskId: string
   node: BriefNode
   roles: Workflow['roles']
+  workspacePolicy: Workflow['workspacePolicy']
 }
 
 export type DispatchWorkflowNodeOutcome =
@@ -141,14 +161,17 @@ export type DispatchWorkflowNodeOutcome =
  * Always enters `provisioning` first (data-model.md §4: `provisioning` = before `worker-start`),
  * then `running` on success or `failed` on any failure — no retry (controller ruling).
  *
- * Placement always targets the run workspace (the engine's own `worktreeId`, applied by
- * `assertWorkflowEngineWorkerStart`); child-workspace placement (`node.workspace === 'child'`)
- * is a later unit's seam (child-lineage-note.md) and is not yet honored here.
+ * `node.workspace === 'child'` requests `worktree: 'new-child'` placement, with the run workspace
+ * as parent (`assertWorkflowEngineWorkerStart` resolves that parent from the engine principal);
+ * everything else places in the run workspace itself (FR-025). `in-place` workflows (folder
+ * workspaces, FR-041) have no worktree to parent a child from — graph validation already refuses
+ * this combination (`graph_child_workspace_disallowed`), and this is the engine's own defense.
  */
 export async function dispatchWorkflowNode(
   args: DispatchWorkflowNodeArgs
 ): Promise<DispatchWorkflowNodeOutcome> {
-  const { port, attemptStore, runId, attemptId, taskId, node, roles } = args
+  const { port, attemptStore, runId, attemptId, taskId, node, roles, workspacePolicy } = args
+  const wantsChildWorkspace = node.type === 'agent' && node.workspace === 'child'
 
   function fail(reason: string, dispatchId?: string): DispatchWorkflowNodeOutcome {
     attemptStore.updateWorkflowAttempt(attemptId, {
@@ -160,6 +183,10 @@ export async function dispatchWorkflowNode(
   }
 
   attemptStore.transitionWorkflowAttempt(attemptId, 'provisioning')
+
+  if (wantsChildWorkspace && workspacePolicy === 'in-place') {
+    return fail(childWorkspaceDisallowedMessage(node.id))
+  }
 
   let launch: ResolvedNodeLaunch
   try {
@@ -175,6 +202,7 @@ export async function dispatchWorkflowNode(
     from: engineCoordinatorHandle(runId),
     task: taskId,
     agent: launch.agent,
+    ...(wantsChildWorkspace ? { worktree: 'new-child' } : {}),
     ...(supportsModel && launch.model ? { model: launch.model } : {}),
     ...(supportsModel && launch.model && launch.effort ? { effort: launch.effort } : {})
   }
@@ -199,7 +227,8 @@ export async function dispatchWorkflowNode(
   attemptStore.updateWorkflowAttempt(attemptId, {
     ...(parsed.dispatchId ? { dispatchId: parsed.dispatchId } : {}),
     ...(requestedLaunch ? { requestedLaunch } : {}),
-    ...(effectiveLaunch ? { effectiveLaunch } : {})
+    ...(effectiveLaunch ? { effectiveLaunch } : {}),
+    ...(wantsChildWorkspace && parsed.worktreeId ? { workspaceWorktreeId: parsed.worktreeId } : {})
   })
   const attempt = attemptStore.transitionWorkflowAttempt(attemptId, 'running')
   return { ok: true, attempt }

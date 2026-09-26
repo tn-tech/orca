@@ -159,7 +159,8 @@ async function launchBriefNode(
     attemptId: attempt.id,
     taskId,
     node,
-    roles: ctx.definition.roles
+    roles: ctx.definition.roles,
+    workspacePolicy: ctx.definition.workspacePolicy
   })
   const dispatchId = outcome.attempt?.dispatchId
   if (outcome.ok && dispatchId) {
