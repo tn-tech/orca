@@ -4,18 +4,52 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SkillReference } from '../../../shared/workflows/workflow-definition-types'
+import { validateGitExecArgs } from '../../../relay/git-exec-validator'
+import type * as RunProcessModule from '../../../shared/child-process/run-process'
+
+const sshHost = vi.hoisted(() => {
+  const state: { provider: unknown } = { provider: undefined }
+  return state
+})
+
+vi.mock('../../providers/ssh-git-dispatch', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getSshGitProvider: vi.fn(() => sshHost.provider)
+}))
+vi.mock('../../wsl/wsl-runner', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  runWslProcess: vi.fn()
+}))
+// Passes through by default; SSH tests assert nothing ever launches on this machine.
+vi.mock('../../../shared/child-process/run-process', async (importOriginal) => {
+  const actual = await importOriginal<typeof RunProcessModule>()
+  return { ...actual, runProcess: vi.fn(actual.runProcess) }
+})
+vi.mock('./workflow-source-allowlist', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getRepoWorkflowSourceAllowlist: vi.fn(async () => ['https://github.com/acme/consulting-skills'])
+}))
+
+import { runProcess } from '../../../shared/child-process/run-process'
+import { runWslProcess } from '../../wsl/wsl-runner'
 import {
   provisionNodeSkills,
   releaseRunSkillInstalls,
   type ProvisionNodeSkillsInput
 } from './workflow-skill-provisioning'
+import { createRunSkillProvisioner } from './workflow-skill-provisioning-host'
 import {
   createSkillPorts,
   fakeSkillsCli,
+  relayExecEmulator,
+  relayGitExecEmulator,
   REPO_SOURCE,
   repoSkill,
-  skillInput
+  skillInput,
+  wslExeEmulator,
+  wslRunnerEmulator
 } from './workflow-skill-provisioning-test-fixtures'
+import { getRepoWorkflowSourceAllowlist } from './workflow-source-allowlist'
 
 const pluginSkill: SkillReference = {
   name: 'deck-writer',
@@ -205,5 +239,251 @@ describe('provisionNodeSkills — prompt fallback', () => {
       installed: []
     })
     expect(readAllowlist).not.toHaveBeenCalled()
+  })
+})
+
+const SKILLS_ADD_ARGS = [
+  '--yes',
+  'skills',
+  'add',
+  REPO_SOURCE,
+  '--skill',
+  'model-review',
+  '--agent',
+  'claude-code',
+  '-y'
+]
+// The relay clamps `agent.execNonInteractive` to five minutes.
+const RELAY_EXEC_MAX_TIMEOUT_MS = 5 * 60_000
+
+async function gitInWorkspace(args: string[]): Promise<void> {
+  const result = await runProcess({ program: 'git', args, cwd: workspaceRoot })
+  expect(result.code).toBe(0)
+}
+
+describe('createRunSkillProvisioner — SSH workspaces', () => {
+  let relayExec: ReturnType<typeof relayExecEmulator>
+  let gitExec: ReturnType<typeof relayGitExecEmulator>
+
+  function useRelay(skillsCli = fakeSkillsCli(workspaceRoot)) {
+    relayExec = relayExecEmulator(skillsCli)
+    gitExec = relayGitExecEmulator(validateGitExecArgs)
+    sshHost.provider = { exec: gitExec, execNonInteractiveOperation: relayExec }
+  }
+
+  function sshProvisioner(root = workspaceRoot) {
+    return createRunSkillProvisioner({
+      workspaceRoot: root,
+      orcaIgnoreTarget: { host: 'remote', repoPath: root, connectionId: 'conn-1' }
+    })
+  }
+
+  beforeEach(async () => {
+    await gitInWorkspace(['init', '-q'])
+    useRelay()
+    vi.mocked(runProcess).mockClear()
+  })
+
+  afterEach(() => {
+    sshHost.provider = undefined
+  })
+
+  it('installs through the relay exec path on the host, then cleans up there', async () => {
+    const provisioner = sshProvisioner()
+
+    expect(
+      await provisioner.provision({ runId: 'wfr_1', agent: 'claude', skills: [repoSkill] })
+    ).toEqual({ kind: 'ready', installed: ['model-review'] })
+
+    const npx = relayExec.mock.calls.map(([request]) => request).filter((r) => r.binary === 'npx')
+    expect(npx).toEqual([
+      {
+        binary: 'npx',
+        args: SKILLS_ADD_ARGS,
+        cwd: workspaceRoot,
+        timeoutMs: RELAY_EXEC_MAX_TIMEOUT_MS,
+        operation: 'workflow-skills'
+      }
+    ])
+    expect(relayExec.mock.calls.every(([r]) => r.timeoutMs <= RELAY_EXEC_MAX_TIMEOUT_MS)).toBe(true)
+    expect(getRepoWorkflowSourceAllowlist).toHaveBeenCalledWith({
+      path: workspaceRoot,
+      connectionId: 'conn-1'
+    })
+    expect(gitExec.mock.calls.map(([args]) => args)).toEqual([
+      [
+        'ls-files',
+        '-z',
+        '--',
+        '.agents/skills/model-review',
+        '.claude/skills/model-review',
+        'skills-lock.json'
+      ],
+      ['rev-parse', '--git-path', 'info/exclude']
+    ])
+    const exclude = await readFile(excludePath, 'utf-8')
+    expect(exclude).toContain('/.claude/skills/model-review\n')
+    expect(exclude).toContain('/skills-lock.json\n')
+
+    await provisioner.release('wfr_1')
+
+    expect(await readFile(excludePath, 'utf-8')).toBe('# user entry\n/scratch\n')
+    expect(existsSync(join(workspaceRoot, '.claude/skills/model-review'))).toBe(false)
+    expect(existsSync(join(workspaceRoot, '.agents/skills/model-review'))).toBe(false)
+    expect(existsSync(join(workspaceRoot, '.orca/workflow-skills/ledger.json'))).toBe(false)
+    // Every git and file operation reached the host; nothing ran on this machine.
+    expect(runProcess).not.toHaveBeenCalled()
+  })
+
+  it('refuses to modify a path the project tracks on the host', async () => {
+    await writeFile(join(workspaceRoot, 'skills-lock.json'), '{"committed":true}')
+    await gitInWorkspace(['add', 'skills-lock.json'])
+
+    const outcome = await sshProvisioner().provision({
+      runId: 'wfr_1',
+      agent: 'claude',
+      skills: [repoSkill]
+    })
+
+    expect(outcome).toMatchObject({ kind: 'failed' })
+    expect(outcome.kind === 'failed' && outcome.reason).toContain('skills-lock.json')
+    expect(relayExec.mock.calls.some(([r]) => r.binary === 'npx')).toBe(false)
+  })
+
+  it('rolls back a failed install and restores the untracked user file it snapshotted', async () => {
+    await writeFile(join(workspaceRoot, 'skills-lock.json'), '{"user":true}')
+    useRelay(fakeSkillsCli(workspaceRoot, { code: 1, partial: true, stderr: 'network down' }))
+
+    const outcome = await sshProvisioner().provision({
+      runId: 'wfr_1',
+      agent: 'claude',
+      skills: [repoSkill]
+    })
+
+    expect(outcome.kind === 'failed' && outcome.reason).toContain('network down')
+    expect(await readFile(join(workspaceRoot, 'skills-lock.json'), 'utf-8')).toBe('{"user":true}')
+    expect(existsSync(join(workspaceRoot, '.claude/skills/model-review'))).toBe(false)
+    expect(existsSync(join(workspaceRoot, '.orca/workflow-skills/backups/skills-lock.json'))).toBe(
+      false
+    )
+    expect(await readFile(excludePath, 'utf-8')).toBe('# user entry\n/scratch\n')
+  })
+
+  it('refuses the allowlist miss before anything runs on the host', async () => {
+    vi.mocked(getRepoWorkflowSourceAllowlist).mockResolvedValueOnce([])
+
+    const outcome = await sshProvisioner().provision({
+      runId: 'wfr_1',
+      agent: 'claude',
+      skills: [repoSkill]
+    })
+
+    expect(outcome).toMatchObject({ kind: 'failed', code: 'workflow_source_not_allowed' })
+    expect(relayExec.mock.calls.some(([r]) => r.binary === 'npx')).toBe(false)
+  })
+
+  it('refuses with workflow_host_unreachable and never installs locally when the host is gone', async () => {
+    sshHost.provider = undefined
+
+    const outcome = await sshProvisioner().provision({
+      runId: 'wfr_1',
+      agent: 'claude',
+      skills: [repoSkill]
+    })
+
+    expect(outcome).toMatchObject({ kind: 'failed', code: 'workflow_host_unreachable' })
+    expect(outcome.kind === 'failed' && outcome.reason).toContain('nothing was installed')
+    expect(relayExec).not.toHaveBeenCalled()
+    expect(runProcess).not.toHaveBeenCalled()
+  })
+
+  it('reports workflow_host_unreachable when the connection drops mid-install', async () => {
+    relayExec.mockImplementation(async (request) => {
+      if (request.binary === 'npx') {
+        sshHost.provider = undefined
+        throw new Error('SSH connection closed')
+      }
+      return relayExecEmulator(fakeSkillsCli(workspaceRoot))(request)
+    })
+
+    const outcome = await sshProvisioner().provision({
+      runId: 'wfr_1',
+      agent: 'claude',
+      skills: [repoSkill]
+    })
+
+    expect(outcome).toMatchObject({ kind: 'failed', code: 'workflow_host_unreachable' })
+    expect(runProcess).not.toHaveBeenCalled()
+  })
+
+  it('refuses a Windows SSH host, which has no POSIX shell to install with', async () => {
+    const outcome = await sshProvisioner('C:\\Users\\dev\\repo').provision({
+      runId: 'wfr_1',
+      agent: 'claude',
+      skills: [repoSkill]
+    })
+
+    expect(outcome.kind).toBe('failed')
+    expect(relayExec).not.toHaveBeenCalled()
+    expect(runProcess).not.toHaveBeenCalled()
+  })
+})
+
+describe('createRunSkillProvisioner — WSL workspaces', () => {
+  const uncRoot = () => `//wsl.localhost/Ubuntu${workspaceRoot}`
+
+  beforeEach(async () => {
+    await gitInWorkspace(['init', '-q'])
+    vi.mocked(runProcess).mockReset()
+    vi.mocked(runProcess).mockImplementation(wslExeEmulator('Ubuntu'))
+    vi.mocked(runWslProcess).mockReset()
+    vi.mocked(runWslProcess).mockImplementation(wslRunnerEmulator(fakeSkillsCli(workspaceRoot)))
+  })
+
+  afterEach(async () => {
+    const actual = await vi.importActual<typeof RunProcessModule>(
+      '../../../shared/child-process/run-process'
+    )
+    vi.mocked(runProcess).mockReset()
+    vi.mocked(runProcess).mockImplementation(actual.runProcess)
+  })
+
+  it('installs inside the distro through wsl.exe --exec, then cleans up there', async () => {
+    const provisioner = createRunSkillProvisioner({
+      workspaceRoot: uncRoot(),
+      orcaIgnoreTarget: { host: 'local', repoPath: uncRoot() }
+    })
+
+    expect(
+      await provisioner.provision({ runId: 'wfr_1', agent: 'claude', skills: [repoSkill] })
+    ).toEqual({ kind: 'ready', installed: ['model-review'] })
+
+    // The skills CLI runs on the login PATH, in the guest workspace, never through a local npx.
+    const npx = vi.mocked(runWslProcess).mock.calls.filter(([spec]) => spec.script !== undefined)
+    expect(npx).toHaveLength(1)
+    expect(npx[0][0]).toMatchObject({
+      distro: 'Ubuntu',
+      cwd: workspaceRoot,
+      args: SKILLS_ADD_ARGS,
+      loginPath: 'preferred'
+    })
+    expect(npx[0][0].script).toContain('exec "$resolved" "$@"')
+    const gitCalls = vi.mocked(runWslProcess).mock.calls.filter(([spec]) => spec.program === 'git')
+    expect(gitCalls.every(([spec]) => spec.distro === 'Ubuntu' && spec.cwd === workspaceRoot)).toBe(
+      true
+    )
+    expect(getRepoWorkflowSourceAllowlist).toHaveBeenCalledWith({ path: uncRoot() })
+    expect(await readFile(excludePath, 'utf-8')).toContain('/.claude/skills/model-review\n')
+
+    await provisioner.release('wfr_1')
+
+    expect(await readFile(excludePath, 'utf-8')).toBe('# user entry\n/scratch\n')
+    expect(existsSync(join(workspaceRoot, '.claude/skills/model-review'))).toBe(false)
+    // wslExeEmulator throws on anything but `wsl.exe -d Ubuntu --exec ...`.
+    expect(vi.mocked(runProcess).mock.calls.length).toBeGreaterThan(0)
+    for (const [spec] of vi.mocked(runProcess).mock.calls) {
+      expect(spec.program).toMatch(/wsl(\.exe)?$/i)
+      expect(spec.args?.slice(0, 3)).toEqual(['-d', 'Ubuntu', '--exec'])
+    }
   })
 })

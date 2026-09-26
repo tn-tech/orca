@@ -1,6 +1,6 @@
-// Picks the skill-provisioning wiring for a run workspace's execution host. Only local workspaces
-// install today; SSH and WSL workspaces are refused so nothing is ever installed on the wrong
-// machine (ssh-execution-boundary.md) — U39 plugs their ports into `hostProvisioningPorts`.
+// Picks the skill-provisioning wiring for a run workspace's execution host: local, an SSH relay,
+// or a WSL distro. Each installs only on the machine that runs the node; an unreachable host
+// refuses and nothing is installed anywhere else (FR-038, ssh-execution-boundary.md).
 import { cp, lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { runProcess } from '../../../shared/child-process/run-process'
@@ -12,16 +12,24 @@ import type { SkillReference } from '../../../shared/workflows/workflow-definiti
 import { parseWslUncPath } from '../../../shared/wsl-paths'
 import { isENOENT } from '../../ipc/filesystem-auth'
 import { joinWorktreeRelativePath } from '../runtime-relative-paths'
-import type { OrcaIgnoreTarget } from './workflow-brief-builder'
+import { WORKFLOW_HOST_UNREACHABLE_CODE } from './workflow-run-workspace'
 import { listLocalTrackedPaths, resolveLocalGitExcludePath } from './workflow-skill-local-git'
 import { getRepoWorkflowSourceAllowlist } from './workflow-source-allowlist'
 import {
   provisionNodeSkills,
   releaseRunSkillInstalls,
   type WorkflowSkillFilesystem,
-  type WorkflowSkillProvisioningOutcome,
-  type WorkflowSkillProvisioningPorts
+  type WorkflowSkillProvisioningOutcome
 } from './workflow-skill-provisioning'
+import {
+  hostUnreachableOutcome,
+  sshSkillHost,
+  wslSkillHost,
+  type SkillCleanupPorts,
+  type SkillHostExtraPorts,
+  type SkillHostPorts,
+  type SkillHostResolution
+} from './workflow-skill-provisioning-remote'
 
 export const localWorkflowSkillFilesystem: WorkflowSkillFilesystem = {
   async exists(path) {
@@ -62,7 +70,7 @@ export const localWorkflowSkillFilesystem: WorkflowSkillFilesystem = {
 
 // Placeholders until the plugin installer and trust store land (U40): nothing reads as
 // installed and nothing is trusted, so a plugin skill never installs without a decision.
-const pendingPluginPorts: Pick<WorkflowSkillProvisioningPorts, 'plugins' | 'trust'> = {
+const pendingPluginPorts: SkillHostExtraPorts = {
   plugins: {
     isInstalled: async () => false,
     install: async () => ({ ok: false, reason: 'Plugin installs are not available yet.' })
@@ -70,46 +78,46 @@ const pendingPluginPorts: Pick<WorkflowSkillProvisioningPorts, 'plugins' | 'trus
   trust: { decide: async () => 'needs-question' }
 }
 
-type CleanupPorts = Pick<WorkflowSkillProvisioningPorts, 'fs' | 'resolveGitExcludePath'>
-
-type HostProvisioningPorts = {
-  cleanup: CleanupPorts
-  /** Lazy: resolving npx scans PATH, which cleanup never needs. */
-  install(): WorkflowSkillProvisioningPorts
-}
-
-const localCleanupPorts: CleanupPorts = {
+const localCleanupPorts: SkillCleanupPorts = {
   fs: localWorkflowSkillFilesystem,
   resolveGitExcludePath: resolveLocalGitExcludePath
 }
 
-const localHostPorts: HostProvisioningPorts = {
-  cleanup: localCleanupPorts,
-  install() {
-    const npxCommand = resolveCliCommand('npx')
-    return {
-      runProcess,
-      npxCommand,
-      // Why: npx is a node script; without its own node first on PATH it can load under another.
-      npxEnv: withCliRuntimeOnPath(npxCommand, { ...process.env }),
-      ...localCleanupPorts,
-      listTrackedPaths: listLocalTrackedPaths,
-      ...pendingPluginPorts
-    }
+function localHostPorts(workspaceRoot: string): SkillHostPorts {
+  return {
+    workspaceRoot,
+    cleanup: localCleanupPorts,
+    install() {
+      const npxCommand = resolveCliCommand('npx')
+      return {
+        runProcess,
+        npxCommand,
+        // Why: npx is a node script; without its own node first on PATH it can load under another.
+        npxEnv: withCliRuntimeOnPath(npxCommand, { ...process.env }),
+        ...localCleanupPorts,
+        listTrackedPaths: listLocalTrackedPaths,
+        ...pendingPluginPorts
+      }
+    },
+    isReachable: () => true
   }
 }
 
 type RunWorkspaceHost = {
   workspaceRoot: string
-  orcaIgnoreTarget: Pick<OrcaIgnoreTarget, 'host' | 'repoPath'>
+  orcaIgnoreTarget:
+    | { host: 'local'; repoPath: string }
+    | { host: 'remote'; repoPath: string; connectionId: string }
 }
 
-/** `undefined` for hosts this unit does not provision on; never falls back to local. */
-function hostProvisioningPorts(workspace: RunWorkspaceHost): HostProvisioningPorts | undefined {
-  if (workspace.orcaIgnoreTarget.host !== 'local' || parseWslUncPath(workspace.workspaceRoot)) {
-    return undefined
+/** Never falls back to local: a WSL path or SSH workspace gets its own host's ports or a refusal. */
+function hostProvisioningPorts(workspace: RunWorkspaceHost): SkillHostResolution {
+  const target = workspace.orcaIgnoreTarget
+  if (target.host === 'remote') {
+    return sshSkillHost(target.connectionId, workspace.workspaceRoot, pendingPluginPorts)
   }
-  return localHostPorts
+  const wsl = parseWslUncPath(workspace.workspaceRoot)
+  return wsl ? wslSkillHost(wsl, pendingPluginPorts) : localHostPorts(workspace.workspaceRoot)
 }
 
 export type RunSkillProvisioner = {
@@ -122,35 +130,45 @@ export type RunSkillProvisioner = {
 }
 
 export function createRunSkillProvisioner(workspace: RunWorkspaceHost): RunSkillProvisioner {
-  const hostPorts = hostProvisioningPorts(workspace)
-  const { workspaceRoot } = workspace
-  const repoPath = workspace.orcaIgnoreTarget.repoPath
+  const host = hostProvisioningPorts(workspace)
+  const target = workspace.orcaIgnoreTarget
   return {
     async provision({ runId, agent, skills }) {
       if (skills.length === 0) {
         return { kind: 'ready', installed: [] }
       }
-      if (!hostPorts) {
-        return {
-          kind: 'failed',
-          reason:
-            'Skills cannot be provisioned on this workspace host yet. Orca installs skills only ' +
-            'on the machine that runs the node, so nothing was installed.'
-        }
+      if ('kind' in host) {
+        return host
       }
       const readAllowlist = async () => ({
-        sources: await getRepoWorkflowSourceAllowlist({ path: repoPath }),
-        location: joinWorktreeRelativePath(repoPath, 'orca.yaml')
+        sources: await getRepoWorkflowSourceAllowlist(
+          target.host === 'remote'
+            ? { path: target.repoPath, connectionId: target.connectionId }
+            : { path: target.repoPath }
+        ),
+        location: joinWorktreeRelativePath(target.repoPath, 'orca.yaml')
       })
-      const input = { runId, agent, skills, workspaceRoot, readAllowlist }
-      return provisionNodeSkills(input, hostPorts.install())
+      const input = { runId, agent, skills, workspaceRoot: host.workspaceRoot, readAllowlist }
+      try {
+        return await provisionNodeSkills(input, host.install())
+      } catch (error) {
+        if (!host.isReachable()) {
+          return hostUnreachableOutcome()
+        }
+        throw error
+      }
     },
     async release(runId) {
-      if (!hostPorts) {
+      if ('kind' in host) {
+        if (host.code === WORKFLOW_HOST_UNREACHABLE_CODE) {
+          console.warn(
+            `[workflow-skills] Run ${runId}'s workspace host is unreachable; skills stay`
+          )
+        }
         return
       }
       try {
-        await releaseRunSkillInstalls({ runId, workspaceRoot }, hostPorts.cleanup)
+        await releaseRunSkillInstalls({ runId, workspaceRoot: host.workspaceRoot }, host.cleanup)
       } catch (error) {
         console.warn(
           `[workflow-skills] Could not clean up skills installed for run ${runId}`,

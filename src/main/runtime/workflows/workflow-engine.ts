@@ -112,7 +112,7 @@ function orcaIgnoreTargetFor(repo: Repo): OrcaIgnoreTarget {
   if (!fsProvider) {
     throw new Error(WORKFLOW_HOST_UNREACHABLE_CODE)
   }
-  return { host: 'remote', fsProvider, repoPath: repo.path }
+  return { host: 'remote', fsProvider, repoPath: repo.path, connectionId: repo.connectionId }
 }
 
 function isHostUnreachableError(error: unknown): boolean {

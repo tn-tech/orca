@@ -1,8 +1,13 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { vi } from 'vitest'
-import type { ProcessResult, ProcessSpec } from '../../../shared/child-process/run-process'
+import type {
+  ProcessResult,
+  ProcessSpec,
+  runProcess
+} from '../../../shared/child-process/run-process'
 import type { SkillReference } from '../../../shared/workflows/workflow-definition-types'
+import type { WslSpec } from '../../wsl/wsl-runner'
 import type {
   ProvisionNodeSkillsInput,
   WorkflowPluginInstallResult,
@@ -79,4 +84,81 @@ export function skillInput(
     readAllowlist: async () => ({ sources: [REPO_SOURCE], location: '/repo/orca.yaml' }),
     ...overrides
   }
+}
+
+async function actualRunProcess(spec: ProcessSpec): Promise<ProcessResult> {
+  // Why importActual: test files mock run-process to catch any local skills CLI launch.
+  const actual = await vi.importActual<{ runProcess: typeof runProcess }>(
+    '../../../shared/child-process/run-process'
+  )
+  return actual.runProcess(spec)
+}
+
+export type RelayExecRequest = {
+  binary: string
+  args: string[]
+  cwd: string
+  timeoutMs: number
+  operation: string
+  stdin?: string
+}
+
+/**
+ * Stands in for the relay's `agent.execNonInteractive`: this machine plays the SSH host.
+ * `npx` goes to the fake skills CLI; every other binary really runs.
+ */
+export function relayExecEmulator(skillsCli: (spec: ProcessSpec) => Promise<ProcessResult>) {
+  return vi.fn(async (request: RelayExecRequest) => {
+    const spec: ProcessSpec = {
+      program: request.binary,
+      args: request.args,
+      cwd: request.cwd,
+      ...(request.stdin === undefined ? {} : { input: request.stdin })
+    }
+    const result = request.binary === 'npx' ? await skillsCli(spec) : await actualRunProcess(spec)
+    return {
+      stdout: result.stdout,
+      stderr: result.stderr,
+      exitCode: result.code,
+      timedOut: result.timedOut
+    }
+  })
+}
+
+/** Stands in for the relay's `git.exec`: rejects what the real validator rejects, then runs git. */
+export function relayGitExecEmulator(validate: (args: string[]) => void) {
+  return vi.fn(async (args: string[], cwd: string, _options?: { timeoutMs?: number }) => {
+    validate(args)
+    const result = await actualRunProcess({ program: 'git', args, cwd })
+    if (result.code !== 0) {
+      throw new Error(result.stderr.trim() || `git exited ${String(result.code)}`)
+    }
+    return { stdout: result.stdout, stderr: result.stderr }
+  })
+}
+
+/** Stands in for `wsl.exe -d <distro> --exec <argv>`: runs the guest argv on this machine. */
+export function wslExeEmulator(distro: string) {
+  return vi.fn(async (spec: ProcessSpec): Promise<ProcessResult> => {
+    const args = spec.args ?? []
+    if (
+      !/wsl(\.exe)?$/i.test(spec.program) ||
+      args.slice(0, 3).join(' ') !== `-d ${distro} --exec`
+    ) {
+      throw new Error(`Not a wsl.exe --exec launch: ${spec.program} ${args.join(' ')}`)
+    }
+    const [program, ...rest] = args.slice(3)
+    return actualRunProcess({ program, args: rest, ...(spec.input ? { input: spec.input } : {}) })
+  })
+}
+
+/** Stands in for `runWslProcess`: git really runs in `cwd`; the npx script hits the fake CLI. */
+export function wslRunnerEmulator(skillsCli: (spec: ProcessSpec) => Promise<ProcessResult>) {
+  return vi.fn(async (spec: WslSpec) => {
+    const result =
+      spec.program === 'git'
+        ? await actualRunProcess({ program: 'git', args: [...(spec.args ?? [])], cwd: spec.cwd })
+        : await skillsCli({ program: 'npx', args: [...(spec.args ?? [])], cwd: spec.cwd })
+    return { ...result, environmentResolved: true }
+  })
 }

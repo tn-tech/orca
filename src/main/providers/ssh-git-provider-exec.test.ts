@@ -132,6 +132,34 @@ describe('SshGitProvider', () => {
     )
   })
 
+  it('execNonInteractiveOperation sends stdin on its own operation lane', async () => {
+    const execResult = { stdout: '', stderr: '', exitCode: 0, timedOut: false }
+    mux.request.mockResolvedValue(execResult)
+
+    const result = await provider.execNonInteractiveOperation({
+      binary: '/bin/sh',
+      args: ['-c', 'cat > "$1"', 'sh', '/home/user/repo/a.txt'],
+      cwd: '/home/user/repo',
+      timeoutMs: 30_000,
+      operation: 'workflow-skills',
+      stdin: 'hello'
+    })
+
+    expect(mux.request).toHaveBeenCalledWith(
+      'agent.execNonInteractive',
+      {
+        binary: '/bin/sh',
+        args: ['-c', 'cat > "$1"', 'sh', '/home/user/repo/a.txt'],
+        cwd: '/home/user/repo',
+        stdin: 'hello',
+        timeoutMs: 30_000,
+        operation: 'workflow-skills'
+      },
+      { timeoutMs: 35_000 }
+    )
+    expect(result).toEqual(execResult)
+  })
+
   it('cancelNonInteractiveExec sends best-effort relay cancellation', async () => {
     await provider.cancelNonInteractiveExec('/home/user/repo')
 

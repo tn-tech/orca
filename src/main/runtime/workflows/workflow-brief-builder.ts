@@ -229,7 +229,7 @@ export function buildTaskSpec(args: BuildTaskSpecArgs): string {
 
 export type OrcaIgnoreTarget =
   | { host: 'local'; repoPath: string }
-  | { host: 'remote'; fsProvider: IFilesystemProvider; repoPath: string }
+  | { host: 'remote'; fsProvider: IFilesystemProvider; repoPath: string; connectionId: string }
 
 async function ensureOrcaIgnored(target: OrcaIgnoreTarget): Promise<void> {
   if (target.host === 'local') {

@@ -57,6 +57,30 @@ export class SshGitNoninteractiveProvider extends SshGitReadProvider {
     )
   }
 
+  /** Runs in its own `operation` lane: the relay cancels an in-flight exec when its lane is reused. */
+  async execNonInteractiveOperation(request: {
+    binary: string
+    args: string[]
+    cwd: string
+    timeoutMs: number
+    operation: string
+    stdin?: string
+  }): Promise<RemoteCommitMessageExecResult> {
+    return this.runQueuedNonInteractiveExec(
+      request.cwd,
+      {
+        binary: request.binary,
+        args: request.args,
+        cwd: request.cwd,
+        stdin: request.stdin ?? null,
+        timeoutMs: request.timeoutMs,
+        operation: request.operation
+      },
+      undefined,
+      request.operation
+    )
+  }
+
   async cancelNonInteractiveExec(cwd: string, operation?: string): Promise<void> {
     const queue = this.nonInteractiveExecQueues.get(this.nonInteractiveLaneKey(cwd, operation))
     const queuedEntry = queue?.find((entry) => !entry.started && !entry.canceled)
