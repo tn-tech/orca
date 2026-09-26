@@ -17,6 +17,7 @@ import {
   loopActiveIteration,
   nodeAttemptIterations,
   nodeAttemptStatuses,
+  nodeAttemptWorkspaces,
   useWorkflowRunSnapshot
 } from './use-workflow-run-snapshot'
 
@@ -244,6 +245,27 @@ describe('nodeAttemptStatuses', () => {
 
   it('returns an empty map for a null snapshot', () => {
     expect(nodeAttemptStatuses(null)).toEqual({})
+  })
+})
+
+describe('nodeAttemptWorkspaces', () => {
+  it("maps each node to its latest attempt's workspaceWorktreeId", () => {
+    const snapshot = snapshotFixture([
+      attempt({ nodeId: 'implement', iteration: 0, attemptIndex: 0, workspaceWorktreeId: 'wt-1' }),
+      attempt({ nodeId: 'review', iteration: 0, attemptIndex: 0 })
+    ])
+
+    expect(nodeAttemptWorkspaces(snapshot)).toEqual({ implement: 'wt-1' })
+  })
+
+  it('omits a node whose latest attempt has no recorded workspace', () => {
+    const snapshot = snapshotFixture([attempt({ nodeId: 'implement', iteration: 0 })])
+
+    expect(nodeAttemptWorkspaces(snapshot)).toEqual({})
+  })
+
+  it('returns an empty map for a null snapshot', () => {
+    expect(nodeAttemptWorkspaces(null)).toEqual({})
   })
 })
 

@@ -17,6 +17,8 @@ import type {
 } from '../../../../../shared/workflows/workflow-run-types'
 import { workflowNodeStatusDotClassName } from '../editor/nodes/workflow-node-run-status-style'
 import { InspectorField } from '../editor/InspectorField'
+import JoinBranchOutcomes, { readJoinBranches } from './JoinBranchOutcomes'
+import RouterChoiceSummary, { readRouterChoice } from './RouterChoiceSummary'
 import {
   attemptsByIteration,
   latestNodeAttempt,
@@ -175,6 +177,8 @@ export default function AttemptPanel({
     snapshot.attempts,
     node.type === 'loop' ? node.exitNodeId : nodeId
   )
+  const joinBranches = node.type === 'join' ? readJoinBranches(attempt?.resultJson) : undefined
+  const routerChoice = node.type === 'router' ? readRouterChoice(attempt?.resultJson) : undefined
 
   if (!attempt) {
     return (
@@ -260,7 +264,11 @@ export default function AttemptPanel({
         <p className="text-xs text-destructive">{attempt.failureReason}</p>
       ) : null}
 
-      {attempt.resultJson !== undefined ? (
+      {joinBranches ? (
+        <JoinBranchOutcomes branches={joinBranches} />
+      ) : routerChoice ? (
+        <RouterChoiceSummary result={routerChoice} />
+      ) : attempt.resultJson !== undefined ? (
         <InspectorField
           label={translate('auto.components.workflows.run-view.AttemptPanel.result', 'Result')}
         >

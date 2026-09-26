@@ -220,3 +220,23 @@ export function nodeAttemptIterations(
   }
   return iterations
 }
+
+/** One `workspaceWorktreeId` per node with a latest attempt that recorded one (FR-035, "the run
+ *  view shows which workspace each node used") — raw worktree ids; `RunCanvasOverlay` resolves
+ *  them to display names, since that needs the worktree store this pure hook file doesn't touch. */
+export function nodeAttemptWorkspaces(
+  snapshot: WorkflowRunSnapshotView | null
+): Record<string, string> {
+  if (!snapshot) {
+    return {}
+  }
+  const nodeIds = new Set(snapshot.attempts.map((attempt) => attempt.nodeId))
+  const workspaces: Record<string, string> = {}
+  for (const nodeId of nodeIds) {
+    const worktreeId = latestNodeAttempt(snapshot.attempts, nodeId)?.workspaceWorktreeId
+    if (worktreeId) {
+      workspaces[nodeId] = worktreeId
+    }
+  }
+  return workspaces
+}

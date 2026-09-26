@@ -13,6 +13,9 @@ export type WorkflowAgentNodeData = {
   /** Resolved `overrides.agent ?? role.agent` (WorkflowCanvas has the roles map, this node doesn't). */
   agentLabel?: string
   attemptState?: WorkflowAttemptState
+  /** The worktree the attempt's dispatch ran in (FR-035, "workspace used per node"); absent
+   *  before the node has run. */
+  workspaceLabel?: string
 }
 
 export type WorkflowAgentFlowNode = FlowNode<WorkflowAgentNodeData, 'agent'>
@@ -22,7 +25,7 @@ export default function AgentNode({
   data,
   selected
 }: NodeProps<WorkflowAgentFlowNode>): React.JSX.Element {
-  const { definitionNode, agentLabel, attemptState } = data
+  const { definitionNode, agentLabel, attemptState, workspaceLabel } = data
   const statusDotClassName = workflowNodeStatusDotClassName(attemptState)
   const agentText =
     agentLabel ??
@@ -55,6 +58,17 @@ export default function AgentNode({
       {definitionNode.overrides?.model ? (
         <span className="truncate text-[11px] text-muted-foreground">
           {definitionNode.overrides.model}
+        </span>
+      ) : null}
+      {workspaceLabel ? (
+        <span className="truncate text-[11px] text-muted-foreground">
+          {translate(
+            'auto.components.workflows.editor.AgentNode.workspace',
+            'Workspace: {{name}}',
+            {
+              name: workspaceLabel
+            }
+          )}
         </span>
       ) : null}
       <Handle

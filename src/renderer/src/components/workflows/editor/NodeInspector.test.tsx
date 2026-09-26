@@ -5,7 +5,9 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   AgentNode,
+  JoinNode,
   LoopNode,
+  RouterNode,
   StartNode,
   Workflow
 } from '../../../../../shared/workflows/workflow-definition-types'
@@ -44,6 +46,21 @@ function loopNode(patch: Partial<LoopNode> = {}): LoopNode {
     maxIterations: 0,
     exitCondition: { path: 'approved', op: 'truthy' },
     onCapReached: 'fail',
+    ...patch
+  }
+}
+
+function joinNode(patch: Partial<JoinNode> = {}): JoinNode {
+  return { id: 'join', type: 'join', title: 'Join', policy: 'all', onFailure: 'fail', ...patch }
+}
+
+function routerNode(patch: Partial<RouterNode> = {}): RouterNode {
+  return {
+    id: 'router',
+    type: 'router',
+    title: 'Router',
+    prompt: 'Decide.',
+    choices: ['bugfix', 'feature'],
     ...patch
   }
 }
@@ -153,6 +170,39 @@ describe('NodeInspector', () => {
     fireEvent.change(screen.getByLabelText('Maximum iterations'), { target: { value: '3' } })
 
     expect(onNodeChange).toHaveBeenLastCalledWith(expect.objectContaining({ maxIterations: 3 }))
+  })
+
+  it('renders JoinNodeFields for a selected join node, with its incoming edge count', () => {
+    render(
+      <NodeInspector
+        definition={workflow({
+          nodes: [startNode(), agentNode(), joinNode()],
+          edges: [
+            { id: 'edge-1', from: 'start', to: 'implement' },
+            { id: 'edge-2', from: 'implement', to: 'join' }
+          ]
+        })}
+        selectedNodeId="join"
+        onNodeChange={vi.fn()}
+        onEdgeConditionChange={vi.fn()}
+      />
+    )
+    expect(screen.getByRole('combobox', { name: 'Policy' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'When a branch fails' })).toBeInTheDocument()
+  })
+
+  it('renders RouterNodeFields for a selected router node', () => {
+    render(
+      <NodeInspector
+        definition={workflow({ nodes: [startNode(), routerNode()] })}
+        selectedNodeId="router"
+        onNodeChange={vi.fn()}
+        onEdgeConditionChange={vi.fn()}
+      />
+    )
+    expect(screen.getByRole('combobox', { name: 'Model' })).toBeInTheDocument()
+    expect(screen.getByDisplayValue('bugfix')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('feature')).toBeInTheDocument()
   })
 
   it('renders ConditionBuilder for a selected edge', () => {

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import '@testing-library/jest-dom/vitest'
 import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   AgentNode,
   LoopNode,
@@ -10,7 +10,10 @@ import type {
 } from '../../../../../shared/workflows/workflow-definition-types'
 import type { WorkflowRunSnapshotView } from '@/runtime/runtime-workflow-client'
 
-const { workflowCanvasMock } = vi.hoisted(() => ({ workflowCanvasMock: vi.fn() }))
+const { workflowCanvasMock, useWorktreeMapMock } = vi.hoisted(() => ({
+  workflowCanvasMock: vi.fn(),
+  useWorktreeMapMock: vi.fn()
+}))
 
 vi.mock('../editor/WorkflowCanvas', () => ({
   default: (props: unknown) => {
@@ -19,11 +22,18 @@ vi.mock('../editor/WorkflowCanvas', () => ({
   }
 }))
 
+vi.mock('@/store/selectors', () => ({ useWorktreeMap: useWorktreeMapMock }))
+
 import RunCanvasOverlay from './RunCanvasOverlay'
+
+beforeEach(() => {
+  useWorktreeMapMock.mockReturnValue(new Map())
+})
 
 afterEach(() => {
   cleanup()
   workflowCanvasMock.mockClear()
+  useWorktreeMapMock.mockReset()
 })
 
 function startNode(): StartNode {
@@ -181,6 +191,37 @@ describe('RunCanvasOverlay', () => {
     expect(workflowCanvasMock).toHaveBeenCalledWith(
       expect.objectContaining({ nodeIterations: { loop: 2 } })
     )
+  })
+
+  it("resolves each node's workspaceWorktreeId to the worktree's display name", () => {
+    useWorktreeMapMock.mockReturnValue(
+      new Map([['wt-1', { id: 'wt-1', displayName: 'implement-child' }]])
+    )
+    const withWorkspace = snapshot()
+    withWorkspace.attempts[0].workspaceWorktreeId = 'wt-1'
+
+    render(<RunCanvasOverlay definition={workflow()} snapshot={withWorkspace} />)
+
+    expect(workflowCanvasMock).toHaveBeenCalledWith(
+      expect.objectContaining({ nodeWorkspaces: { implement: 'implement-child' } })
+    )
+  })
+
+  it('falls back to the raw worktree id when the worktree is not (yet) known to this client', () => {
+    const withWorkspace = snapshot()
+    withWorkspace.attempts[0].workspaceWorktreeId = 'wt-unknown'
+
+    render(<RunCanvasOverlay definition={workflow()} snapshot={withWorkspace} />)
+
+    expect(workflowCanvasMock).toHaveBeenCalledWith(
+      expect.objectContaining({ nodeWorkspaces: { implement: 'wt-unknown' } })
+    )
+  })
+
+  it('passes an empty workspace map without a run', () => {
+    render(<RunCanvasOverlay definition={workflow()} snapshot={null} />)
+
+    expect(workflowCanvasMock).toHaveBeenCalledWith(expect.objectContaining({ nodeWorkspaces: {} }))
   })
 
   it('forwards canvas interaction props through', () => {

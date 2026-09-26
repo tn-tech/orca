@@ -4,7 +4,9 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   AgentNode,
+  JoinNode,
   LoopNode,
+  RouterNode,
   StartNode,
   Workflow
 } from '../../../../../shared/workflows/workflow-definition-types'
@@ -108,6 +110,28 @@ function workflowWithLoop(): Workflow {
     ...workflow(),
     nodes: [startNode(), loopNode(), agentNode(), reviewNode()]
   }
+}
+
+function joinNode(): JoinNode {
+  return { id: 'join', type: 'join', title: 'Join', policy: 'all', onFailure: 'fail' }
+}
+
+function workflowWithJoin(): Workflow {
+  return { ...workflow(), nodes: [startNode(), agentNode(), joinNode()] }
+}
+
+function routerNode(): RouterNode {
+  return {
+    id: 'router',
+    type: 'router',
+    title: 'Router',
+    prompt: 'Decide.',
+    choices: ['bugfix', 'feature']
+  }
+}
+
+function workflowWithRouter(): Workflow {
+  return { ...workflow(), nodes: [startNode(), routerNode()] }
 }
 
 function attempt(patch: Partial<NodeAttemptView> = {}): NodeAttemptView {
@@ -402,6 +426,114 @@ describe('AttemptPanel', () => {
       expect(screen.getByText('Iteration 2')).toBeInTheDocument()
       expect(screen.getByText('Iteration 3')).toBeInTheDocument()
       expect(screen.getByText('not approved')).toBeInTheDocument()
+    })
+  })
+
+  describe('a selected Join node (US3 AS3/AS4)', () => {
+    it('shows per-branch outcomes instead of the raw result JSON', () => {
+      render(
+        <AttemptPanel
+          definition={workflowWithJoin()}
+          snapshot={snapshot(
+            [
+              attempt({
+                id: 'join-attempt',
+                nodeId: 'join',
+                nodeType: 'join',
+                resultJson: { branches: { implement: 'completed', other: 'failed' } }
+              })
+            ],
+            workflowWithJoin()
+          )}
+          nodeId="join"
+          runtimeEnvironmentId={null}
+        />
+      )
+
+      expect(screen.getByText('Branches')).toBeInTheDocument()
+      expect(screen.getByText('implement')).toBeInTheDocument()
+      // "Completed" appears twice: the attempt's own state badge, and the "implement" branch row.
+      expect(screen.getAllByText('Completed')).toHaveLength(2)
+      expect(screen.getByText('other')).toBeInTheDocument()
+      expect(screen.getByText('Failed')).toBeInTheDocument()
+      expect(screen.queryByText(/"branches"/)).not.toBeInTheDocument()
+    })
+
+    it('falls back to the raw result JSON when resultJson is not the expected shape', () => {
+      render(
+        <AttemptPanel
+          definition={workflowWithJoin()}
+          snapshot={snapshot(
+            [
+              attempt({
+                id: 'join-attempt',
+                nodeId: 'join',
+                nodeType: 'join',
+                resultJson: { unexpected: true }
+              })
+            ],
+            workflowWithJoin()
+          )}
+          nodeId="join"
+          runtimeEnvironmentId={null}
+        />
+      )
+
+      expect(screen.queryByText('Branches')).not.toBeInTheDocument()
+      expect(screen.getByText(/"unexpected": true/)).toBeInTheDocument()
+    })
+  })
+
+  describe('a selected Router node (US3 AS6, FR-029)', () => {
+    it('shows the recorded choice and reason instead of the raw result JSON', () => {
+      render(
+        <AttemptPanel
+          definition={workflowWithRouter()}
+          snapshot={snapshot(
+            [
+              attempt({
+                id: 'router-attempt',
+                nodeId: 'router',
+                nodeType: 'router',
+                resultJson: { choice: 'feature', reason: 'Adds new capability.' }
+              })
+            ],
+            workflowWithRouter()
+          )}
+          nodeId="router"
+          runtimeEnvironmentId={null}
+        />
+      )
+
+      expect(screen.getByText('Choice')).toBeInTheDocument()
+      expect(screen.getByText('feature')).toBeInTheDocument()
+      expect(screen.getByText('Reason')).toBeInTheDocument()
+      expect(screen.getByText('Adds new capability.')).toBeInTheDocument()
+      expect(screen.queryByText(/"choice"/)).not.toBeInTheDocument()
+    })
+
+    it('falls back to the raw result JSON when resultJson is not the expected shape', () => {
+      render(
+        <AttemptPanel
+          definition={workflowWithRouter()}
+          snapshot={snapshot(
+            [
+              attempt({
+                id: 'router-attempt',
+                nodeId: 'router',
+                nodeType: 'router',
+                resultJson: { unexpected: true }
+              })
+            ],
+            workflowWithRouter()
+          )}
+          nodeId="router"
+          runtimeEnvironmentId={null}
+        />
+      )
+
+      expect(screen.queryByText('Choice')).not.toBeInTheDocument()
+      expect(screen.getByText(/"unexpected": true/)).toBeInTheDocument()
     })
   })
 })

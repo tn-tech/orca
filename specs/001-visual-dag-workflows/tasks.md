@@ -194,9 +194,9 @@ Monorepo per plan.md: shared types `src/shared/workflows/`, engine `src/main/run
 - [X] T084 [US3] Create `src/main/runtime/workflows/workflow-join-policy.ts` and integrate into `workflow-frontier.ts`; on `fail` call `orchestration.workerStop` for running sibling attempts through `workflow-orchestration-client.ts`
 - [ ] T085 [US3] Create `src/main/runtime/workflows/workflow-concurrency.ts` (per-run semaphore, default 4, `overrides.concurrencyLimit` from `workflow.run.start`) and use it in `workflow-node-dispatch.ts`
 - [ ] T086 [US3] Add child workspace placement (`workspace: 'child'` → `worktree: 'new-child'` with the run workspace as parent) to `workflow-node-dispatch.ts` and record `workspace_worktree_id` on the attempt
-- [ ] T087 [P] [US3] Create `src/renderer/src/components/workflows/editor/nodes/JoinNode.tsx` and `editor/JoinNodeFields.tsx` (policy and failure policy selects), show per-branch outcome in `run-view/AttemptPanel.tsx`, and show the workspace used per node in `run-view/RunCanvasOverlay.tsx`
+- [X] T087 [P] [US3] Create `src/renderer/src/components/workflows/editor/nodes/JoinNode.tsx` and `editor/JoinNodeFields.tsx` (policy and failure policy selects), show per-branch outcome in `run-view/AttemptPanel.tsx`, and show the workspace used per node in `run-view/RunCanvasOverlay.tsx`
 - [ ] T088 [US3] Create `src/main/runtime/workflows/workflow-router.ts` (fixed result contract `{ choice: string; reason: string }`, choice-port routing, mismatch failure) and integrate it with `workflow-frontier.ts` and `workflow-node-dispatch.ts` so Router briefs list the allowed choices verbatim
-- [ ] T089 [P] [US3] Create `src/renderer/src/components/workflows/editor/nodes/RouterNode.tsx` and `editor/RouterNodeFields.tsx` (role, overrides, prompt, choices list with exactly one outgoing port per choice) and show the recorded choice and reason in `run-view/AttemptPanel.tsx`
+- [X] T089 [P] [US3] Create `src/renderer/src/components/workflows/editor/nodes/RouterNode.tsx` and `editor/RouterNodeFields.tsx` (role, overrides, prompt, choices list with exactly one outgoing port per choice) and show the recorded choice and reason in `run-view/AttemptPanel.tsx`
 
 **Checkpoint**: Three parallel nodes run in separate child workspaces and join under each policy.
 

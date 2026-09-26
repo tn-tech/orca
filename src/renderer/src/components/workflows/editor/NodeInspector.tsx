@@ -11,7 +11,9 @@ import type {
 import AgentNodeFields from './AgentNodeFields'
 import ConditionBuilder from './ConditionBuilder'
 import { InspectorField } from './InspectorField'
+import JoinNodeFields from './JoinNodeFields'
 import LoopNodeFields from './LoopNodeFields'
+import RouterNodeFields from './RouterNodeFields'
 
 export type NodeInspectorProps = {
   definition: Workflow
@@ -86,6 +88,10 @@ function findEdge(definition: Workflow, edgeId: string): Edge | undefined {
   return definition.edges.find((edge) => edge.id === edgeId)
 }
 
+function countIncomingEdges(definition: Workflow, nodeId: string): number {
+  return definition.edges.filter((edge) => edge.to === nodeId).length
+}
+
 /** Edge conditions (FR-008) editable via `ConditionBuilder`; Agent node settings (FR-003/FR-004)
  *  via `AgentNodeFields`. Other node types get title/notes only until their own units land. */
 export default function NodeInspector({
@@ -142,6 +148,14 @@ export default function NodeInspector({
         <AgentNodeFields node={node} roles={definition.roles} onChange={onNodeChange} />
       ) : node.type === 'loop' ? (
         <LoopNodeFields node={node} onChange={onNodeChange} />
+      ) : node.type === 'join' ? (
+        <JoinNodeFields
+          node={node}
+          incomingEdgeCount={countIncomingEdges(definition, node.id)}
+          onChange={onNodeChange}
+        />
+      ) : node.type === 'router' ? (
+        <RouterNodeFields node={node} roles={definition.roles} onChange={onNodeChange} />
       ) : (
         <p className="text-xs text-muted-foreground">
           {translate(

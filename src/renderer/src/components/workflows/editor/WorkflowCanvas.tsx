@@ -16,13 +16,16 @@ import {
 } from '@xyflow/react'
 import type {
   AgentNode as AgentNodeDefinition,
+  RouterNode as RouterNodeDefinition,
   Workflow
 } from '../../../../../shared/workflows/workflow-definition-types'
 import type { WorkflowAttemptState } from '../../../../../shared/workflows/workflow-node-states'
 import { computeLoopContainerBounds } from './workflow-auto-layout'
 import AgentNode, { type WorkflowAgentFlowNode } from './nodes/AgentNode'
 import EndNode, { type WorkflowEndFlowNode } from './nodes/EndNode'
+import JoinNode, { type WorkflowJoinFlowNode } from './nodes/JoinNode'
 import LoopNode, { type WorkflowLoopFlowNode } from './nodes/LoopNode'
+import RouterNode, { type WorkflowRouterFlowNode } from './nodes/RouterNode'
 import StartNode, { type WorkflowStartFlowNode } from './nodes/StartNode'
 
 type WorkflowFlowNode =
@@ -30,14 +33,27 @@ type WorkflowFlowNode =
   | WorkflowStartFlowNode
   | WorkflowEndFlowNode
   | WorkflowLoopFlowNode
+  | WorkflowJoinFlowNode
+  | WorkflowRouterFlowNode
 
-const NODE_TYPES: NodeTypes = { agent: AgentNode, start: StartNode, end: EndNode, loop: LoopNode }
+const NODE_TYPES: NodeTypes = {
+  agent: AgentNode,
+  start: StartNode,
+  end: EndNode,
+  loop: LoopNode,
+  join: JoinNode,
+  router: RouterNode
+}
 
 export type WorkflowCanvasNodeStatuses = Readonly<Record<string, WorkflowAttemptState>>
 
 /** The Loop node currently active for each node id (run view only, T079); keyed by the Loop's own
  *  id — `latestNodeAttempt`'s `iteration` for that Loop's `NodeAttemptView`. */
 export type WorkflowCanvasNodeIterations = Readonly<Record<string, number>>
+
+/** The worktree a dispatching node's attempt ran in (run view only, FR-035's "workspace used per
+ *  node"), keyed by node id; only nodes that dispatch a worker (Agent, Router) ever have one. */
+export type WorkflowCanvasNodeWorkspaces = Readonly<Record<string, string>>
 
 export type WorkflowCanvasConnection = { from: string; to: string; fromPort?: string }
 
@@ -47,6 +63,8 @@ export type WorkflowCanvasProps = {
   nodeStatuses?: WorkflowCanvasNodeStatuses
   /** Per-Loop-node active iteration (run view overlay, T079); absent in plain editing. */
   nodeIterations?: WorkflowCanvasNodeIterations
+  /** Per-node workspace label (run view overlay, T087/T089); absent in plain editing. */
+  nodeWorkspaces?: WorkflowCanvasNodeWorkspaces
   selectedNodeId?: string
   selectedEdgeId?: string
   onNodeSelect?: (nodeId: string | undefined) => void
@@ -56,7 +74,10 @@ export type WorkflowCanvasProps = {
   onConnect?: (connection: WorkflowCanvasConnection) => void
 }
 
-function resolveAgentLabel(definition: Workflow, node: AgentNodeDefinition): string | undefined {
+function resolveAgentLabel(
+  definition: Workflow,
+  node: AgentNodeDefinition | RouterNodeDefinition
+): string | undefined {
   const role = node.roleId ? definition.roles[node.roleId] : undefined
   return node.overrides?.agent ?? role?.agent
 }
@@ -105,6 +126,7 @@ function toFlowNodes(
   definition: Workflow,
   nodeStatuses: WorkflowCanvasNodeStatuses | undefined,
   nodeIterations: WorkflowCanvasNodeIterations | undefined,
+  nodeWorkspaces: WorkflowCanvasNodeWorkspaces | undefined,
   selectedNodeId: string | undefined,
   parentOf: ReadonlyMap<string, string>
 ): WorkflowFlowNode[] {
@@ -153,7 +175,31 @@ function toFlowNodes(
         data: {
           definitionNode: node,
           agentLabel: resolveAgentLabel(definition, node),
-          attemptState
+          attemptState,
+          workspaceLabel: nodeWorkspaces?.[node.id]
+        }
+      })
+    } else if (node.type === 'join') {
+      flowNodes.push({
+        id: node.id,
+        type: 'join',
+        position,
+        selected,
+        ...nesting,
+        data: { definitionNode: node, attemptState }
+      })
+    } else if (node.type === 'router') {
+      flowNodes.push({
+        id: node.id,
+        type: 'router',
+        position,
+        selected,
+        ...nesting,
+        data: {
+          definitionNode: node,
+          agentLabel: resolveAgentLabel(definition, node),
+          attemptState,
+          workspaceLabel: nodeWorkspaces?.[node.id]
         }
       })
     } else if (node.type === 'loop') {
@@ -175,7 +221,7 @@ function toFlowNodes(
         }
       })
     }
-    // Router/Join/Approval/Reflection node components land in later units (T087, T089, T111, T120).
+    // Approval/Reflection node components land in later units (T111, T120).
   }
   return flowNodes
 }
@@ -198,6 +244,7 @@ export default function WorkflowCanvas({
   definition,
   nodeStatuses,
   nodeIterations,
+  nodeWorkspaces,
   selectedNodeId,
   selectedEdgeId,
   onNodeSelect,
@@ -207,8 +254,16 @@ export default function WorkflowCanvas({
 }: WorkflowCanvasProps): React.JSX.Element {
   const parentOf = useMemo(() => loopParentMap(definition.nodes), [definition.nodes])
   const nodes = useMemo(
-    () => toFlowNodes(definition, nodeStatuses, nodeIterations, selectedNodeId, parentOf),
-    [definition, nodeStatuses, nodeIterations, selectedNodeId, parentOf]
+    () =>
+      toFlowNodes(
+        definition,
+        nodeStatuses,
+        nodeIterations,
+        nodeWorkspaces,
+        selectedNodeId,
+        parentOf
+      ),
+    [definition, nodeStatuses, nodeIterations, nodeWorkspaces, selectedNodeId, parentOf]
   )
   const edges = useMemo(() => toFlowEdges(definition, selectedEdgeId), [definition, selectedEdgeId])
 
