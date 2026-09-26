@@ -185,14 +185,14 @@ Monorepo per plan.md: shared types `src/shared/workflows/`, engine `src/main/run
 ### Tests for User Story 3
 
 - [X] T080 [P] [US3] Write `src/main/runtime/workflows/workflow-join-policy.test.ts`: `all` waits for last, skipped counts as satisfied, `any` proceeds on first, `quorum(n)`, `onFailure: fail` fails join and requests stop of siblings, `skip` treats failures as skipped, `partial` exposes `join.branches`
-- [ ] T081 [P] [US3] Write `src/main/runtime/workflows/workflow-concurrency.test.ts`: at most `concurrencyLimit` attempts in `running`, queued attempts start as slots free
+- [X] T081 [P] [US3] Write `src/main/runtime/workflows/workflow-concurrency.test.ts`: at most `concurrencyLimit` attempts in `running`, queued attempts start as slots free
 - [ ] T082 [P] [US3] Extend `workflow-run-workspace.test.ts`: child workspace created via `worker-start --worktree new-child` placement, disabled under `in-place` with a Problem
 - [ ] T083 [P] [US3] Write `src/main/runtime/workflows/workflow-router.test.ts`: a Router attempt whose `result.choice` is not one of `choices` fails with `result_invalid` and fires no edge; a valid choice fires only the matching option-port edge and marks the other branches Skipped; `reason` is stored on the attempt and appended to `workflow_run_events`
 
 ### Implementation for User Story 3
 
 - [X] T084 [US3] Create `src/main/runtime/workflows/workflow-join-policy.ts` and integrate into `workflow-frontier.ts`; on `fail` call `orchestration.workerStop` for running sibling attempts through `workflow-orchestration-client.ts`
-- [ ] T085 [US3] Create `src/main/runtime/workflows/workflow-concurrency.ts` (per-run semaphore, default 4, `overrides.concurrencyLimit` from `workflow.run.start`) and use it in `workflow-node-dispatch.ts`
+- [X] T085 [US3] Create `src/main/runtime/workflows/workflow-concurrency.ts` (per-run semaphore, default 4, `overrides.concurrencyLimit` from `workflow.run.start`) and use it in `workflow-node-dispatch.ts`
 - [ ] T086 [US3] Add child workspace placement (`workspace: 'child'` → `worktree: 'new-child'` with the run workspace as parent) to `workflow-node-dispatch.ts` and record `workspace_worktree_id` on the attempt
 - [X] T087 [P] [US3] Create `src/renderer/src/components/workflows/editor/nodes/JoinNode.tsx` and `editor/JoinNodeFields.tsx` (policy and failure policy selects), show per-branch outcome in `run-view/AttemptPanel.tsx`, and show the workspace used per node in `run-view/RunCanvasOverlay.tsx`
 - [ ] T088 [US3] Create `src/main/runtime/workflows/workflow-router.ts` (fixed result contract `{ choice: string; reason: string }`, choice-port routing, mismatch failure) and integrate it with `workflow-frontier.ts` and `workflow-node-dispatch.ts` so Router briefs list the allowed choices verbatim

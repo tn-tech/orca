@@ -15,6 +15,7 @@ import {
 import type { OrchestrationDb } from '../orchestration/db'
 import { generateId } from '../orchestration/db/generated-id'
 import type { OrcaIgnoreTarget } from './workflow-brief-builder'
+import { resolveConcurrencyLimit } from './workflow-concurrency'
 import {
   getProjectWorkflowFilesystem,
   type WorkflowFilesystem
@@ -174,9 +175,9 @@ export class WorkflowEngine {
         repoId: input.repo.id,
         // Why repo.id: an in-place run has no worktree, but the column disallows NULL.
         worktreeId: worktreeId ?? input.repo.id,
-        ...(input.concurrencyLimit !== undefined
-          ? { concurrencyLimit: input.concurrencyLimit }
-          : {}),
+        // FR-031: an explicit override wins; otherwise honor the workflow file's own default
+        // rather than letting the DB's hardcoded default silently override it.
+        concurrencyLimit: resolveConcurrencyLimit(input.workflow, input.concurrencyLimit),
         ...(input.startedByClient ? { startedByClient: input.startedByClient } : {}),
         ...(input.rerunOfRunId ? { rerunOfRunId: input.rerunOfRunId } : {}),
         ...(input.rerunFromNodeId ? { rerunFromNodeId: input.rerunFromNodeId } : {})

@@ -33,8 +33,15 @@ export type WorkflowNodeLaunchContext = {
   placementWorktreeId: string | undefined
 }
 
+/** Node types the engine dispatches to a worker; the only ones a concurrency slot gates (workflow-concurrency.ts). */
+export const WORKER_DISPATCH_NODE_TYPES: ReadonlySet<Node['type']> = new Set([
+  'agent',
+  'router',
+  'reflection'
+])
+
 function isBriefNode(node: Node): node is BriefNode {
-  return node.type === 'agent' || node.type === 'router' || node.type === 'reflection'
+  return WORKER_DISPATCH_NODE_TYPES.has(node.type)
 }
 
 export function requireBriefNode(definition: Workflow, nodeId: string): BriefNode {

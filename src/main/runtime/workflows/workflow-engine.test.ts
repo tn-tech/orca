@@ -173,6 +173,47 @@ describe('WorkflowEngine', () => {
     expect(engine.getSnapshot(run.id)?.state).toBe('completed')
   })
 
+  it('honors the workflow file concurrencyLimit when no override is given (FR-031)', async () => {
+    const engine = createEngine()
+    const run = await engine.startRun({
+      workflow: { ...TRIVIAL_WORKFLOW, concurrencyLimit: 7 },
+      workflowSource: 'project',
+      workflowVersion: 'v1',
+      objective: 'honor the file default',
+      repo,
+      validation: ALWAYS_SUPPORTED
+    })
+    expect(run.concurrencyLimit).toBe(7)
+    expect(engine.getSnapshot(run.id)?.concurrencyLimit).toBe(7)
+  })
+
+  it('lets a workflow.run.start override win over the workflow file concurrencyLimit', async () => {
+    const engine = createEngine()
+    const run = await engine.startRun({
+      workflow: { ...TRIVIAL_WORKFLOW, concurrencyLimit: 7 },
+      workflowSource: 'project',
+      workflowVersion: 'v1',
+      objective: 'override wins',
+      repo,
+      concurrencyLimit: 2,
+      validation: ALWAYS_SUPPORTED
+    })
+    expect(run.concurrencyLimit).toBe(2)
+  })
+
+  it('defaults concurrencyLimit to 4 when neither the workflow file nor an override sets one', async () => {
+    const engine = createEngine()
+    const run = await engine.startRun({
+      workflow: TRIVIAL_WORKFLOW,
+      workflowSource: 'project',
+      workflowVersion: 'v1',
+      objective: 'default limit',
+      repo,
+      validation: ALWAYS_SUPPORTED
+    })
+    expect(run.concurrencyLimit).toBe(4)
+  })
+
   it('rejects an invalid graph before creating any workspace or row', async () => {
     const engine = createEngine()
     const invalid: Workflow = {
