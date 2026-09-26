@@ -7,17 +7,21 @@
  * calling a model.
  *
  * Protocol:
- * 1. Find the brief path. Either `process.argv[2]` is the path directly, or
- *    it is read from stdin: the engine's taskSpec always contains the literal
- *    substring ".orca/workflow-runs/<runId>/<attemptId>/brief.md", which is
- *    extracted with a regex. This mirrors how a real agent is launched: the
- *    override command in stub-agent-launch-override.ts takes no arguments,
- *    so the taskSpec text is delivered the same way a real CLI's initial
- *    prompt is (stdin-after-start); direct argv invocation exists for tests.
+ * 1. Find the brief path. Either an argv entry ending in `brief.md` names it
+ *    directly (other argv, e.g. launch-time `--model` flags, is ignored), or
+ *    it is read from the prompt on stdin: the engine's taskSpec always
+ *    contains the literal substring
+ *    ".orca/workflow-runs/<runId>/<attemptId>/brief.md", which is extracted
+ *    with a regex. A worker started by `orchestration.workerStart` gets its
+ *    prompt the way a real TUI does — a bracketed paste typed into its PTY —
+ *    so on a TTY stdin is read in raw mode until the paste-end marker and the
+ *    Enter that submits it; piped stdin is read to EOF (direct invocation
+ *    from tests).
  * 2. The attempt directory is `dirname(briefPath)`. Node id and iteration
  *    come from `WORKFLOW_STUB_NODE_ID` / `WORKFLOW_STUB_ITERATION` env vars
  *    if set, otherwise from `nodeId` / `iteration` in that directory's
- *    `inputs.json` (iteration defaults to 1).
+ *    `inputs.json` (iteration defaults to 1 only if absent; the engine
+ *    writes 0 for non-loop nodes).
  * 3. `WORKFLOW_STUB_SCRIPT` is a JSON env var shaped
  *    `{ [nodeId]: { [iteration]: { result: object, outcome?: 'succeeded' | 'failed' } } }`.
  *    The entry for this node id + iteration is looked up; missing entries
@@ -28,12 +32,26 @@
  *    executable from env:
  *      orca orchestration send --type worker_done \
  *        --report-path <attemptDir>/result.json --outcome <succeeded|failed>
- *    matching the "worker_done" completion step in agent-brief.md. The
- *    script's own exit code is `orca orchestration send`'s exit code.
+ *    matching the "worker_done" completion step in agent-brief.md. When the
+ *    prompt carried the dispatch preamble, the identity flags from its
+ *    worker_done recipe (--from, --dispatch-capability, --task-id,
+ *    --dispatch-id) plus a --subject/--body are appended, as a real worker
+ *    following the preamble would. The script's own exit code is
+ *    `orca orchestration send`'s exit code.
  *    `ORCA` is split on whitespace into a program plus leading args (e.g.
  *    "node /abs/path/out/cli/index.js"), so it can name an interpreter
  *    explicitly instead of only a directly-executable binary; no quoting is
  *    supported, which is fine for the plain paths this env var carries.
+ *
+ * On a TTY the stub also paints the OSC titles a real TUI would — idle before
+ * the prompt, working after it — because workerStart only pastes into a pane
+ * whose title proves `tui-idle`, then looks for the turn-start edge.
+ * It likewise feeds the Orca-managed hook script a real CLI would run
+ * (`$HOME/.orca/agent-hooks/<agent>-hook.sh`: UserPromptSubmit, then Stop), so
+ * the worker shows up in the agent status store like any other agent, and it
+ * stays at its idle prompt after worker_done instead of exiting.
+ * `--as <agent>` (from stub-agent-launch-override.ts) picks whose title
+ * vocabulary and hook script to use; it defaults to claude.
  *
  * Plain Node ESM, no dependencies. Spawns `ORCA` directly via node:child_process
  * (not src/shared/child-process/run-process.ts) because this file runs as a
@@ -48,10 +66,45 @@ function fail(message) {
   process.exit(1)
 }
 
-function readStdinText() {
-  if (process.stdin.isTTY) {
-    return ''
+const BRIEF_PATH_PATTERN = /\S*\.orca\/workflow-runs\/\S+?\/brief\.md/
+const PASTE_END = '\u001b[201~'
+const PROMPT_TIMEOUT_MS = 60_000
+// Titles the runtime's title classifier reads as that agent's idle / working state.
+const AGENT_TITLES = {
+  claude: { idle: '\u2733 Claude Code', working: '\u2810 Claude Code' },
+  codex: { idle: 'Codex ready', working: '\u280b Codex is thinking' }
+}
+
+function resolveStubAgent() {
+  const asIndex = process.argv.indexOf('--as')
+  const agent = asIndex === -1 ? undefined : process.argv[asIndex + 1]
+  return agent && AGENT_TITLES[agent] ? agent : 'claude'
+}
+
+// Best effort, like a real CLI's hooks: a missing script or failed post never fails the turn.
+function emitAgentHook(payload) {
+  const hookScript = join(
+    process.env.HOME ?? '',
+    '.orca',
+    'agent-hooks',
+    `${resolveStubAgent()}-hook.sh`
+  )
+  if (process.platform === 'win32' || !existsSync(hookScript)) {
+    return
   }
+  spawnSync('/bin/sh', [hookScript], {
+    input: JSON.stringify(payload),
+    stdio: ['pipe', 'ignore', 'ignore']
+  })
+}
+
+function paintTitle(title) {
+  if (process.stdout.isTTY) {
+    process.stdout.write(`\u001b]0;${title}\u0007`)
+  }
+}
+
+function readPipedStdinText() {
   try {
     return readFileSync(0, 'utf8')
   } catch {
@@ -59,17 +112,81 @@ function readStdinText() {
   }
 }
 
-function resolveBriefPath() {
-  const argPath = process.argv[2]
+// Why raw mode: a canonical-mode TTY caps a line (1024 bytes on macOS) and only
+// releases input per line; the paste-end marker plus Enter is the prompt's true boundary.
+function readTtyPromptText() {
+  return new Promise((resolve) => {
+    let text = ''
+    const onData = (chunk) => {
+      text += String(chunk)
+      // Why wait for the Enter after the paste: that submit is the turn start the runtime observes.
+      const pasteEnd = text.indexOf(PASTE_END)
+      if (pasteEnd !== -1 && /[\r\n]/.test(text.slice(pasteEnd + PASTE_END.length))) {
+        finish()
+      }
+    }
+    const finish = () => {
+      clearTimeout(timer)
+      process.stdin.off('data', onData)
+      process.stdin.setRawMode(false)
+      process.stdin.pause()
+      resolve(text)
+    }
+    const timer = setTimeout(finish, PROMPT_TIMEOUT_MS)
+    process.stdin.setRawMode(true)
+    process.stdin.setEncoding('utf8')
+    process.stdin.on('data', onData)
+  })
+}
+
+function stripPasteMarkers(text) {
+  return text.replaceAll('\u001b[200~', '').replaceAll(PASTE_END, '').replace(/\r/g, '\n').trim()
+}
+
+async function readPromptText() {
+  if (!process.stdin.isTTY) {
+    return readPipedStdinText()
+  }
+  const titles = AGENT_TITLES[resolveStubAgent()]
+  paintTitle(titles.idle)
+  const text = await readTtyPromptText()
+  paintTitle(titles.working)
+  emitAgentHook({ hook_event_name: 'UserPromptSubmit', prompt: stripPasteMarkers(text) })
+  return text
+}
+
+function resolveBriefPath(promptText) {
+  const argPath = process.argv.slice(2).find((arg) => arg.endsWith('brief.md'))
   if (argPath) {
     return argPath
   }
-  const stdinText = readStdinText()
-  const match = stdinText.match(/\S*\.orca\/workflow-runs\/\S+?\/brief\.md/)
+  const match = promptText.match(BRIEF_PATH_PATTERN)
   if (!match) {
-    fail('no brief path given as argv[2] or found in stdin')
+    fail('no brief.md path given in argv or found in the stdin prompt')
   }
   return match[0]
+}
+
+/** Identity flags from the preamble's worker_done recipe, so the send lands on this Dispatch. */
+function resolveWorkerDoneIdentityArgs(promptText) {
+  const recipe = promptText.split(/\r?\n/).find((line) => line.includes('--type worker_done'))
+  if (!recipe) {
+    return []
+  }
+  const args = []
+  for (const flag of ['--from', '--dispatch-capability', '--task-id', '--dispatch-id']) {
+    const value = recipe.match(new RegExp(`${flag} (\\S+)`))?.[1]
+    if (value) {
+      args.push(flag, value)
+    }
+  }
+  return [
+    ...args,
+    '--subject',
+    'stub agent done',
+    '--body',
+    'Workflow stub agent played its scripted result.'
+  ]
 }
 
 function resolveNodeContext(attemptDir) {
@@ -107,8 +224,10 @@ function resolveScriptedResponse(nodeId, iteration) {
   return { result: entry.result, outcome: entry.outcome ?? 'succeeded' }
 }
 
-function main() {
-  const briefPath = resolveBriefPath()
+async function main() {
+  const argvBriefPath = process.argv.slice(2).some((arg) => arg.endsWith('brief.md'))
+  const promptText = argvBriefPath ? '' : await readPromptText()
+  const briefPath = resolveBriefPath(promptText)
   const attemptDir = dirname(briefPath)
   const { nodeId, iteration } = resolveNodeContext(attemptDir)
   const { result, outcome } = resolveScriptedResponse(nodeId, iteration)
@@ -133,14 +252,21 @@ function main() {
       '--report-path',
       reportPath,
       '--outcome',
-      outcome
+      outcome,
+      ...resolveWorkerDoneIdentityArgs(promptText)
     ],
     { cwd: process.cwd(), stdio: 'inherit' }
   )
   if (send.error) {
     fail(`failed to run ORCA orchestration send: ${send.error.message}`)
   }
-  process.exit(send.status ?? 1)
+  if (send.status !== 0 || !process.stdin.isTTY) {
+    process.exit(send.status ?? 1)
+  }
+  emitAgentHook({ hook_event_name: 'Stop', last_assistant_message: 'Workflow stub agent done.' })
+  paintTitle(AGENT_TITLES[resolveStubAgent()].idle)
+  // Idle at the prompt like a real TUI until the pane closes (SIGHUP ends the process).
+  setInterval(() => {}, 60_000)
 }
 
-main()
+await main()

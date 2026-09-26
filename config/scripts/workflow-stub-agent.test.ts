@@ -120,6 +120,53 @@ describe('workflow-stub-agent.mjs', () => {
     })
   })
 
+  it('ignores launch flags in argv and carries the preamble worker_done identity flags', () => {
+    const { root, attemptDir, briefPath } = createAttemptDir()
+    const argvLog = join(root, 'orca-argv.json')
+    const prompt = [
+      'You are working inside Orca, a multi-agent IDE. You are a dispatched worker.',
+      '  orca orchestration send --from term_w1 --dispatch-capability dcap_s3 --type worker_done --subject "<short status>" --body "<summary>" --task-id task_t1 --dispatch-id ctx_d1 --outcome succeeded',
+      `Read and follow ${briefPath} before doing anything else.`
+    ].join('\n')
+
+    const result = runStub({
+      argv: ['--model', 'opus', '--effort', 'high', '--as', 'codex'],
+      input: prompt,
+      cwd: root,
+      env: {
+        ORCA: `${process.execPath} ${FAKE_ORCA_PATH}`,
+        FAKE_ORCA_ARGV_LOG: argvLog,
+        WORKFLOW_STUB_NODE_ID: 'implement',
+        WORKFLOW_STUB_SCRIPT: JSON.stringify({ implement: { '1': { result: { summary: 'ok' } } } })
+      }
+    })
+
+    expect(result.status, result.stderr).toBe(0)
+    const argv = readArgvLog(argvLog)
+    expect(argv.slice(0, 8)).toEqual([
+      'orchestration',
+      'send',
+      '--type',
+      'worker_done',
+      '--report-path',
+      join(attemptDir, 'result.json'),
+      '--outcome',
+      'succeeded'
+    ])
+    expect(argv.slice(8, 16)).toEqual([
+      '--from',
+      'term_w1',
+      '--dispatch-capability',
+      'dcap_s3',
+      '--task-id',
+      'task_t1',
+      '--dispatch-id',
+      'ctx_d1'
+    ])
+    expect(argv).toContain('--subject')
+    expect(argv).toContain('--body')
+  })
+
   it('reads nodeId and iteration from inputs.json when the env override is absent', () => {
     const { root, attemptDir, briefPath } = createAttemptDir()
     writeFileSync(

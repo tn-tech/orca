@@ -20,7 +20,7 @@ export const STUB_AGENT_SCRIPT_PATH = resolve(
 
 export function createStubAgentLaunchOverrides(): Partial<Record<TuiAgent, string>> {
   return {
-    claude: `node ${STUB_AGENT_SCRIPT_PATH}`,
-    codex: `node ${STUB_AGENT_SCRIPT_PATH}`
+    claude: `node ${STUB_AGENT_SCRIPT_PATH} --as claude`,
+    codex: `node ${STUB_AGENT_SCRIPT_PATH} --as codex`
   }
 }
