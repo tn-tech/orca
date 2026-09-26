@@ -67,9 +67,10 @@ export const TWO_NODE_WORKFLOW: Workflow = {
   layout: {}
 }
 
+// Why: the worker number keeps parallel workers on distinct panes (one active dispatch per pane).
 function paneKeyFor(handle: string): string {
-  const suffix = String(handle.length).padStart(2, '0')
-  return `tab_${handle}:bbbbbbbb-bbbb-4bbb-8bbb-0000000000${suffix}`
+  const suffix = (/(\d+)$/.exec(handle)?.[1] ?? String(handle.length)).padStart(12, '0')
+  return `tab_${handle}:bbbbbbbb-bbbb-4bbb-8bbb-${suffix}`
 }
 
 export function createControllerHarness(workspaceRoot: string) {

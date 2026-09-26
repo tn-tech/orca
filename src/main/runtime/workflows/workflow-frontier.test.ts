@@ -190,7 +190,8 @@ describe('computeFrontier', () => {
     const attempts = [
       attempt('start', 'completed'),
       attempt('a', 'completed'),
-      attempt('b', 'failed')
+      attempt('b', 'completed'),
+      attempt('join', 'completed')
     ]
     expect(computeFrontier(def, attempts)).toEqual({ eligible: [], skipped: [] })
   })

@@ -10,7 +10,10 @@ import type { ResultSchemaValidation } from './workflow-result-schema'
 import { createResultSchemaValidator } from './workflow-result-schema'
 import type { WorkflowFilesystem } from './workflow-file-store-filesystem'
 
-/** The `loop_*` reasons fail a Loop node: cap reached, a failed body node, or an exit never reached. */
+/**
+ * The `loop_*` reasons fail a Loop node: cap reached, a failed body node, or an exit never reached.
+ * The `join_*` reasons fail a Join: a branch failed under `onFailure: fail`, or its policy is out of reach.
+ */
 export const WORKFLOW_RESULT_FAILURE_REASONS = [
   'result_missing',
   'result_invalid',
@@ -18,7 +21,9 @@ export const WORKFLOW_RESULT_FAILURE_REASONS = [
   'worker_failed',
   'loop_cap_reached',
   'loop_body_failed',
-  'loop_exit_unreached'
+  'loop_exit_unreached',
+  'join_branch_failed',
+  'join_unsatisfied'
 ] as const
 export type WorkflowResultFailureReason = (typeof WORKFLOW_RESULT_FAILURE_REASONS)[number]
 

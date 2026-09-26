@@ -1,6 +1,7 @@
 import type { Edge, Node, Workflow } from '../../../shared/workflows/workflow-definition-types'
 import { evaluateCondition } from '../../../shared/workflows/workflow-condition-evaluation'
 import type { NodeAttemptView } from '../../../shared/workflows/workflow-run-types'
+import { decideJoin, type IncomingBranch } from './workflow-join-policy'
 import type { WorkflowOrchestrationClient } from './workflow-orchestration-client'
 
 export type FrontierAttempt = Pick<
@@ -9,8 +10,8 @@ export type FrontierAttempt = Pick<
 >
 
 /**
- * `not-taken`: source completed but the edge condition is false. Join (US3) maps these outcomes
- * onto its own policy, where a skipped branch counts as satisfied.
+ * `not-taken`: source completed but the edge condition is false. A Join maps these outcomes onto
+ * its own policy (workflow-join-policy.ts), where a skipped branch counts as satisfied.
  */
 export type IncomingEdgeOutcome =
   | 'unresolved'
@@ -21,13 +22,14 @@ export type IncomingEdgeOutcome =
 
 export type FrontierDecision = { eligible: string[]; skipped: string[] }
 
-// Router/Join/Approval/Reflection frontiers land with their own phases; they stay pending here.
+// Router/Approval/Reflection frontiers land with their own phases; they stay pending here.
 // Loop bodies advance per iteration in workflow-loop-unrolling.ts; the Loop node itself is offered here.
 export const FRONTIER_NODE_TYPES: ReadonlySet<Node['type']> = new Set<Node['type']>([
   'start',
   'end',
   'agent',
-  'loop'
+  'loop',
+  'join'
 ])
 
 export function latestAttemptByNode<T extends FrontierAttempt>(
@@ -96,6 +98,24 @@ function isBlocked(outcome: IncomingEdgeOutcome): boolean {
   return outcome !== 'fired' && outcome !== 'unresolved'
 }
 
+type CandidateVerdict = 'eligible' | 'skipped' | 'waiting'
+
+/** A Join applies its policy; any other merge node behaves like the default Join. */
+function candidateVerdict(
+  node: Node | undefined,
+  branches: readonly IncomingBranch[]
+): CandidateVerdict {
+  if (node?.type === 'join') {
+    const { kind } = decideJoin(node, branches)
+    return kind === 'skip' ? 'skipped' : kind === 'waiting' ? 'waiting' : 'eligible'
+  }
+  const outcomes = branches.map((branch) => branch.outcome)
+  if (outcomes.length > 0 && outcomes.every(isBlocked)) {
+    return 'skipped'
+  }
+  return outcomes.includes('fired') && !outcomes.includes('unresolved') ? 'eligible' : 'waiting'
+}
+
 function loopBodyNodeIds(nodes: readonly Node[]): Set<string> {
   return new Set(nodes.flatMap((node) => (node.type === 'loop' ? node.body.nodeIds : [])))
 }
@@ -111,41 +131,58 @@ export function loopExitSourceId(nodes: readonly Node[], edge: Edge): string {
 
 /**
  * Splits candidates into eligible and skipped. Several incoming edges merge like the default Join:
- * eligible once none is unresolved and one fired; skipped only when every edge is blocked. Skips
- * cascade to a fixpoint. Roots are always eligible.
+ * eligible once none is unresolved and one fired; skipped only when every edge is blocked. A Join
+ * node is eligible once its policy proceeds or fails it. Skips cascade to a fixpoint. Roots are
+ * always eligible.
  */
 export function decideCandidates(
+  definition: Workflow,
   candidateIds: readonly string[],
   isRoot: (nodeId: string) => boolean,
-  outcomesFor: (nodeId: string, skipped: ReadonlySet<string>) => IncomingEdgeOutcome[]
+  branchesFor: (nodeId: string, skipped: ReadonlySet<string>) => IncomingBranch[]
 ): FrontierDecision {
+  const verdict = (nodeId: string, skipped: ReadonlySet<string>): CandidateVerdict =>
+    isRoot(nodeId)
+      ? 'eligible'
+      : candidateVerdict(
+          definition.nodes.find((node) => node.id === nodeId),
+          branchesFor(nodeId, skipped)
+        )
   const skipped = new Set<string>()
   let changed = true
   while (changed) {
     changed = false
     for (const nodeId of candidateIds) {
-      if (isRoot(nodeId) || skipped.has(nodeId)) {
-        continue
-      }
-      const outcomes = outcomesFor(nodeId, skipped)
-      if (outcomes.length > 0 && outcomes.every(isBlocked)) {
+      if (!skipped.has(nodeId) && verdict(nodeId, skipped) === 'skipped') {
         skipped.add(nodeId)
         changed = true
       }
     }
   }
-  const eligible = candidateIds.filter((nodeId) => {
-    if (isRoot(nodeId)) {
-      return true
-    }
-    const outcomes = outcomesFor(nodeId, skipped)
-    return (
-      !skipped.has(nodeId) &&
-      outcomes.some((outcome) => outcome === 'fired') &&
-      !outcomes.includes('unresolved')
-    )
-  })
-  return { eligible, skipped: candidateIds.filter((nodeId) => skipped.has(nodeId)) }
+  return {
+    eligible: candidateIds.filter(
+      (nodeId) => !skipped.has(nodeId) && verdict(nodeId, skipped) === 'eligible'
+    ),
+    skipped: candidateIds.filter((nodeId) => skipped.has(nodeId))
+  }
+}
+
+/** Incoming branches of a node outside every Loop body; `exit` edges resolve to their Loop. */
+export function incomingBranches(
+  definition: Workflow,
+  latest: ReadonlyMap<string, FrontierAttempt>,
+  nodeId: string,
+  skipped: ReadonlySet<string> = new Set()
+): IncomingBranch[] {
+  return definition.edges
+    .filter((edge) => edge.to === nodeId && edge.fromPort !== 'body')
+    .map((edge) => {
+      const sourceId = loopExitSourceId(definition.nodes, edge)
+      return {
+        sourceId,
+        outcome: incomingEdgeOutcome(edge, latest.get(sourceId), skipped.has(sourceId))
+      }
+    })
 }
 
 /** Nodes outside every Loop body that have no attempt and may start now, or can never run. */
@@ -162,15 +199,10 @@ export function computeFrontier(
     candidates.filter((node) => node.type === 'start').map((node) => node.id)
   )
   return decideCandidates(
+    definition,
     candidates.map((node) => node.id),
     (nodeId) => startIds.has(nodeId),
-    (nodeId, skipped) =>
-      definition.edges
-        .filter((edge) => edge.to === nodeId && edge.fromPort !== 'body')
-        .map((edge) => {
-          const sourceId = loopExitSourceId(definition.nodes, edge)
-          return incomingEdgeOutcome(edge, latest.get(sourceId), skipped.has(sourceId))
-        })
+    (nodeId, skipped) => incomingBranches(definition, latest, nodeId, skipped)
   )
 }
 

@@ -13,9 +13,9 @@ import {
   FRONTIER_NODE_TYPES,
   incomingEdgeOutcome,
   latestAttemptByNode,
-  type FrontierAttempt,
-  type IncomingEdgeOutcome
+  type FrontierAttempt
 } from './workflow-frontier'
+import type { IncomingBranch } from './workflow-join-policy'
 
 export type LoopProgressAttempt = FrontierAttempt & Pick<NodeAttemptView, 'id'>
 
@@ -80,6 +80,32 @@ function iterationAttempts(
   )
 }
 
+/** Incoming branches of body node `nodeId` in `iteration`: body sources read that iteration. */
+export function bodyIncomingBranches(
+  definition: Workflow,
+  loop: LoopNode,
+  attempts: readonly LoopProgressAttempt[],
+  iteration: number,
+  nodeId: string,
+  skipped: ReadonlySet<string> = new Set()
+): IncomingBranch[] {
+  const body = new Set(loop.body.nodeIds)
+  const inIteration = iterationAttempts(loop, attempts, iteration)
+  const outside = latestAttemptByNode(attempts)
+  const branches = definition.edges
+    .filter((edge) => edge.to === nodeId && edge.fromPort !== 'body')
+    .map((edge) => ({
+      sourceId: edge.from,
+      outcome: body.has(edge.from)
+        ? incomingEdgeOutcome(edge, inIteration.get(edge.from), skipped.has(edge.from))
+        : incomingEdgeOutcome(edge, outside.get(edge.from), false)
+    }))
+  // The Loop implicitly flows into its entry node at the start of every iteration.
+  return nodeId === loop.entryNodeId
+    ? [...branches, { sourceId: loop.id, outcome: 'fired' }]
+    : branches
+}
+
 /** Body nodes of one iteration that may start now or can never run in it. */
 function iterationFrontier(
   definition: Workflow,
@@ -87,9 +113,7 @@ function iterationFrontier(
   attempts: readonly LoopProgressAttempt[],
   iteration: number
 ): { eligible: string[]; skipped: string[] } {
-  const body = new Set(loop.body.nodeIds)
   const inIteration = iterationAttempts(loop, attempts, iteration)
-  const outside = latestAttemptByNode(attempts)
   // Node types the engine cannot run yet stay pending, exactly as in the main frontier.
   const candidates = loop.body.nodeIds.filter((nodeId) => {
     const type = definition.nodes.find((node) => node.id === nodeId)?.type
@@ -100,18 +124,13 @@ function iterationFrontier(
       !inIteration.has(nodeId)
     )
   })
-  const outcomesFor = (nodeId: string, skipped: ReadonlySet<string>): IncomingEdgeOutcome[] => {
-    const outcomes = definition.edges
-      .filter((edge) => edge.to === nodeId && edge.fromPort !== 'body')
-      .map((edge) =>
-        body.has(edge.from)
-          ? incomingEdgeOutcome(edge, inIteration.get(edge.from), skipped.has(edge.from))
-          : incomingEdgeOutcome(edge, outside.get(edge.from), false)
-      )
-    // The Loop implicitly flows into its entry node at the start of every iteration.
-    return nodeId === loop.entryNodeId ? [...outcomes, 'fired'] : outcomes
-  }
-  return decideCandidates(candidates, () => false, outcomesFor)
+  return decideCandidates(
+    definition,
+    candidates,
+    () => false,
+    (nodeId, skipped) =>
+      bodyIncomingBranches(definition, loop, attempts, iteration, nodeId, skipped)
+  )
 }
 
 function isActive(attempt: FrontierAttempt | undefined): boolean {

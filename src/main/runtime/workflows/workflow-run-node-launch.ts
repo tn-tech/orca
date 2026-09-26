@@ -1,4 +1,4 @@
-// Starts one frontier-eligible node: Start/End settle at once; a role-dispatching node gets its
+// Starts one frontier-eligible node: Start/End/Join settle at once; a role-dispatching node gets its
 // attempt, brief, just-in-time Task and worker (research R3, R5; FR-024, FR-026).
 import type { BriefReferenceInputs } from '../../../shared/workflows/workflow-brief-references'
 import type { Node, Workflow } from '../../../shared/workflows/workflow-definition-types'
@@ -7,6 +7,7 @@ import type { OrchestrationDb } from '../orchestration/db'
 import { writeBrief, type BriefNode, type OrcaIgnoreTarget } from './workflow-brief-builder'
 import type { WorkflowFilesystem } from './workflow-file-store-filesystem'
 import { createNodeTask } from './workflow-frontier'
+import { joinBranchesInput, settleJoin } from './workflow-join-settlement'
 import { loopPreviousInputs } from './workflow-loop-unrolling'
 import { dispatchWorkflowNode, resolveNodeLaunch } from './workflow-node-dispatch'
 import type { WorkflowOrchestrationClient } from './workflow-orchestration-client'
@@ -104,6 +105,7 @@ async function launchBriefNode(
 ): Promise<void> {
   const attempt = ctx.recorder.createAttempt(node, iteration)
   const loopPrevious = loopPreviousInputs(ctx.definition, attempts, node.id, iteration)
+  const joinBranches = joinBranchesInput(ctx.definition, attempts, node.id)
   let taskId: string
   try {
     const launch = resolveNodeLaunch(node, ctx.definition.roles)
@@ -122,7 +124,8 @@ async function launchBriefNode(
       briefInputs: {
         objective: ctx.objective,
         upstream: upstreamInputs(attempts),
-        ...(loopPrevious ? { loopPrevious } : {})
+        ...(loopPrevious ? { loopPrevious } : {}),
+        ...(joinBranches === undefined ? {} : { joinBranches })
       }
     })
     taskId = await createNodeTask(ctx.client, {
@@ -178,10 +181,14 @@ export async function launchEligibleNode(
     startLoop(ctx, node)
     return
   }
+  if (node.type === 'join') {
+    await settleJoin(ctx, node, iteration)
+    return
+  }
   if (isBriefNode(node)) {
     await launchBriefNode(ctx, node, attempts, iteration)
     return
   }
-  // The frontier never offers Join/Approval yet; offering one would re-offer it forever.
+  // The frontier never offers Approval yet; offering one would re-offer it forever.
   throw new Error(`Workflow node ${nodeId} (${node.type}) cannot be launched by this engine yet.`)
 }

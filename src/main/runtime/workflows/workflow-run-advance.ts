@@ -1,5 +1,5 @@
 // Drives a run forward until nothing more can start: persists skips, advances Loop iterations,
-// settles Loops, and launches every eligible node (main frontier plus Loop bodies).
+// settles Loops and Joins, and launches every eligible node (main frontier plus Loop bodies).
 import { computeFrontier } from './workflow-frontier'
 import {
   computeLoopProgress,
@@ -85,8 +85,16 @@ export async function advanceRun(ctx: WorkflowNodeLaunchContext): Promise<void> 
     for (const start of loops.iterationStarts) {
       recordIterationStart(ctx, start)
     }
+    // Why: Joins settle first, so a failed Join's stop requests never race a sibling's launch.
+    const isJoin = ({ nodeId }: IterationNode) =>
+      ctx.definition.nodes.some((node) => node.id === nodeId && node.type === 'join')
+    for (const { nodeId, iteration } of eligible.filter(isJoin)) {
+      await launchEligibleNode(ctx, nodeId, attempts, iteration)
+    }
     await Promise.all(
-      eligible.map(({ nodeId, iteration }) => launchEligibleNode(ctx, nodeId, attempts, iteration))
+      eligible
+        .filter((node) => !isJoin(node))
+        .map(({ nodeId, iteration }) => launchEligibleNode(ctx, nodeId, attempts, iteration))
     )
   }
 }
