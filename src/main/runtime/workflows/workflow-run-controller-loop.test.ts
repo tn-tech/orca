@@ -187,4 +187,39 @@ describe('WorkflowRunController Loop execution', () => {
     const runFailed = h.db.listWorkflowEvents(run.id).find((event) => event.kind === 'run_failed')
     expect(runFailed?.payloadJson).toMatchObject({ reason: 'node_failed', failedNodes: ['qa'] })
   })
+
+  it('rehydrates mid-iteration without re-running finished nodes of that iteration', async () => {
+    const run = h.createRun(LOOP_WORKFLOW)
+    const first = h.createController(run.id)
+    const firstFinished = first.run()
+    for (let iteration = 0; iteration < 2; iteration += 1) {
+      await completeAt(run.id, 'implement', iteration, { summary: `pass ${iteration}` })
+      await completeAt(run.id, 'review', iteration, rejected(iteration))
+    }
+    await completeAt(run.id, 'implement', 2, { summary: 'pass 2' })
+    await waitUntil(() => attemptAt(run.id, 'review', 2)?.state === 'running')
+    first.stop()
+    await expect(firstFinished).resolves.toBe('running')
+    const workersBefore = h.workerHandles.length
+
+    const second = h.createController(run.id)
+    const secondFinished = second.run()
+    await completeAt(run.id, 'review', 2, { approved: true, findings: [] })
+    await expect(secondFinished).resolves.toBe('completed')
+
+    expect(h.workerHandles).toHaveLength(workersBefore)
+    const bodyAttempts = h.db
+      .listWorkflowAttempts(run.id)
+      .filter((a) => a.nodeId === 'implement' || a.nodeId === 'review')
+      .map((a) => `${a.nodeId}@${a.iteration}`)
+    expect(bodyAttempts.sort()).toEqual([
+      'implement@0',
+      'implement@1',
+      'implement@2',
+      'review@0',
+      'review@1',
+      'review@2'
+    ])
+    expect(attemptAt(run.id, 'qa', 0)).toMatchObject({ state: 'completed' })
+  })
 })

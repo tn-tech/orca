@@ -23,7 +23,12 @@ export type FrontierDecision = { eligible: string[]; skipped: string[] }
 
 // Router/Join/Approval/Reflection frontiers land with their own phases; they stay pending here.
 // Loop bodies advance per iteration in workflow-loop-unrolling.ts; the Loop node itself is offered here.
-const FRONTIER_NODE_TYPES = new Set<Node['type']>(['start', 'end', 'agent', 'loop'])
+export const FRONTIER_NODE_TYPES: ReadonlySet<Node['type']> = new Set<Node['type']>([
+  'start',
+  'end',
+  'agent',
+  'loop'
+])
 
 export function latestAttemptByNode<T extends FrontierAttempt>(
   attempts: readonly T[]
@@ -96,7 +101,7 @@ function loopBodyNodeIds(nodes: readonly Node[]): Set<string> {
 }
 
 /** An `exit` edge fires when its Loop settles, whether drawn from the Loop or its body. */
-function loopExitSourceId(nodes: readonly Node[], edge: Edge): string {
+export function loopExitSourceId(nodes: readonly Node[], edge: Edge): string {
   if (edge.fromPort !== 'exit') {
     return edge.from
   }
@@ -205,8 +210,9 @@ export async function createNodeTask(
   // Why: taskCreate leaves a Task pending while any dep is not completed, and only ready Tasks dispatch.
   const deps = args.definition.edges
     .filter((edge) => edge.to === node.id)
-    .filter((edge) => incomingEdgeOutcome(edge, latest.get(edge.from), false) === 'fired')
-    .map((edge) => latest.get(edge.from)?.taskId)
+    .map((edge) => ({ edge, source: latest.get(loopExitSourceId(args.definition.nodes, edge)) }))
+    .filter(({ edge, source }) => incomingEdgeOutcome(edge, source, false) === 'fired')
+    .map(({ source }) => source?.taskId)
     .filter((taskId): taskId is string => taskId !== undefined)
   const result = await port.call('orchestration.taskCreate', {
     spec: args.spec,

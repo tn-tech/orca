@@ -10,14 +10,15 @@ import type { ResultSchemaValidation } from './workflow-result-schema'
 import { createResultSchemaValidator } from './workflow-result-schema'
 import type { WorkflowFilesystem } from './workflow-file-store-filesystem'
 
-/** The last two fail a Loop node: cap reached without the exit condition, or a failed iteration. */
+/** The `loop_*` reasons fail a Loop node: cap reached, a failed body node, or an exit never reached. */
 export const WORKFLOW_RESULT_FAILURE_REASONS = [
   'result_missing',
   'result_invalid',
   'artifact_missing',
   'worker_failed',
   'loop_cap_reached',
-  'loop_body_failed'
+  'loop_body_failed',
+  'loop_exit_unreached'
 ] as const
 export type WorkflowResultFailureReason = (typeof WORKFLOW_RESULT_FAILURE_REASONS)[number]
 

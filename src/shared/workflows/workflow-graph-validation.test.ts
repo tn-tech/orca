@@ -357,6 +357,64 @@ describe('validateWorkflowGraph: loop nodes', () => {
   })
 })
 
+describe('validateWorkflowGraph: loop body membership', () => {
+  it('rejects a Loop whose body contains another Loop', () => {
+    const wf = workflow({
+      nodes: [
+        startNode(),
+        loopNode('outer', { body: { nodeIds: ['inner', 'work'] } }),
+        loopNode('inner'),
+        agentNode('work'),
+        endNode()
+      ],
+      edges: [edge('e1', 'start', 'outer'), edge('e2', 'outer', 'end', { fromPort: 'exit' })]
+    })
+    expect(validateWorkflowGraph(wf, permissiveContext)).toContainEqual(
+      expect.objectContaining({ code: 'graph_loop_nested', nodeId: 'outer', severity: 'error' })
+    )
+  })
+
+  it('rejects a node listed in more than one Loop body', () => {
+    const wf = workflow({
+      nodes: [startNode(), loopNode('first'), loopNode('second'), agentNode('work'), endNode()],
+      edges: [
+        edge('e1', 'start', 'first'),
+        edge('e2', 'first', 'second', { fromPort: 'exit' }),
+        edge('e3', 'second', 'end', { fromPort: 'exit' })
+      ]
+    })
+    const shared = validateWorkflowGraph(wf, permissiveContext).filter(
+      (p) => p.code === 'graph_loop_body_shared'
+    )
+    expect(shared).toEqual([expect.objectContaining({ nodeId: 'work', severity: 'error' })])
+  })
+
+  it('accepts disjoint Loop bodies', () => {
+    const wf = workflow({
+      nodes: [
+        startNode(),
+        loopNode('first'),
+        loopNode('second', {
+          body: { nodeIds: ['more'] },
+          entryNodeId: 'more',
+          exitNodeId: 'more'
+        }),
+        agentNode('work'),
+        agentNode('more'),
+        endNode()
+      ],
+      edges: [
+        edge('e1', 'start', 'first'),
+        edge('e2', 'first', 'second', { fromPort: 'exit' }),
+        edge('e3', 'second', 'end', { fromPort: 'exit' })
+      ]
+    })
+    const codes = validateWorkflowGraph(wf, permissiveContext).map((p) => p.code)
+    expect(codes).not.toContain('graph_loop_nested')
+    expect(codes).not.toContain('graph_loop_body_shared')
+  })
+})
+
 describe('validateWorkflowGraph: join nodes', () => {
   it('rejects a join with fewer than two incoming edges', () => {
     const wf = workflow({

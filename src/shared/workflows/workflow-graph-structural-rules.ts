@@ -98,12 +98,45 @@ export function checkCycles(nodes: Node[], edges: Edge[]): WorkflowProblem[] {
   ]
 }
 
+/** v1 has no nested Loops, and a node belongs to at most one Loop body. */
+function checkLoopBodyMembership(nodes: Node[], loops: LoopNode[]): WorkflowProblem[] {
+  const problems: WorkflowProblem[] = []
+  const owner = new Map<string, string>()
+  for (const loop of loops) {
+    for (const nodeId of new Set(loop.body.nodeIds)) {
+      if (nodes.find((node) => node.id === nodeId)?.type === 'loop') {
+        problems.push(
+          error({
+            code: 'graph_loop_nested',
+            message: `Loop "${loop.id}" contains Loop "${nodeId}"; nested loops are not supported.`,
+            nodeId: loop.id
+          })
+        )
+      }
+      const firstOwner = owner.get(nodeId)
+      if (firstOwner === undefined) {
+        owner.set(nodeId, loop.id)
+      } else {
+        problems.push(
+          error({
+            code: 'graph_loop_body_shared',
+            message: `Node "${nodeId}" is in the bodies of both Loop "${firstOwner}" and Loop "${loop.id}".`,
+            nodeId
+          })
+        )
+      }
+    }
+  }
+  return problems
+}
+
 /** Loop entry/exit must be inside the body; body nodes may only leave via the loop's ports;
  *  `maxIterations` must be set (FR-006, US2 AS4 — the editor represents "unset" as `< 1`,
  *  since the persisted schema requires a positive integer). */
 export function checkLoopNodes(nodes: Node[], edges: Edge[]): WorkflowProblem[] {
-  const problems: WorkflowProblem[] = []
-  for (const loop of nodes.filter((node): node is LoopNode => node.type === 'loop')) {
+  const loops = nodes.filter((node): node is LoopNode => node.type === 'loop')
+  const problems: WorkflowProblem[] = checkLoopBodyMembership(nodes, loops)
+  for (const loop of loops) {
     if (loop.maxIterations < 1) {
       problems.push(
         error({

@@ -16,7 +16,8 @@ const LOOP_FAILURE_REASONS: Record<
   WorkflowResultFailureReason
 > = {
   cap_reached: 'loop_cap_reached',
-  body_failed: 'loop_body_failed'
+  body_failed: 'loop_body_failed',
+  exit_unreached: 'loop_exit_unreached'
 }
 
 // Why: the frontier reads skips from persisted attempts; an unrecorded skip reads as unresolved.
