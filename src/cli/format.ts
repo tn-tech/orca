@@ -52,6 +52,20 @@ export {
 } from './automation-format'
 export type { AutomationListPayload, AutomationShowPayload } from './automation-format'
 export {
+  formatWorkflowList,
+  formatWorkflowRunEventLine,
+  formatWorkflowRunList,
+  formatWorkflowRunStart,
+  formatWorkflowRunStatus,
+  formatWorkflowShow,
+  formatWorkflowValidate
+} from './handlers/workflows-format'
+export type {
+  WorkflowListItem,
+  WorkflowReadResult,
+  WorkflowRunStatusResult
+} from './handlers/workflows-format'
+export {
   formatEnvironment,
   formatEnvironmentList,
   formatMemorySnapshot,

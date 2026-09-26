@@ -1,7 +1,20 @@
 import type { WorkflowProblem } from '../../shared/workflows/workflow-definition-types'
 import type { WorkflowRunState } from '../../shared/workflows/workflow-node-states'
+import type { RunEventView, RunSummary } from '../../shared/workflows/workflow-run-types'
 import type { CommandHandler, HandlerContext } from '../dispatch'
-import { printResult } from '../format'
+import {
+  formatWorkflowList,
+  formatWorkflowRunEventLine,
+  formatWorkflowRunList,
+  formatWorkflowRunStart,
+  formatWorkflowRunStatus,
+  formatWorkflowShow,
+  formatWorkflowValidate,
+  printResult,
+  type WorkflowListItem,
+  type WorkflowReadResult,
+  type WorkflowRunStatusResult
+} from '../format'
 import {
   getOptionalPositiveIntegerFlag,
   getOptionalStringFlag,
@@ -9,6 +22,7 @@ import {
 } from '../flags'
 import { buildCurrentWorktreeSelector } from '../selectors'
 import { RuntimeClientError, type RuntimeRpcSuccess } from '../runtime-client'
+import { writeStdoutLine } from '../stdout-line'
 
 type WorkflowClient = HandlerContext['client']
 
@@ -18,7 +32,8 @@ function resolveWorkflowRepoSelector(flags: Map<string, string | boolean>, cwd: 
   return getOptionalStringFlag(flags, 'repo') ?? buildCurrentWorktreeSelector(cwd)
 }
 
-// Why: this unit only wires each command to its RPC method; result formatting is T064's job.
+// Why: answer/send/pause/resume/cancel/rerun/trust just relay their RPC result; no bespoke
+// human formatting is worth the maintenance until a later unit gives them one.
 function printRawResult<TResult>(result: RuntimeRpcSuccess<TResult>, json: boolean): void {
   printResult(result, json, (value) => JSON.stringify(value, null, 2))
 }
@@ -30,38 +45,48 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-/** Polls `workflow.run.show`/`workflow.run.events` (contracts/cli.md `status --wait`) until terminal. */
+/**
+ * Polls `workflow.run.show`/`workflow.run.events` (contracts/cli.md `status --wait`) until
+ * terminal, streaming each new event as a readable progress line. `--json` stays script-safe:
+ * it suppresses the progress lines and prints only the final snapshot, like every other command.
+ */
 async function pollWorkflowRunUntilTerminal(
   client: WorkflowClient,
-  runId: string
-): Promise<RuntimeRpcSuccess<{ state: WorkflowRunState }>> {
-  let snapshot = await client.call<{ state: WorkflowRunState }>('workflow.run.show', { runId })
+  runId: string,
+  json: boolean
+): Promise<RuntimeRpcSuccess<WorkflowRunStatusResult>> {
+  let snapshot = await client.call<WorkflowRunStatusResult>('workflow.run.show', { runId })
   let afterSeq: number | undefined
   while (!WORKFLOW_RUN_TERMINAL_STATES.has(snapshot.result.state)) {
-    const events = await client.call<{ nextSeq: number }>('workflow.run.events', {
-      runId,
-      afterSeq
-    })
+    const events = await client.call<{ events: RunEventView[]; nextSeq: number }>(
+      'workflow.run.events',
+      { runId, afterSeq }
+    )
+    if (!json) {
+      for (const event of events.result.events) {
+        writeStdoutLine(formatWorkflowRunEventLine(event))
+      }
+    }
     afterSeq = events.result.nextSeq
     await sleep(WORKFLOW_STATUS_POLL_INTERVAL_MS)
-    snapshot = await client.call<{ state: WorkflowRunState }>('workflow.run.show', { runId })
+    snapshot = await client.call<WorkflowRunStatusResult>('workflow.run.show', { runId })
   }
   return snapshot
 }
 
 export const WORKFLOW_HANDLERS: Record<string, CommandHandler> = {
   'workflows list': async ({ flags, client, cwd, json }) => {
-    const result = await client.call('workflow.list', {
+    const result = await client.call<{ workflows: WorkflowListItem[] }>('workflow.list', {
       repo: resolveWorkflowRepoSelector(flags, cwd)
     })
-    printRawResult(result, json)
+    printResult(result, json, formatWorkflowList)
   },
   'workflows show': async ({ flags, client, cwd, json }) => {
-    const result = await client.call('workflow.read', {
+    const result = await client.call<WorkflowReadResult>('workflow.read', {
       repo: resolveWorkflowRepoSelector(flags, cwd),
       name: getRequiredStringFlag(flags, 'name')
     })
-    printRawResult(result, json)
+    printResult(result, json, formatWorkflowShow)
   },
   'workflows validate': async ({ flags, client, cwd, json }) => {
     const repo = resolveWorkflowRepoSelector(flags, cwd)
@@ -73,35 +98,38 @@ export const WORKFLOW_HANDLERS: Record<string, CommandHandler> = {
       repo,
       definition: read.result.definition
     })
-    printRawResult(result, json)
+    printResult(result, json, formatWorkflowValidate)
     if (result.result.problems.some((problem) => problem.severity === 'error')) {
       process.exitCode = 1
     }
   },
   'workflows run': async ({ flags, client, cwd, json }) => {
     const concurrencyLimit = getOptionalPositiveIntegerFlag(flags, 'concurrency')
-    const result = await client.call('workflow.run.start', {
+    const result = await client.call<{ runId: string }>('workflow.run.start', {
       repo: resolveWorkflowRepoSelector(flags, cwd),
       name: getRequiredStringFlag(flags, 'name'),
       objective: getRequiredStringFlag(flags, 'objective'),
       ...(concurrencyLimit ? { overrides: { concurrencyLimit } } : {})
     })
-    printRawResult(result, json)
+    printResult(result, json, formatWorkflowRunStart)
   },
   'workflows runs': async ({ flags, client, json }) => {
-    const result = await client.call('workflow.run.list', {
-      name: getOptionalStringFlag(flags, 'name'),
-      state: getOptionalStringFlag(flags, 'state')
-    })
-    printRawResult(result, json)
+    const result = await client.call<{ runs: RunSummary[]; nextCursor?: string }>(
+      'workflow.run.list',
+      {
+        name: getOptionalStringFlag(flags, 'name'),
+        state: getOptionalStringFlag(flags, 'state')
+      }
+    )
+    printResult(result, json, formatWorkflowRunList)
   },
   'workflows status': async ({ flags, client, json }) => {
     const runId = getRequiredStringFlag(flags, 'run-id')
     const result =
       flags.get('wait') === true
-        ? await pollWorkflowRunUntilTerminal(client, runId)
-        : await client.call('workflow.run.show', { runId })
-    printRawResult(result, json)
+        ? await pollWorkflowRunUntilTerminal(client, runId, json)
+        : await client.call<WorkflowRunStatusResult>('workflow.run.show', { runId })
+    printResult(result, json, formatWorkflowRunStatus)
   },
   'workflows answer': async ({ flags, client, json }) => {
     const optionId = getOptionalStringFlag(flags, 'option')

@@ -11,10 +11,33 @@ function success<TResult>(result: TResult): {
   return { id: 'request-1', ok: true, result, _meta: successMeta }
 }
 
-// Why: isolate the handler's flag-to-param mapping; printResult only writes output.
-vi.mock('../format', () => ({ printResult: vi.fn() }))
+// Why: isolate the handler's flag-to-param mapping; printResult only writes output, and the
+// formatXxx bindings are asserted by reference below rather than by their rendered text.
+vi.mock('../format', () => ({
+  printResult: vi.fn(),
+  formatWorkflowList: vi.fn(),
+  formatWorkflowShow: vi.fn(),
+  formatWorkflowValidate: vi.fn(),
+  formatWorkflowRunStart: vi.fn(),
+  formatWorkflowRunList: vi.fn(),
+  formatWorkflowRunStatus: vi.fn(),
+  // Why: unlike the others, --wait calls this one directly (not just via printResult), so the
+  // stub must be callable and return a renderable string.
+  formatWorkflowRunEventLine: vi.fn(() => 'event-line')
+}))
+vi.mock('../stdout-line', () => ({ writeStdoutLine: vi.fn() }))
 
 import { WORKFLOW_HANDLERS } from './workflows'
+import {
+  formatWorkflowList,
+  formatWorkflowRunList,
+  formatWorkflowRunStart,
+  formatWorkflowRunStatus,
+  formatWorkflowShow,
+  formatWorkflowValidate,
+  printResult
+} from '../format'
+import { writeStdoutLine } from '../stdout-line'
 import { RuntimeClientError } from '../runtime-client'
 
 function context(
@@ -33,6 +56,8 @@ function context(
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.mocked(printResult).mockClear()
+  vi.mocked(writeStdoutLine).mockClear()
   vi.useRealTimers()
   process.exitCode = undefined
 })
@@ -44,6 +69,11 @@ describe('workflows CLI handlers', () => {
     await WORKFLOW_HANDLERS['workflows list']!(context(call, new Map([['repo', 'my-repo']])))
 
     expect(call).toHaveBeenCalledWith('workflow.list', { repo: 'my-repo' })
+    expect(printResult).toHaveBeenCalledWith(
+      await call.mock.results[0]!.value,
+      false,
+      formatWorkflowList
+    )
   })
 
   it('defaults workflows list to the enclosing worktree when --repo is omitted', async () => {
@@ -63,6 +93,11 @@ describe('workflows CLI handlers', () => {
       repo: 'path:/repo',
       name: 'release'
     })
+    expect(printResult).toHaveBeenCalledWith(
+      await call.mock.results[0]!.value,
+      false,
+      formatWorkflowShow
+    )
   })
 
   it('validates a workflow by reading it first, then calling workflow.validate', async () => {
@@ -81,6 +116,11 @@ describe('workflows CLI handlers', () => {
       repo: 'path:/repo',
       definition: { name: 'release' }
     })
+    expect(printResult).toHaveBeenCalledWith(
+      await call.mock.results[1]!.value,
+      false,
+      formatWorkflowValidate
+    )
     expect(process.exitCode).toBeUndefined()
   })
 
@@ -117,6 +157,11 @@ describe('workflows CLI handlers', () => {
       objective: 'Ship it',
       overrides: { concurrencyLimit: 3 }
     })
+    expect(printResult).toHaveBeenCalledWith(
+      await call.mock.results[0]!.value,
+      false,
+      formatWorkflowRunStart
+    )
   })
 
   it('lists workflow runs filtered by name and state', async () => {
@@ -133,6 +178,11 @@ describe('workflows CLI handlers', () => {
     )
 
     expect(call).toHaveBeenCalledWith('workflow.run.list', { name: 'release', state: 'running' })
+    expect(printResult).toHaveBeenCalledWith(
+      await call.mock.results[0]!.value,
+      false,
+      formatWorkflowRunList
+    )
   })
 
   it('shows run status once when --wait is absent', async () => {
@@ -142,14 +192,20 @@ describe('workflows CLI handlers', () => {
 
     expect(call).toHaveBeenCalledTimes(1)
     expect(call).toHaveBeenCalledWith('workflow.run.show', { runId: 'run-1' })
+    expect(printResult).toHaveBeenCalledWith(
+      await call.mock.results[0]!.value,
+      false,
+      formatWorkflowRunStatus
+    )
   })
 
-  it('polls run.show/run.events until terminal when --wait is set', async () => {
+  it('polls run.show/run.events until terminal when --wait is set, streaming each event', async () => {
     vi.useFakeTimers()
+    const runningEvent = { id: '1', runId: 'run-1', kind: 'attempt_running', payloadJson: {} }
     const call = vi
       .fn()
       .mockResolvedValueOnce(success({ state: 'running' }))
-      .mockResolvedValueOnce(success({ nextSeq: 5 }))
+      .mockResolvedValueOnce(success({ events: [runningEvent], nextSeq: 5 }))
       .mockResolvedValueOnce(success({ state: 'completed' }))
 
     const pending = WORKFLOW_HANDLERS['workflows status']!(
@@ -170,6 +226,38 @@ describe('workflows CLI handlers', () => {
       afterSeq: undefined
     })
     expect(call).toHaveBeenNthCalledWith(3, 'workflow.run.show', { runId: 'run-1' })
+    expect(writeStdoutLine).toHaveBeenCalledWith('event-line')
+    expect(printResult).toHaveBeenCalledWith(
+      await call.mock.results[2]!.value,
+      false,
+      formatWorkflowRunStatus
+    )
+  })
+
+  it('suppresses --wait progress lines in --json mode', async () => {
+    vi.useFakeTimers()
+    const call = vi
+      .fn()
+      .mockResolvedValueOnce(success({ state: 'running' }))
+      .mockResolvedValueOnce(
+        success({ events: [{ id: '1', runId: 'run-1', kind: 'x', payloadJson: {} }], nextSeq: 5 })
+      )
+      .mockResolvedValueOnce(success({ state: 'completed' }))
+
+    const pending = WORKFLOW_HANDLERS['workflows status']!(
+      context(
+        call,
+        new Map<string, string | boolean>([
+          ['run-id', 'run-1'],
+          ['wait', true]
+        ]),
+        { json: true }
+      )
+    )
+    await vi.advanceTimersByTimeAsync(2000)
+    await pending
+
+    expect(writeStdoutLine).not.toHaveBeenCalled()
   })
 
   it('answers a question with --option', async () => {
