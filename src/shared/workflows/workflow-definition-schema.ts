@@ -32,12 +32,15 @@ const RolesSchema = z
     Object.fromEntries(Object.entries(roles).map(([id, role]) => [id, { id, ...role }]))
   )
 
-/** Roles as they appear on an already-parsed, in-memory `Workflow` — each one already carries
- *  the `id` `RolesSchema`'s transform injects, which the on-disk file format never has. */
-const RolesWithIdSchema = z.record(
-  z.string().min(1),
-  RoleFileSchema.extend({ id: z.string().min(1) })
-)
+/** Roles as they appear on an already-parsed, in-memory `Workflow`. `id` is optional on input —
+ *  tolerant of a file-shaped role (no `id`) from an older/newer client (remote-wire compatibility)
+ *  — and always re-derived from the record key on output, exactly like `RolesSchema`'s transform,
+ *  so a stray or stale `id` a caller echoes back can never win over the canonical one. */
+const RolesWithIdSchema = z
+  .record(z.string().min(1), RoleFileSchema.extend({ id: z.string().min(1).optional() }))
+  .transform((roles) =>
+    Object.fromEntries(Object.entries(roles).map(([id, role]) => [id, { ...role, id }]))
+  )
 
 const EdgeSchema = z
   .object({

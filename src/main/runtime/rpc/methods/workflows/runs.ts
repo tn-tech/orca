@@ -11,7 +11,8 @@ import {
 import { OrchestrationError } from '../../../orchestration/orchestration-error'
 import { WorkflowGraphValidationError } from '../../../workflows/workflow-engine'
 import { readWorkerOutput } from '../orchestration/worker/worker-control'
-import { agentSupportsModel } from './workflow-agent-catalog-support'
+import { agentSupportsModel, isKnownAgent } from './workflow-agent-catalog-support'
+import { disallowedSourceProblems, throwSourceNotAllowedError } from './workflow-allowlist-refusal'
 import { readNamedWorkflow } from './workflow-source-resolution'
 
 // Why: skeletons for U10; the US1 unit replaces each throw with the workflow engine call.
@@ -42,11 +43,14 @@ export const WORKFLOW_RUN_METHODS = [
           ...(params.overrides?.concurrencyLimit !== undefined
             ? { concurrencyLimit: params.overrides.concurrencyLimit }
             : {}),
-          validation: { agentSupportsModel }
+          validation: { agentSupportsModel, isKnownAgent }
         })
         return { runId: run.id }
       } catch (error) {
         if (error instanceof WorkflowGraphValidationError) {
+          if (disallowedSourceProblems(error.problems).length > 0) {
+            throwSourceNotAllowedError(repo, named.definition, error.problems)
+          }
           throw new OrchestrationError('workflow_invalid', 'workflow_invalid', {
             problems: error.problems
           })
@@ -84,7 +88,7 @@ export const WORKFLOW_RUN_METHODS = [
         attempts: db.listWorkflowAttempts(params.runId),
         questions: db.listWorkflowQuestions(params.runId),
         messages: db.listWorkflowMessages(params.runId),
-        events: db.listWorkflowEvents(params.runId)
+        events: db.listWorkflowEventsTail(params.runId)
       }
     }
   }),

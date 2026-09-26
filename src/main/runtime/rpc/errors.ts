@@ -81,9 +81,9 @@ const RUNTIME_PASSTHROUGH_CODES: ReadonlySet<string> = new Set([
   'workflow_not_implemented',
   // U21 definitions/runs handlers (contracts/rpc-methods.md "Error codes"): the file store's own
   // codes plus the ones this unit's handlers throw directly, all plain `Error(code)` throws.
+  // (`workflow_source_not_allowed` rides the structured Set below — it always carries `.data`.)
   'workflow_not_found',
   'workflow_file_conflict',
-  'workflow_source_not_allowed',
   'workflow_name_taken',
   'workflow_host_unreachable',
   // U09 file-store codes not otherwise remapped to the contract's `workflow_not_found`/
@@ -157,10 +157,12 @@ const STRUCTURED_RUNTIME_PASSTHROUGH_CODES: ReadonlySet<string> = new Set([
   'forbidden',
   NESTED_WORKER_DEPTH_EXCEEDED_CODE,
   GIT_DIFF_TOO_LARGE_CODE,
-  // Why: U21's workflow.write/run.start carry the file/graph problems list as `.data`; a plain
+  // Why: U21's workflow.write/duplicate/run.start carry the file/graph problems list (and, for
+  // the allowlist refusal, the disallowed source + allowlist path) as `.data`; a plain
   // message-only code would lose it, so these ride the structured (`.code`/`.data`) branch instead.
   'workflow_invalid',
   'workflow_file_version_unsupported',
+  'workflow_source_not_allowed',
   ARTIFACT_SHARING_DISABLED_CODE,
   AGENT_SKILL_SHARING_DISABLED_CODE,
   AGENT_SKILL_NOT_SHAREABLE_CODE,

@@ -97,4 +97,27 @@ describe('workflow-event-store', () => {
       expect(d.listWorkflowEvents(runB.id, 0, 10).map((e) => e.id)).toEqual([eventB.id])
     })
   })
+
+  describe('listWorkflowEventsTail', () => {
+    it('returns only the last N events, oldest first', () => {
+      const d = createDb()
+      const run = createRun(d)
+      const events = Array.from({ length: 12 }, (_, i) =>
+        d.appendWorkflowEvent({ runId: run.id, kind: `event-${i}` })
+      )
+
+      const tail = d.listWorkflowEventsTail(run.id, 5)
+      expect(tail.map((e) => e.kind)).toEqual(events.slice(-5).map((e) => e.kind))
+      expect(tail.map((e) => e.id)).toEqual(events.slice(-5).map((e) => e.id))
+    })
+
+    it('returns everything when there are fewer events than the limit', () => {
+      const d = createDb()
+      const run = createRun(d)
+      const e1 = d.appendWorkflowEvent({ runId: run.id, kind: 'a' })
+      const e2 = d.appendWorkflowEvent({ runId: run.id, kind: 'b' })
+
+      expect(d.listWorkflowEventsTail(run.id, 50).map((e) => e.id)).toEqual([e1.id, e2.id])
+    })
+  })
 })

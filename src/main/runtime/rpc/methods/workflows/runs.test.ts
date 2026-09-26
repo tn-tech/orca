@@ -42,6 +42,39 @@ const NO_END_WORKFLOW_YAML = [
   'layout: {}'
 ].join('\n')
 
+// Structurally and graph valid otherwise, but references a repository skill source no orca.yaml
+// allowlists — exercises run.start's allowlist-specific refusal shape.
+const NON_ALLOWLISTED_SOURCE_WORKFLOW_YAML = [
+  'version: 1',
+  'name: tainted',
+  'workspacePolicy: in-place',
+  'roles:',
+  '  dev:',
+  '    name: Developer',
+  '    agent: claude',
+  '    systemPrompt: Build it.',
+  '    skills:',
+  '      - name: a-skill',
+  '        source: { kind: repository, location: "https://example.com/not-allowlisted" }',
+  '        required: true',
+  'nodes:',
+  '  - { id: start, type: start, title: Start }',
+  '  - id: work',
+  '    type: agent',
+  '    title: Work',
+  '    roleId: dev',
+  '    prompt: Go',
+  '    workspace: run',
+  '    resultContract: { type: object }',
+  '    artifacts: []',
+  '    question: { timeoutMs: 1000, escalationGraceMs: 1000 }',
+  '  - { id: end, type: end, title: End }',
+  'edges:',
+  '  - { id: e1, from: start, to: work }',
+  '  - { id: e2, from: work, to: end }',
+  'layout: {}'
+].join('\n')
+
 function repoFixture(path: string): Repo {
   return { id: 'repo-1', path, displayName: 'Repo', badgeColor: '#000', addedAt: 0 }
 }
@@ -121,6 +154,18 @@ describe('workflow.run.start (real engine, in-place trivial workflow)', () => {
       makeRequest('workflow.run.start', { repo: repoPath, name: 'missing', objective: 'go' })
     )
     expect(response).toMatchObject({ ok: false, error: { code: 'workflow_not_found' } })
+  })
+
+  it('refuses a workflow whose source is not on the repo allowlist, naming it and the allowlist', async () => {
+    await writeWorkflow(repo, 'project', 'tainted', NON_ALLOWLISTED_SOURCE_WORKFLOW_YAML, null)
+    const response = await dispatcher().dispatch(
+      makeRequest('workflow.run.start', { repo: repoPath, name: 'tainted', objective: 'go' })
+    )
+    expect(response).toMatchObject({ ok: false, error: { code: 'workflow_source_not_allowed' } })
+    expect(response.ok || response.error.data).toMatchObject({
+      problems: [expect.objectContaining({ code: 'graph_skill_source_not_allowlisted' })],
+      allowlistPath: expect.stringContaining('orca.yaml')
+    })
   })
 })
 
@@ -256,5 +301,16 @@ describe('workflow.run.list/show/events/readNodeOutput (seeded db)', () => {
       makeRequest('workflow.run.readNodeOutput', { runId: 'wfr_x', attemptId: 'wfa_1' })
     )
     expect(response).toMatchObject({ ok: false, error: { code: 'workflow_not_found' } })
+  })
+
+  it('refuses an attempt id that belongs to a different run', async () => {
+    const runA = seedRun('repo_a')
+    const runB = seedRun('repo_b')
+    const attemptOnA = db.createWorkflowAttempt({ runId: runA.id, nodeId: 'n1', nodeType: 'agent' })
+
+    const response = await dispatcher().dispatch(
+      makeRequest('workflow.run.readNodeOutput', { runId: runB.id, attemptId: attemptOnA.id })
+    )
+    expect(response).toMatchObject({ ok: false, error: { code: 'dispatch_not_found' } })
   })
 })

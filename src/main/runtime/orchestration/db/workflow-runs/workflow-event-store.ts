@@ -7,6 +7,9 @@ import { selectWorkflowRow, selectWorkflowRows } from './workflow-row-projection
 // ── Workflow Run Events ──
 
 const WORKFLOW_EVENT_PAGE_LIMIT = 200
+/** workflow.run.show's "events tail" (contracts/rpc-methods.md) — a quick-glance count, not a page;
+ *  `workflow.run.events` is the paged view for full history. */
+const RUN_SHOW_EVENT_TAIL_LIMIT = 50
 
 type WorkflowRunEventRow = {
   id: number
@@ -85,14 +88,32 @@ export function listWorkflowEvents(
   return rows.map(toEventView)
 }
 
+/** The most recent `limit` events, oldest first — for `workflow.run.show`, unlike
+ *  `listWorkflowEvents`'s from-the-start paging. */
+export function listWorkflowEventsTail(
+  this: OrchestrationDb,
+  runId: string,
+  limit = RUN_SHOW_EVENT_TAIL_LIMIT
+): RunEventView[] {
+  const rows = selectWorkflowRows<WorkflowRunEventRow>(
+    this.db,
+    'SELECT * FROM workflow_run_events WHERE run_id = ? ORDER BY id DESC LIMIT ?',
+    runId,
+    limit
+  )
+  return rows.map(toEventView).toReversed()
+}
+
 export type WorkflowEventStoreMethods = {
   appendWorkflowEvent: typeof appendWorkflowEvent
   listWorkflowEvents: typeof listWorkflowEvents
+  listWorkflowEventsTail: typeof listWorkflowEventsTail
 }
 
 export function attachWorkflowEventStore(ctor: { prototype: object }): void {
   Object.assign(ctor.prototype, {
     appendWorkflowEvent,
-    listWorkflowEvents
+    listWorkflowEvents,
+    listWorkflowEventsTail
   })
 }
