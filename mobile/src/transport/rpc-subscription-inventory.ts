@@ -94,6 +94,13 @@ export const RPC_SUBSCRIPTION_SITES: readonly RpcSubscriptionSite[] = [
     method: 'session.tabs.subscribe',
     coverage: { kind: 'unwritten-scenario' }
   },
+  // The workflow run list's refetch cue. Mountable: its listener guards the payload and admits
+  // `workflowRunChanged` through the shared decoder. What is missing is the scenario.
+  {
+    file: 'src/workflows/workflow-runs-refresh.ts',
+    method: 'runtime.clientEvents.subscribe',
+    coverage: { kind: 'unwritten-scenario' }
+  },
   {
     file: 'src/worktree/host-worktree-refresh.ts',
     method: 'runtime.clientEvents.subscribe',

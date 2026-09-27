@@ -10,6 +10,7 @@ import {
   SlidersHorizontal,
   SquareTerminal,
   UserCircle,
+  Workflow,
   X
 } from 'lucide-react-native'
 import { StatusDot } from '../components/StatusDot'
@@ -221,6 +222,24 @@ export function HostScreenHeader({ controller }: { controller: HostScreenControl
               />
             </Pressable>
 
+            <Pressable
+              style={[
+                styles.embeddedToolbarIconButton,
+                connState !== 'connected' && styles.toolbarIconDisabled
+              ]}
+              onPress={() =>
+                actions.navigateFromHostList(`/h/${encodeURIComponent(hostId)}/workflows`)
+              }
+              disabled={connState !== 'connected'}
+              accessibilityRole="button"
+              accessibilityLabel="Workflow runs"
+            >
+              <Workflow
+                size={16}
+                color={connState === 'connected' ? colors.textSecondary : colors.textMuted}
+              />
+            </Pressable>
+
             {floatingWorkspaceEnabled ? (
               <Pressable
                 style={[
@@ -346,6 +365,21 @@ export function HostScreenHeader({ controller }: { controller: HostScreenControl
             accessibilityLabel="Tasks"
           >
             <List
+              size={16}
+              color={connState === 'connected' ? colors.textSecondary : colors.textMuted}
+            />
+          </Pressable>
+
+          <Pressable
+            style={styles.searchToggle}
+            onPress={() =>
+              actions.navigateFromHostList(`/h/${encodeURIComponent(hostId)}/workflows`)
+            }
+            disabled={connState !== 'connected'}
+            accessibilityRole="button"
+            accessibilityLabel="Workflow runs"
+          >
+            <Workflow
               size={16}
               color={connState === 'connected' ? colors.textSecondary : colors.textMuted}
             />

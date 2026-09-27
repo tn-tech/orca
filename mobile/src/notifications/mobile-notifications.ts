@@ -2,6 +2,7 @@ import { requestNotificationCatchup } from './push-dismissal-reconciliation'
 import { desktopNotificationStreamUnsubscribe } from './desktop-notification-stream-operations'
 import { dismissHostPushNotification } from './push-socket-dismissal'
 import type { DismissNotificationEvent } from './desktop-notification-events'
+import { publishDesktopNotification } from './desktop-notification-listeners'
 import type { RpcClient } from '../transport/rpc-client'
 
 export {
@@ -40,6 +41,11 @@ export function subscribeToDesktopNotifications(client: RpcClient, hostId: strin
     }
     if (!disposed && event.type === 'dismiss') {
       void dismissHostPushNotification(event as DismissNotificationEvent, hostId).catch(() => {})
+    }
+    if (!disposed && event.type === 'notification') {
+      const source =
+        'source' in event && typeof event.source === 'string' ? event.source : undefined
+      publishDesktopNotification({ hostId, source })
     }
   })
 

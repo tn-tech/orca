@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { subscribeToDesktopNotifications } from './mobile-notifications'
 import { dismissHostPushNotification } from './push-socket-dismissal'
 import { requestNotificationCatchup } from './push-dismissal-reconciliation'
+import { addDesktopNotificationListener } from './desktop-notification-listeners'
 import { RpcClientStreamRegistry } from '../transport/rpc-client-stream-registry'
 import type { RpcClient } from '../transport/rpc-client'
 import type { RpcResponse } from '../transport/types'
@@ -111,6 +112,32 @@ describe('subscribeToDesktopNotifications', () => {
     await Promise.resolve()
     expect(requestNotificationCatchup).toHaveBeenCalledWith(rpc, 'host-1', expect.any(Function))
     expect(dismissHostPushNotification).not.toHaveBeenCalled()
+  })
+
+  it('tells in-app listeners which host a socket alert came from and its source', () => {
+    const rpc = registryClient()
+    const heard = vi.fn()
+    const stopListening = addDesktopNotificationListener(heard)
+    const stop = subscribeToDesktopNotifications(rpc.client, 'host-1')
+    const streamId = rpc.sent[0]!.id
+    const frame = (result: unknown): RpcResponse => ({
+      id: streamId,
+      ok: true,
+      streaming: true,
+      result,
+      _meta: { runtimeId: 'runtime-1' }
+    })
+    rpc.registry.handleResponse(readyReply(streamId, 'sub-1'))
+    rpc.registry.handleResponse(
+      frame({ type: 'notification', title: 'Approve?', source: 'workflow-attention' })
+    )
+    rpc.registry.handleResponse(frame({ type: 'dismiss', notificationId: 'agent-1' }))
+    stop()
+    rpc.registry.handleResponse(
+      frame({ type: 'notification', title: 'Late', source: 'workflow-attention' })
+    )
+    stopListening()
+    expect(heard.mock.calls).toEqual([[{ hostId: 'host-1', source: 'workflow-attention' }]])
   })
 
   it('keeps socket dismissal processing active', async () => {

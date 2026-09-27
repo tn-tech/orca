@@ -33,6 +33,7 @@ const SHARED_CONTROLS = [
   '() => state.setShowGroupPicker(true)',
   '() => actions.navigateFromHostList(`/h/${encodeURIComponent(hostId)}/accounts`)',
   '() => actions.navigateFromHostList(`/h/${encodeURIComponent(hostId)}/tasks`)',
+  '() => actions.navigateFromHostList(`/h/${encodeURIComponent(hostId)}/workflows`)',
   '() => state.setShowSearch((s) => !s)'
 ]
 
