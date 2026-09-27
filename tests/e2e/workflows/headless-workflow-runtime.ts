@@ -146,7 +146,8 @@ export async function launchHeadlessWorkflowRuntime(options: {
     }
     // Why: quit leaves daemon-hosted PTYs (the stub workers) alive for warm reattach.
     await cleanupE2EDaemons(userDataDir)
-    rmSync(userDataDir, { recursive: true, force: true })
+    // Why retries: an exiting daemon can still be writing into the profile, failing with ENOTEMPTY.
+    rmSync(userDataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
   }
 
   const deadline = Date.now() + READY_TIMEOUT_MS
