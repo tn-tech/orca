@@ -17524,11 +17524,11 @@
         "TrustedSourcesList": {
           "trusted": "Trusted {{when}}",
           "refused": "Refused {{when}}",
-          "revokeUnsupportedTitle": "This host doesn't support revoking trust yet.",
+          "revokeUnsupportedTitle": "This host's Orca must be updated to revoke trust.",
           "revoke": "Revoke",
           "trust": "Trust",
           "loading": "Loading…",
-          "revokeUnsupported": "This host doesn't support revoking trust yet. Update it, or use Trust/Refuse instead.",
+          "revokeUnsupported": "This host's Orca must be updated to revoke trust. Meanwhile, run `orca workflows trust <source> --decision refused` from a shell on that host to refuse a source instead.",
           "empty": "No trust decisions yet."
         }
       }

@@ -75,7 +75,7 @@ function TrustDecisionRow({
             revokeDisabled
               ? translate(
                   'auto.components.workflows.TrustedSourcesList.revokeUnsupportedTitle',
-                  "This host doesn't support revoking trust yet."
+                  "This host's Orca must be updated to revoke trust."
                 )
               : undefined
           }
@@ -123,6 +123,8 @@ export default function TrustedSourcesList({
     let cancelled = false
     setLoading(true)
     setError(undefined)
+    // A different host may well support revoke even when the last one didn't.
+    setRevokeUnsupported(false)
     workflowTrustList(settingsRef.current)
       .then((result) => {
         if (!cancelled) {
@@ -202,7 +204,7 @@ export default function TrustedSourcesList({
         <p className="text-[11px] text-muted-foreground">
           {translate(
             'auto.components.workflows.TrustedSourcesList.revokeUnsupported',
-            "This host doesn't support revoking trust yet. Update it, or use Trust/Refuse instead."
+            "This host's Orca must be updated to revoke trust. Meanwhile, run `orca workflows trust <source> --decision refused` from a shell on that host to refuse a source instead."
           )}
         </p>
       ) : null}

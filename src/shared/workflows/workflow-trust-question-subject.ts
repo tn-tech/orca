@@ -12,7 +12,10 @@ export type TrustQuestionSubject = {
   agents: string[]
 }
 
-function stringArray(value: JsonValue | undefined): string[] {
+/** Coerces a `JsonValue` into a string array: not-an-array becomes empty, non-string entries are
+ *  dropped. Exported because `run-view/use-workflow-run-snapshot.ts` needs the same coercion for
+ *  a `skills_provisioned` event's payload — same shape, unrelated question. */
+export function stringArray(value: JsonValue | undefined): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string')
     : []

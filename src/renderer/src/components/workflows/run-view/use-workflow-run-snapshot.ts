@@ -13,6 +13,7 @@ import type {
   NodeAttemptView,
   RunEventView
 } from '../../../../../shared/workflows/workflow-run-types'
+import { stringArray } from '../../../../../shared/workflows/workflow-trust-question-subject'
 import type { WorkflowAttemptState } from '../../../../../shared/workflows/workflow-node-states'
 
 export type WorkflowRunSnapshotState = {
@@ -222,12 +223,6 @@ export function nodeAttemptIterations(
     }
   }
   return iterations
-}
-
-function stringArray(value: JsonValue | undefined): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : []
 }
 
 export type AttemptProvisioningRecord = { installed: string[]; promptFallback: string[] }

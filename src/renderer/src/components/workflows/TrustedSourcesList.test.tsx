@@ -186,7 +186,7 @@ describe('TrustedSourcesList (FR-018a revocability)', () => {
     await waitFor(() =>
       expect(
         screen.getByText(
-          "This host doesn't support revoking trust yet. Update it, or use Trust/Refuse instead."
+          "This host's Orca must be updated to revoke trust. Meanwhile, run `orca workflows trust <source> --decision refused` from a shell on that host to refuse a source instead."
         )
       ).toBeInTheDocument()
     )
@@ -195,6 +195,35 @@ describe('TrustedSourcesList (FR-018a revocability)', () => {
     }
     // Both rows are still trusted — a decode failure never falls back to recording `refused`.
     expect(screen.getAllByText(/^Trusted/)).toHaveLength(2)
+  })
+
+  it('resets the revoke-unsupported state when the active runtime environment changes', async () => {
+    workflowTrustListMock.mockResolvedValue({
+      decisions: [
+        {
+          source: 'a',
+          host: 'local',
+          decision: 'trusted',
+          decidedBy: 'user',
+          decidedAt: '2026-01-01T00:00:00.000Z'
+        }
+      ]
+    })
+    workflowTrustRevokeMock.mockRejectedValue(
+      Object.assign(new Error('unknown method'), { code: 'method_not_found' })
+    )
+    const { rerender } = render(
+      <TrustedSourcesList settings={{ activeRuntimeEnvironmentId: 'env-1' }} />
+    )
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Revoke' })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Revoke' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Revoke' })).toBeDisabled())
+
+    // Switching hosts: a different host may well support revoke even though the last one didn't.
+    rerender(<TrustedSourcesList settings={{ activeRuntimeEnvironmentId: 'env-2' }} />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Revoke' })).toBeEnabled())
   })
 
   it('shows the RPC error inline for a non-capability revoke failure, without disabling other rows', async () => {
