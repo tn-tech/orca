@@ -13,6 +13,7 @@ const {
   workflowListMock,
   workflowDeleteMock,
   workflowDuplicateMock,
+  workflowDraftMock,
   workflowRunStartMock,
   workflowRunCancelMock,
   workflowRunShowMock,
@@ -25,6 +26,7 @@ const {
   workflowListMock: vi.fn(),
   workflowDeleteMock: vi.fn(),
   workflowDuplicateMock: vi.fn(),
+  workflowDraftMock: vi.fn(),
   workflowRunStartMock: vi.fn(),
   workflowRunCancelMock: vi.fn(),
   workflowRunShowMock: vi.fn(),
@@ -39,6 +41,7 @@ vi.mock('@/runtime/runtime-workflow-client', () => ({
   workflowList: workflowListMock,
   workflowDelete: workflowDeleteMock,
   workflowDuplicate: workflowDuplicateMock,
+  workflowDraft: workflowDraftMock,
   workflowRunStart: workflowRunStartMock,
   workflowRunCancel: workflowRunCancelMock,
   workflowRunShow: workflowRunShowMock
@@ -100,6 +103,7 @@ beforeEach(() => {
   workflowListMock.mockReset().mockResolvedValue({ workflows: [] })
   workflowDeleteMock.mockReset()
   workflowDuplicateMock.mockReset()
+  workflowDraftMock.mockReset()
   workflowRunStartMock.mockReset()
   workflowRunCancelMock.mockReset()
   workflowRunShowMock.mockReset()
@@ -311,6 +315,49 @@ describe('useWorkflowsPageController', () => {
         result.current.openWorkflow({ name: 'wf-b', source: 'project', path: '', valid: true })
       )
 
+      expect(result.current.run.runId).toBeNull()
+    })
+  })
+
+  describe('drafting (US6)', () => {
+    it('draftWorkflow calls workflow.draft for the active repo and objective', async () => {
+      const drafted = savedWorkflow({ name: 'triage-tickets' })
+      const draftedResult = { definition: drafted, problems: [], draft: true, runId: 'run-1' }
+      workflowDraftMock.mockResolvedValue(draftedResult)
+      const { result } = renderHook(() => useWorkflowsPageController())
+
+      const draftResult = await result.current.draftWorkflow('Triage new support tickets')
+
+      expect(workflowDraftMock).toHaveBeenCalledWith(settings, {
+        repo: 'repo-1',
+        objective: 'Triage new support tickets'
+      })
+      expect(draftResult).toEqual(draftedResult)
+    })
+
+    it('openDraft loads the definition into the editor as an unsaved draft and clears run/selection state', async () => {
+      workflowRunStartMock.mockResolvedValue({ runId: 'run-1' })
+      const definition = savedWorkflow()
+      workflowReadMock.mockResolvedValue({
+        definition,
+        raw: 'raw',
+        revision: 'rev-1',
+        problems: []
+      })
+      workflowValidateMock.mockResolvedValue({ problems: [] })
+      const { result } = renderHook(() => useWorkflowsPageController())
+      await act(() =>
+        result.current.openWorkflow({ name: 'wf-a', source: 'project', path: '', valid: true })
+      )
+      await act(() => result.current.run.start('Add CSV export'))
+      expect(result.current.run.runId).toBe('run-1')
+
+      const drafted = savedWorkflow({ name: 'triage-tickets' })
+      act(() => result.current.openDraft(drafted))
+
+      expect(result.current.session.isDraft).toBe(true)
+      expect(result.current.session.openRef).toBeNull()
+      expect(result.current.session.editor.state.definition).toEqual(drafted)
       expect(result.current.run.runId).toBeNull()
     })
   })

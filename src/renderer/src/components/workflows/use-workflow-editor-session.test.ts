@@ -279,4 +279,65 @@ describe('useWorkflowEditorSession', () => {
     expect(result.current.openRef).toBeNull()
     expect(result.current.documentRevision).toBeNull()
   })
+
+  describe('drafting (US6)', () => {
+    it('openDraft loads the definition as an unsaved draft, without an openRef', () => {
+      const drafted = savedWorkflow({ name: 'triage-tickets' })
+      const { result } = renderHook(() => useWorkflowEditorSession({ settings, repoId: 'repo-1' }))
+
+      act(() => result.current.openDraft(drafted))
+
+      expect(result.current.status).toBe('ready')
+      expect(result.current.isDraft).toBe(true)
+      expect(result.current.openRef).toBeNull()
+      expect(result.current.documentRevision).toBeNull()
+      expect(result.current.editor.state.definition).toEqual(drafted)
+    })
+
+    it('saveDraftAs writes the draft under the chosen name and turns it into an ordinary workflow', async () => {
+      const drafted = savedWorkflow({ name: '' })
+      workflowWriteMock.mockResolvedValue({ revision: 'rev-1' })
+      const { result } = renderHook(() => useWorkflowEditorSession({ settings, repoId: 'repo-1' }))
+      act(() => result.current.openDraft(drafted))
+
+      await act(() => result.current.saveDraftAs('triage-tickets', 'project'))
+
+      expect(workflowWriteMock).toHaveBeenCalledWith(settings, {
+        repo: 'repo-1',
+        name: 'triage-tickets',
+        source: 'project',
+        definition: expect.objectContaining({ name: 'triage-tickets' })
+      })
+      expect(result.current.isDraft).toBe(false)
+      expect(result.current.openRef).toEqual({ name: 'triage-tickets', source: 'project' })
+      expect(result.current.documentRevision).toBe('rev-1')
+      expect(result.current.editor.state.dirty).toBe(false)
+    })
+
+    it('saveDraftAs leaves the draft open and rethrows when the write fails', async () => {
+      const drafted = savedWorkflow({ name: 'triage-tickets' })
+      workflowWriteMock.mockRejectedValueOnce(new Error('workflow_name_taken'))
+      const { result } = renderHook(() => useWorkflowEditorSession({ settings, repoId: 'repo-1' }))
+      act(() => result.current.openDraft(drafted))
+
+      await expect(
+        act(() => result.current.saveDraftAs('triage-tickets', 'project'))
+      ).rejects.toThrow('workflow_name_taken')
+
+      expect(result.current.isDraft).toBe(true)
+      expect(result.current.openRef).toBeNull()
+      expect(result.current.saving).toBe(false)
+    })
+
+    it('close clears an open draft back to empty', () => {
+      const drafted = savedWorkflow()
+      const { result } = renderHook(() => useWorkflowEditorSession({ settings, repoId: 'repo-1' }))
+      act(() => result.current.openDraft(drafted))
+
+      act(() => result.current.close())
+
+      expect(result.current.status).toBe('empty')
+      expect(result.current.isDraft).toBe(false)
+    })
+  })
 })

@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { createBrowserUuid } from '@/lib/browser-uuid'
 import { translate } from '@/i18n/i18n'
 import { hasRuntimeRpcErrorCode } from '@/runtime/runtime-rpc-client'
 import {
@@ -10,76 +9,23 @@ import {
 } from '@/runtime/runtime-workflow-client'
 import type { Workflow } from '../../../../shared/workflows/workflow-definition-types'
 import type { WorkflowRunSource } from '../../../../shared/workflows/workflow-run-types'
-import {
-  useWorkflowEditorState,
-  type WorkflowEditorController
-} from './editor/use-workflow-editor-state'
+import { useWorkflowEditorState } from './editor/use-workflow-editor-state'
 import type { WorkflowFileConflictReason } from './editor/FileConflictDialog'
+import {
+  newWorkflowDefinition,
+  placeholderWorkflowDefinition
+} from './workflow-editor-starter-definitions'
+import type {
+  OpenWorkflowRef,
+  WorkflowEditorSession,
+  WorkflowEditorSessionStatus
+} from './workflow-editor-session-types'
 
-export type OpenWorkflowRef = { name: string; source: WorkflowRunSource }
-
-export type WorkflowEditorSessionStatus = 'empty' | 'loading' | 'ready' | 'error'
-
-function placeholderWorkflowDefinition(): Workflow {
-  return {
-    version: 1,
-    name: '',
-    workspacePolicy: 'run-workspace',
-    roles: {},
-    nodes: [],
-    edges: [],
-    layout: {}
-  }
-}
-
-/** A fresh workflow's starting graph: Start → End, already reachable (FR-002/graph_missing_*). */
-function newWorkflowDefinition(name: string): Workflow {
-  return {
-    version: 1,
-    name,
-    workspacePolicy: 'run-workspace',
-    roles: {},
-    nodes: [
-      {
-        id: 'start',
-        type: 'start',
-        title: translate(
-          'auto.components.workflows.use-workflow-editor-session.startTitle',
-          'Start'
-        )
-      },
-      {
-        id: 'end',
-        type: 'end',
-        title: translate('auto.components.workflows.use-workflow-editor-session.endTitle', 'End')
-      }
-    ],
-    edges: [{ id: `edge-${createBrowserUuid()}`, from: 'start', to: 'end' }],
-    layout: { start: { x: 0, y: 0 }, end: { x: 320, y: 0 } }
-  }
-}
-
-export type WorkflowEditorSession = {
-  status: WorkflowEditorSessionStatus
-  openRef: OpenWorkflowRef | null
-  editor: WorkflowEditorController
-  /** Content-hash revision of the last read/written copy; distinct from `editor.state.revision`
-   *  (the in-memory undo counter). */
-  documentRevision: string | null
-  saving: boolean
-  loadError: string | null
-  conflict: WorkflowFileConflictReason | null
-  open: (ref: OpenWorkflowRef) => Promise<void>
-  createNew: (name: string, source: WorkflowRunSource) => Promise<void>
-  save: () => Promise<void>
-  reloadFromDisk: () => Promise<void>
-  overwriteOnDisk: () => Promise<void>
-  dismissConflict: () => void
-  close: () => void
-  /** Re-reads the open file and, if it moved since our last known revision, either adopts it
-   *  silently (no local edits at risk) or raises the conflict dialog (edits would be lost). */
-  checkForExternalChange: () => Promise<void>
-}
+export type {
+  OpenWorkflowRef,
+  WorkflowEditorSession,
+  WorkflowEditorSessionStatus
+} from './workflow-editor-session-types'
 
 export type UseWorkflowEditorSessionParams = {
   settings: RuntimeWorkflowSettings
@@ -98,6 +44,7 @@ export function useWorkflowEditorSession({
   const [saving, setSaving] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [conflict, setConflict] = useState<WorkflowFileConflictReason | null>(null)
+  const [isDraft, setIsDraft] = useState(false)
 
   const open = useCallback(
     async (ref: OpenWorkflowRef) => {
@@ -107,6 +54,7 @@ export function useWorkflowEditorSession({
       setStatus('loading')
       setLoadError(null)
       setConflict(null)
+      setIsDraft(false)
       try {
         const result = await workflowRead(settings, { repo: repoId, ...ref })
         if (!result.definition) {
@@ -137,6 +85,7 @@ export function useWorkflowEditorSession({
       setStatus('loading')
       setLoadError(null)
       setConflict(null)
+      setIsDraft(false)
       const definition = newWorkflowDefinition(name)
       try {
         const result = await workflowWrite(settings, { repo: repoId, name, source, definition })
@@ -148,6 +97,39 @@ export function useWorkflowEditorSession({
         setStatus('error')
         setLoadError(error instanceof Error ? error.message : String(error))
         throw error
+      }
+    },
+    [editor, repoId, settings]
+  )
+
+  const openDraft = useCallback(
+    (definition: Workflow) => {
+      editor.dispatch({ type: 'load-definition', definition })
+      setOpenRef(null)
+      setDocumentRevision(null)
+      setIsDraft(true)
+      setLoadError(null)
+      setConflict(null)
+      setStatus('ready')
+    },
+    [editor]
+  )
+
+  const saveDraftAs = useCallback(
+    async (name: string, source: WorkflowRunSource) => {
+      if (!repoId) {
+        return
+      }
+      setSaving(true)
+      try {
+        const definition: Workflow = { ...editor.state.definition, name }
+        const result = await workflowWrite(settings, { repo: repoId, name, source, definition })
+        editor.dispatch({ type: 'load-definition', definition })
+        setOpenRef({ name, source })
+        setDocumentRevision(result.revision)
+        setIsDraft(false)
+      } finally {
+        setSaving(false)
       }
     },
     [editor, repoId, settings]
@@ -257,6 +239,7 @@ export function useWorkflowEditorSession({
     setStatus('empty')
     setLoadError(null)
     setConflict(null)
+    setIsDraft(false)
   }, [editor])
 
   const checkForExternalChange = useCallback(async () => {
@@ -287,9 +270,12 @@ export function useWorkflowEditorSession({
     saving,
     loadError,
     conflict,
+    isDraft,
     open,
     createNew,
+    openDraft,
     save,
+    saveDraftAs,
     reloadFromDisk,
     overwriteOnDisk,
     dismissConflict,

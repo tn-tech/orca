@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import { Loader2, ShieldCheck } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { translate } from '@/i18n/i18n'
 import { useAppStore } from '@/store'
@@ -10,6 +11,7 @@ import { hasBlockingWorkflowProblems } from './editor/workflow-validation-merge'
 import FileConflictDialog from './editor/FileConflictDialog'
 import TrustedSourcesDialog from './TrustedSourcesDialog'
 import WorkflowListPane from './WorkflowListPane'
+import WorkflowNameDialog from './WorkflowNameDialog'
 import { repoTrustHostKey } from './workflow-repo-trust-host'
 import AttemptPanel from './run-view/AttemptPanel'
 import RunCanvasOverlay from './run-view/RunCanvasOverlay'
@@ -25,6 +27,10 @@ export default function WorkflowsPage(): React.JSX.Element {
     (s) => s.settings?.activeRuntimeEnvironmentId?.trim() || null
   )
   const [trustedSourcesOpen, setTrustedSourcesOpen] = useState(false)
+  // US6: names and writes an open draft on its first save; see WorkflowNameDialog generation
+  // comment in WorkflowListPane.tsx for why this bumps on every open rather than resetting on close.
+  const [namingDraft, setNamingDraft] = useState(false)
+  const [namingDraftGeneration, setNamingDraftGeneration] = useState(0)
   // FR-018a: the editor's Trust dialog (RoleEditor, before any run exists) must land its decision
   // on the repo's own host, not always `local`.
   const repoTrustHost = useMemo(
@@ -33,6 +39,13 @@ export default function WorkflowsPage(): React.JSX.Element {
   )
 
   const openName = session.openRef?.name
+  const draftName = session.isDraft ? session.editor.state.definition.name : undefined
+  const headerTitle =
+    openName ??
+    draftName ??
+    (session.isDraft
+      ? translate('auto.components.workflows.WorkflowsPage.untitledDraft', 'Untitled draft')
+      : translate('auto.components.workflows.WorkflowsPage.title', 'Workflows'))
   // While a run exists, a selected node shows its attempt instead of its editable settings
   // (FR-036); edge conditions still go through NodeInspector regardless.
   const showAttemptPanel =
@@ -44,9 +57,14 @@ export default function WorkflowsPage(): React.JSX.Element {
         className="flex shrink-0 items-center justify-between gap-3 px-3 pb-3 md:px-5"
         style={{ paddingRight: 'max(0.75rem, var(--window-controls-width, 0px))' }}
       >
-        <h1 className="truncate text-base font-semibold leading-8">
-          {openName ?? translate('auto.components.workflows.WorkflowsPage.title', 'Workflows')}
-        </h1>
+        <div className="flex min-w-0 items-center gap-2">
+          <h1 className="truncate text-base font-semibold leading-8">{headerTitle}</h1>
+          {session.isDraft ? (
+            <Badge variant="outline" className="shrink-0">
+              {translate('auto.components.workflows.WorkflowsPage.draftBadge', 'Draft')}
+            </Badge>
+          ) : null}
+        </div>
         {controller.settings?.experimentalWorkflows === true ? (
           <Button
             type="button"
@@ -63,7 +81,7 @@ export default function WorkflowsPage(): React.JSX.Element {
             type="button"
             size="sm"
             disabled={
-              !session.editor.state.dirty ||
+              (!session.editor.state.dirty && !session.isDraft) ||
               session.saving ||
               hasBlockingWorkflowProblems(controller.problems)
             }
@@ -75,7 +93,14 @@ export default function WorkflowsPage(): React.JSX.Element {
                   )
                 : undefined
             }
-            onClick={() => void session.save()}
+            onClick={() => {
+              if (session.isDraft) {
+                setNamingDraftGeneration((generation) => generation + 1)
+                setNamingDraft(true)
+              } else {
+                void session.save()
+              }
+            }}
           >
             {session.saving ? <Loader2 className="animate-spin" /> : null}
             {translate('auto.components.workflows.WorkflowsPage.save', 'Save')}
@@ -92,6 +117,9 @@ export default function WorkflowsPage(): React.JSX.Element {
           onCreate={controller.createWorkflow}
           onDuplicate={controller.duplicateWorkflow}
           onDelete={controller.deleteWorkflow}
+          draftUnsaved={session.isDraft}
+          onDraft={controller.draftWorkflow}
+          onOpenDraft={controller.openDraft}
         />
         <div className="flex min-h-0 flex-1 flex-col">
           {session.status === 'empty' ? (
@@ -225,6 +253,15 @@ export default function WorkflowsPage(): React.JSX.Element {
         open={trustedSourcesOpen}
         settings={controller.settings}
         onOpenChange={setTrustedSourcesOpen}
+      />
+      <WorkflowNameDialog
+        key={`save-draft-${namingDraftGeneration}`}
+        open={namingDraft}
+        title={translate('auto.components.workflows.WorkflowsPage.saveDraftTitle', 'Save draft')}
+        submitLabel={translate('auto.components.workflows.WorkflowsPage.saveDraftSubmit', 'Save')}
+        initialName={draftName || undefined}
+        onOpenChange={setNamingDraft}
+        onSubmit={(name, source) => session.saveDraftAs(name, source)}
       />
     </main>
   )

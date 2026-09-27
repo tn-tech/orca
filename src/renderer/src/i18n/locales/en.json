@@ -17181,7 +17181,8 @@
           "createTitle": "New workflow",
           "createSubmit": "Create",
           "duplicateTitle": "Duplicate workflow",
-          "duplicateSubmit": "Duplicate"
+          "duplicateSubmit": "Duplicate",
+          "draft": "Draft from objective"
         },
         "WorkflowNameDialog": {
           "errorRequired": "Enter a name.",
@@ -17199,7 +17200,11 @@
           "placeholder": "Select a workflow, or create a new one.",
           "loading": "Loading…",
           "saveBlocked": "Fix the problems below before saving.",
-          "trustedSources": "Trusted sources"
+          "trustedSources": "Trusted sources",
+          "untitledDraft": "Untitled draft",
+          "draftBadge": "Draft",
+          "saveDraftTitle": "Save draft",
+          "saveDraftSubmit": "Save"
         },
         "editor": {
           "AgentNodeArtifactsField": {
@@ -17364,11 +17369,11 @@
           "ApprovalNodeFields": {
             "questionLabel": "Question",
             "optionsLabel": "Options",
-            "optionsHelp": "Each option gets exactly one outgoing edge on the canvas; the answer must match one of these exactly.",
+            "optionsHelp": "Each option gets its own outgoing edge on the canvas; choosing an option with no edge stops the run.",
             "optionPlaceholder": "e.g. Approve",
             "optionLabel": "Option",
             "removeOption": "Remove option",
-            "invalidOptions": "Options must be non-empty and unique — a blank or repeated option gets no outgoing edge.",
+            "invalidOptions": "Options must be non-empty, unique, and not named exit or body — those are reserved for Loop ports.",
             "addOption": "Add option",
             "defaultOptionLabel": "Default answer",
             "noDefault": "No default (the node fails on timeout)",
@@ -17577,6 +17582,27 @@
           "loading": "Loading…",
           "revokeUnsupported": "This host's Orca must be updated to revoke trust. Meanwhile, run `orca workflows trust <source> --decision refused` from a shell on that host to refuse a source instead.",
           "empty": "No trust decisions yet."
+        },
+        "DiscardDraftDialog": {
+          "title": "Discard unsaved draft?",
+          "description": "This draft hasn't been saved. Leaving it now discards it.",
+          "cancel": "Cancel",
+          "confirm": "Discard"
+        },
+        "DraftWorkflowDialog": {
+          "reviewTitle": "Review before opening",
+          "reviewDescription": "The planner flagged the following. You can fix them once the draft is open.",
+          "reviewDescriptionNoDefinition": "The planner didn't produce a workflow that could be opened.",
+          "back": "Back",
+          "openInEditor": "Open in editor",
+          "title": "Draft from objective",
+          "description": "Describe what the workflow should accomplish. A planning agent proposes nodes, roles and edges to start from.",
+          "objectiveLabel": "Objective",
+          "objectivePlaceholder": "e.g. Triage new support tickets and draft a reply for review.",
+          "methodNotSupported": "Drafting a workflow from an objective isn't supported by this host yet.",
+          "submittingHint": "This can take several minutes. Closing this dialog won't stop the planner — it keeps running.",
+          "cancel": "Cancel",
+          "submit": "Draft workflow"
         }
       }
     },

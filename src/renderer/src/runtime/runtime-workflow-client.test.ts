@@ -242,6 +242,17 @@ describe('runtime workflow client', () => {
     expect(localCall).not.toHaveBeenCalled()
   })
 
+  it('gives workflow.draft a timeout longer than the planner server-side deadline', async () => {
+    await workflowClient.workflowDraft(environmentSettings, { repo: 'repo-1', objective: 'x' })
+
+    expect(runtimeEnvironmentCall).toHaveBeenCalledWith({
+      selector: 'env-1',
+      method: 'workflow.draft',
+      params: { repo: 'repo-1', objective: 'x' },
+      timeoutMs: 15 * 60_000 + 30_000
+    })
+  })
+
   it('gives run-mutating calls a longer timeout on the active runtime environment', async () => {
     await workflowClient.workflowRunStart(environmentSettings, {
       repo: 'repo-1',

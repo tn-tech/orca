@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { AlertTriangle, MoreHorizontal, Plus } from 'lucide-react'
+import { AlertTriangle, MoreHorizontal, Plus, Sparkles } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -10,11 +10,14 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
-import type { WorkflowSummary } from '@/runtime/runtime-workflow-client'
+import type { WorkflowDraftResult, WorkflowSummary } from '@/runtime/runtime-workflow-client'
+import type { Workflow } from '../../../../shared/workflows/workflow-definition-types'
 import type { WorkflowRunSource } from '../../../../shared/workflows/workflow-run-types'
 import type { OpenWorkflowRef } from './use-workflow-editor-session'
 import WorkflowNameDialog from './WorkflowNameDialog'
 import WorkflowDeleteDialog from './WorkflowDeleteDialog'
+import DraftWorkflowDialog from './DraftWorkflowDialog'
+import DiscardDraftDialog from './DiscardDraftDialog'
 
 export type WorkflowListPaneProps = {
   rows: readonly WorkflowSummary[]
@@ -25,6 +28,11 @@ export type WorkflowListPaneProps = {
   onCreate: (name: string, source: WorkflowRunSource) => Promise<void>
   onDuplicate: (row: WorkflowSummary, newName: string) => Promise<void>
   onDelete: (row: WorkflowSummary) => Promise<void>
+  /** True while an agent-drafted workflow sits open, unsaved (US6) — actions that would replace
+   *  the editor's contents ask to discard it first. */
+  draftUnsaved: boolean
+  onDraft: (objective: string) => Promise<WorkflowDraftResult>
+  onOpenDraft: (definition: Workflow) => void
 }
 
 function rowKey(row: Pick<WorkflowSummary, 'name' | 'source'>): string {
@@ -40,16 +48,24 @@ export default function WorkflowListPane({
   onOpen,
   onCreate,
   onDuplicate,
-  onDelete
+  onDelete,
+  draftUnsaved,
+  onDraft,
+  onOpenDraft
 }: WorkflowListPaneProps): React.JSX.Element {
   const [createOpen, setCreateOpen] = useState(false)
   const [duplicateTarget, setDuplicateTarget] = useState<WorkflowSummary | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<WorkflowSummary | null>(null)
+  const [draftDialogOpen, setDraftDialogOpen] = useState(false)
   // Why: WorkflowNameDialog reads its initial name/source once, at mount — bumping these on every
   // open forces a fresh mount (a real `key` change) instead of a no-op effect that would flash the
   // previous value. Not bumped on close, so the closing dialog keeps its exit animation.
   const [createDialogGeneration, setCreateDialogGeneration] = useState(0)
   const [duplicateDialogGeneration, setDuplicateDialogGeneration] = useState(0)
+  const [draftDialogGeneration, setDraftDialogGeneration] = useState(0)
+  // Holds the action an entry point wanted to take (open a row, open Create, open Draft) until the
+  // discard prompt is answered; null means no prompt is pending.
+  const [pendingDiscardAction, setPendingDiscardAction] = useState<(() => void) | null>(null)
 
   const openCreateDialog = (): void => {
     setCreateDialogGeneration((generation) => generation + 1)
@@ -59,6 +75,19 @@ export default function WorkflowListPane({
     setDuplicateDialogGeneration((generation) => generation + 1)
     setDuplicateTarget(row)
   }
+  const openDraftDialog = (): void => {
+    setDraftDialogGeneration((generation) => generation + 1)
+    setDraftDialogOpen(true)
+  }
+
+  /** Runs `action` now, unless an unsaved draft is open — then it waits on the discard prompt. */
+  function guardDraftDiscard(action: () => void): void {
+    if (draftUnsaved) {
+      setPendingDiscardAction(() => action)
+    } else {
+      action()
+    }
+  }
 
   return (
     <section className="flex h-full min-h-0 w-64 shrink-0 flex-col border-r border-border">
@@ -66,15 +95,29 @@ export default function WorkflowListPane({
         <h2 className="text-xs font-semibold text-foreground">
           {translate('auto.components.workflows.WorkflowListPane.heading', 'Workflows')}
         </h2>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          onClick={openCreateDialog}
-          aria-label={translate('auto.components.workflows.WorkflowListPane.new', 'New workflow')}
-        >
-          <Plus />
-        </Button>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            onClick={() => guardDraftDiscard(openDraftDialog)}
+            aria-label={translate(
+              'auto.components.workflows.WorkflowListPane.draft',
+              'Draft from objective'
+            )}
+          >
+            <Sparkles />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            onClick={() => guardDraftDiscard(openCreateDialog)}
+            aria-label={translate('auto.components.workflows.WorkflowListPane.new', 'New workflow')}
+          >
+            <Plus />
+          </Button>
+        </div>
       </div>
       <div className="scrollbar-sleek min-h-0 flex-1 overflow-y-auto">
         {error ? (
@@ -105,7 +148,7 @@ export default function WorkflowListPane({
                   <button
                     type="button"
                     className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-                    onClick={() => onOpen(row)}
+                    onClick={() => guardDraftDiscard(() => onOpen(row))}
                   >
                     {!row.valid ? (
                       <AlertTriangle className="size-3.5 shrink-0 text-destructive" />
@@ -138,7 +181,9 @@ export default function WorkflowListPane({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onSelect={() => openDuplicateDialog(row)}>
+                        <DropdownMenuItem
+                          onSelect={() => guardDraftDiscard(() => openDuplicateDialog(row))}
+                        >
                           {translate(
                             'auto.components.workflows.WorkflowListPane.duplicate',
                             'Duplicate'
@@ -196,6 +241,22 @@ export default function WorkflowListPane({
             await onDelete(deleteTarget)
             setDeleteTarget(null)
           }
+        }}
+      />
+      <DraftWorkflowDialog
+        key={`draft-${draftDialogGeneration}`}
+        open={draftDialogOpen}
+        onOpenChange={setDraftDialogOpen}
+        onDraft={onDraft}
+        onOpenDraft={onOpenDraft}
+      />
+      <DiscardDraftDialog
+        open={pendingDiscardAction !== null}
+        onOpenChange={(open) => !open && setPendingDiscardAction(null)}
+        onConfirm={() => {
+          const action = pendingDiscardAction
+          setPendingDiscardAction(null)
+          action?.()
         }}
       />
     </section>

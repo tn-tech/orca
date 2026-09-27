@@ -24,7 +24,10 @@ const noop = {
   onOpen: vi.fn(),
   onCreate: vi.fn().mockResolvedValue(undefined),
   onDuplicate: vi.fn().mockResolvedValue(undefined),
-  onDelete: vi.fn().mockResolvedValue(undefined)
+  onDelete: vi.fn().mockResolvedValue(undefined),
+  draftUnsaved: false,
+  onDraft: vi.fn(),
+  onOpenDraft: vi.fn()
 }
 
 /** Radix's DropdownMenuTrigger opens on pointerdown, not click. */
@@ -171,5 +174,103 @@ describe('WorkflowListPane', () => {
 
     expect(await screen.findByText('Enter a name.')).toBeInTheDocument()
     expect(onCreate).not.toHaveBeenCalled()
+  })
+
+  it('opens the Draft-from-objective dialog', () => {
+    render(<WorkflowListPane rows={[]} loading={false} error={null} selected={null} {...noop} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Draft from objective' }))
+
+    expect(screen.getByLabelText('Objective')).toBeInTheDocument()
+  })
+
+  describe('unsaved-draft discard confirmation', () => {
+    it('asks to discard before opening a different workflow, and proceeds once confirmed', async () => {
+      const onOpen = vi.fn()
+      const target = row()
+      render(
+        <WorkflowListPane
+          rows={[target]}
+          loading={false}
+          error={null}
+          selected={null}
+          {...noop}
+          draftUnsaved
+          onOpen={onOpen}
+        />
+      )
+
+      fireEvent.click(screen.getByText('ship-it'))
+
+      expect(onOpen).not.toHaveBeenCalled()
+      expect(await screen.findByText('Discard unsaved draft?')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Discard' }))
+
+      expect(onOpen).toHaveBeenCalledExactlyOnceWith(target)
+    })
+
+    it('leaves the draft open when the discard prompt is cancelled', async () => {
+      const onOpen = vi.fn()
+      render(
+        <WorkflowListPane
+          rows={[row()]}
+          loading={false}
+          error={null}
+          selected={null}
+          {...noop}
+          draftUnsaved
+          onOpen={onOpen}
+        />
+      )
+
+      fireEvent.click(screen.getByText('ship-it'))
+      fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
+
+      expect(onOpen).not.toHaveBeenCalled()
+      expect(screen.queryByText('Discard unsaved draft?')).not.toBeInTheDocument()
+    })
+
+    it('asks to discard before opening the New workflow dialog', async () => {
+      render(
+        <WorkflowListPane
+          rows={[]}
+          loading={false}
+          error={null}
+          selected={null}
+          {...noop}
+          draftUnsaved
+        />
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'New workflow' }))
+
+      expect(screen.queryByLabelText('Name')).not.toBeInTheDocument()
+      expect(await screen.findByText('Discard unsaved draft?')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Discard' }))
+
+      expect(await screen.findByLabelText('Name')).toBeInTheDocument()
+    })
+
+    it('does not prompt when there is no unsaved draft', () => {
+      const onOpen = vi.fn()
+      const target = row()
+      render(
+        <WorkflowListPane
+          rows={[target]}
+          loading={false}
+          error={null}
+          selected={null}
+          {...noop}
+          onOpen={onOpen}
+        />
+      )
+
+      fireEvent.click(screen.getByText('ship-it'))
+
+      expect(onOpen).toHaveBeenCalledExactlyOnceWith(target)
+      expect(screen.queryByText('Discard unsaved draft?')).not.toBeInTheDocument()
+    })
   })
 })
