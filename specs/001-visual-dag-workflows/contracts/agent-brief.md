@@ -43,4 +43,5 @@ Write your result to .orca/workflow-runs/<runId>/<attemptId>/result.json and pas
    (`result_missing`).
 2. JSON parses and validates against the contract; otherwise `result_invalid` with the raw body.
 3. Every required artifact glob matches at least one existing path; otherwise `artifact_missing`.
+   Globs are case-sensitive and `[`/`]` are glob syntax (a path that exists literally still counts).
 4. `outcome: failed` from the worker fails the node even when the result validates.

@@ -36,6 +36,8 @@ export type WorkflowNodeLaunchContext = {
   definition: Workflow
   workspace: WorkflowRunWorkspaceAccess
   placementWorktreeId: string | undefined
+  /** The controller's stop signal; long host walks (artifact globs) end early when it fires. */
+  signal?: AbortSignal
 }
 
 /** Node types the engine dispatches to a worker; the only ones a concurrency slot gates (workflow-concurrency.ts). */

@@ -2,33 +2,15 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { ResultContract } from '../../../shared/workflows/workflow-definition-types'
 import { ARTIFACT_GLOB_MAX_DEPTH, ARTIFACT_GLOB_MAX_MATCHES } from './workflow-artifact-glob'
-import type { WorkflowFilesystem } from './workflow-file-store-filesystem'
+import {
+  captureArtifacts,
+  fakeRemoteFilesystem,
+  reportPath
+} from './workflow-artifact-glob-test-fixtures'
 import { localWorkflowFilesystem } from './workflow-file-store-filesystem'
-import { captureNodeResult } from './workflow-result-capture'
 
-const runId = 'run-1'
-const attemptId = 'attempt-1'
-const reportPath = `.orca/workflow-runs/${runId}/${attemptId}/result.json`
-const resultContract: ResultContract = { type: 'object', properties: {} }
-
-function capture(
-  fs: WorkflowFilesystem,
-  workspaceRoot: string,
-  declaredArtifacts: { path: string; required: boolean }[]
-) {
-  return captureNodeResult({
-    fs,
-    workspaceRoot,
-    runId,
-    attemptId,
-    reportPath,
-    outcome: 'succeeded',
-    resultContract,
-    declaredArtifacts
-  })
-}
+const capture = captureArtifacts
 
 describe('captureNodeResult artifact globs (local workspace)', () => {
   let root: string
@@ -134,6 +116,30 @@ describe('captureNodeResult artifact globs (local workspace)', () => {
     })
   })
 
+  it('does not expand a pattern whose literal path exists (no spurious siblings)', async () => {
+    await touch('app/[id]/page.tsx')
+    await touch('app/i/page.tsx')
+    const outcome = await capture(localWorkflowFilesystem, workspaceRoot, [
+      { path: 'app/[id]/page.tsx', required: true }
+    ])
+    expect(outcome).toEqual({
+      ok: true,
+      result: {},
+      artifacts: [{ path: 'app/[id]/page.tsx', exists: true }]
+    })
+  })
+
+  it('accepts a backslash-separated glob and records forward-slash matches', async () => {
+    await touch('specs/001/plan.md')
+    const outcome = await capture(localWorkflowFilesystem, workspaceRoot, [
+      { path: 'specs\\**\\plan.md', required: true }
+    ])
+    expect(outcome).toMatchObject({
+      ok: true,
+      artifacts: [{ path: 'specs/001/plan.md', exists: true }]
+    })
+  })
+
   it.each(['../outside/**/plan.md', '**/../../outside/*.md'])(
     'refuses a glob that climbs out of the workspace: %s',
     async (pattern) => {
@@ -191,6 +197,9 @@ describe('captureNodeResult artifact globs (local workspace)', () => {
     ])
     expect(outcome.ok).toBe(true)
     expect(outcome.ok && outcome.artifacts).toHaveLength(ARTIFACT_GLOB_MAX_MATCHES)
+    expect(outcome.ok && outcome.artifactGlobTruncations).toEqual([
+      { pattern: 'many/**/*.txt', reason: 'matches' }
+    ])
   })
 
   it(`does not walk deeper than ${ARTIFACT_GLOB_MAX_DEPTH} directory levels`, async () => {
@@ -200,65 +209,24 @@ describe('captureNodeResult artifact globs (local workspace)', () => {
     const outcome = await capture(localWorkflowFilesystem, workspaceRoot, [
       { path: '**/plan.md', required: true }
     ])
-    expect(outcome).toMatchObject({
+    expect(outcome).toEqual({
       ok: true,
-      artifacts: [{ path: 'd0/plan.md', exists: true }]
+      result: {},
+      artifacts: [{ path: 'd0/plan.md', exists: true }],
+      artifactGlobTruncations: [{ pattern: '**/plan.md', reason: 'depth' }]
     })
   })
 })
 
-type FakeNode = { kind: 'file' } | { kind: 'dir' } | { kind: 'symlink'; toDir: boolean }
-
-/** SSH-shaped provider: posix root, readDir reports symlinked dirs as directories. */
-function fakeRemoteFilesystem(tree: Record<string, FakeNode>): WorkflowFilesystem {
-  const notUsed = async (): Promise<never> => {
-    throw new Error('not used')
-  }
-  return {
-    async readDir(dirPath) {
-      if (tree[dirPath]?.kind !== 'dir') {
-        throw new Error(`ENOENT ${dirPath}`)
-      }
-      return Object.entries(tree)
-        .filter(
-          ([path]) =>
-            path.startsWith(`${dirPath}/`) && !path.slice(dirPath.length + 1).includes('/')
-        )
-        .map(([path, node]) => ({
-          name: path.slice(dirPath.length + 1),
-          isDirectory: node.kind === 'dir' || (node.kind === 'symlink' && node.toDir),
-          isSymlink: node.kind === 'symlink'
-        }))
-    },
-    async readFile(filePath) {
-      if (tree[filePath]?.kind !== 'file') {
-        throw new Error(`ENOENT ${filePath}`)
-      }
-      return '{}'
-    },
-    writeFile: notUsed,
-    deletePath: notUsed,
-    createDir: notUsed
-  }
-}
-
 describe('captureNodeResult artifact globs (SSH-shaped provider)', () => {
   const ws = '/home/dev/run'
-  const tree: Record<string, FakeNode> = {
-    [ws]: { kind: 'dir' },
-    [`${ws}/.orca`]: { kind: 'dir' },
-    [`${ws}/.orca/workflow-runs`]: { kind: 'dir' },
-    [`${ws}/.orca/workflow-runs/${runId}`]: { kind: 'dir' },
-    [`${ws}/.orca/workflow-runs/${runId}/${attemptId}`]: { kind: 'dir' },
-    [`${ws}/${reportPath}`]: { kind: 'file' },
-    [`${ws}/specs`]: { kind: 'dir' },
-    [`${ws}/specs/001`]: { kind: 'dir' },
-    [`${ws}/specs/001/plan.md`]: { kind: 'file' },
-    [`${ws}/specs/link`]: { kind: 'symlink', toDir: true }
-  }
 
   it('matches through the provider readDir and skips symlinked directories', async () => {
-    const outcome = await capture(fakeRemoteFilesystem(tree), ws, [
+    const fs = fakeRemoteFilesystem(ws, {
+      files: ['specs/001/plan.md'],
+      symlinkedDirs: ['specs/link']
+    })
+    const outcome = await capture(fs, ws, [
       { path: 'specs/**/plan.md', required: true },
       { path: 'specs/*', required: false }
     ])

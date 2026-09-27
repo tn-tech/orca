@@ -6,7 +6,8 @@ import type { ResultContract } from '../../../shared/workflows/workflow-definiti
 import type { WorkflowAttemptArtifact } from '../../../shared/workflows/workflow-run-types'
 import type { WorkerReportOutcome } from '../orchestration/types'
 import { joinWorktreeRelativePath, normalizeRuntimeRelativePath } from '../runtime-relative-paths'
-import { findArtifactGlobMatches, isArtifactGlob } from './workflow-artifact-glob'
+import type { ArtifactGlobTruncation } from './workflow-artifact-glob'
+import { resolveArtifacts, type ArtifactSpec } from './workflow-artifact-resolution'
 import type { ResultSchemaValidation } from './workflow-result-schema'
 import { createResultSchemaValidator } from './workflow-result-schema'
 import type { WorkflowFilesystem } from './workflow-file-store-filesystem'
@@ -28,8 +29,6 @@ export const WORKFLOW_RESULT_FAILURE_REASONS = [
 ] as const
 export type WorkflowResultFailureReason = (typeof WORKFLOW_RESULT_FAILURE_REASONS)[number]
 
-export type ArtifactSpec = { path: string; required: boolean }
-
 export type CaptureResultArgs = {
   fs: WorkflowFilesystem
   /** Run workspace root, host-appropriate (posix for SSH/remote, OS-native for local). */
@@ -40,6 +39,8 @@ export type CaptureResultArgs = {
   outcome: WorkerReportOutcome
   resultContract: ResultContract
   declaredArtifacts: readonly ArtifactSpec[]
+  /** Bounds glob expansion: remote workspaces get a smaller directory budget; abort stops it. */
+  artifactGlob?: { remote?: boolean; signal?: AbortSignal }
 }
 
 /**
@@ -49,7 +50,13 @@ export type CaptureResultArgs = {
  * validation #4), even though no earlier validation step found a problem.
  */
 export type CaptureResultOutcome =
-  | { ok: true; result: JsonValue; artifacts: WorkflowAttemptArtifact[] }
+  | {
+      ok: true
+      result: JsonValue
+      artifacts: WorkflowAttemptArtifact[]
+      /** Globs whose walk hit a limit yet still matched; recorded as `artifact_glob_truncated`. */
+      artifactGlobTruncations?: { pattern: string; reason: ArtifactGlobTruncation }[]
+    }
   | {
       ok: false
       failureReason: WorkflowResultFailureReason
@@ -104,23 +111,6 @@ function safeValidateResult(contract: ResultContract, value: unknown): ResultSch
   }
 }
 
-async function pathExists(fs: WorkflowFilesystem, absolutePath: string): Promise<boolean> {
-  try {
-    await fs.readFile(absolutePath)
-    return true
-  } catch (error) {
-    if (error instanceof Error && error.message === 'workflow_file_binary') {
-      return true // Binary files fail `readFile`'s SSH decode but do exist.
-    }
-  }
-  try {
-    await fs.readDir(absolutePath) // Artifacts may be directories (spec.md's Artifact glossary entry).
-    return true
-  } catch {
-    return false
-  }
-}
-
 function mergeArtifactSpecs(
   declared: readonly ArtifactSpec[],
   extraPaths: readonly string[]
@@ -132,54 +122,6 @@ function mergeArtifactSpecs(
     }
   }
   return [...merged.values()]
-}
-
-type ResolvedArtifacts = { artifacts: WorkflowAttemptArtifact[]; missingRequired: boolean }
-
-/**
- * A glob records every concrete match; nothing present records the spec path as absent. The
- * literal path is checked too, since names like `app/[id]/page.tsx` contain glob syntax.
- */
-async function resolveArtifactSpec(
-  fs: WorkflowFilesystem,
-  workspaceRoot: string,
-  spec: ArtifactSpec
-): Promise<WorkflowAttemptArtifact[]> {
-  const found: WorkflowAttemptArtifact[] = []
-  try {
-    const normalized = normalizeRuntimeRelativePath(spec.path)
-    if (await pathExists(fs, joinWorktreeRelativePath(workspaceRoot, normalized))) {
-      found.push({ path: spec.path, exists: true })
-    }
-    if (isArtifactGlob(spec.path)) {
-      const matches = await findArtifactGlobMatches(fs, workspaceRoot, spec.path)
-      found.push(...matches.map((path) => ({ path, exists: true })))
-    }
-  } catch {
-    // Escapes the run workspace (absolute or `..`); never counts as present.
-  }
-  return found.length > 0 ? found : [{ path: spec.path, exists: false }]
-}
-
-async function resolveArtifacts(
-  fs: WorkflowFilesystem,
-  workspaceRoot: string,
-  specs: readonly ArtifactSpec[]
-): Promise<ResolvedArtifacts> {
-  const byPath = new Map<string, WorkflowAttemptArtifact>()
-  let missingRequired = false
-  for (const spec of specs) {
-    const resolved = await resolveArtifactSpec(fs, workspaceRoot, spec)
-    missingRequired ||= spec.required && !resolved.some((artifact) => artifact.exists)
-    for (const artifact of resolved) {
-      // Why: a glob and a literal (or two globs) can name the same file; list it once, present.
-      byPath.set(artifact.path, {
-        path: artifact.path,
-        exists: artifact.exists || !!byPath.get(artifact.path)?.exists
-      })
-    }
-  }
-  return { artifacts: [...byPath.values()], missingRequired }
 }
 
 export async function captureNodeResult(args: CaptureResultArgs): Promise<CaptureResultOutcome> {
@@ -211,14 +153,30 @@ export async function captureNodeResult(args: CaptureResultArgs): Promise<Captur
   const result = validation.value as JsonValue
 
   const specs = mergeArtifactSpecs(args.declaredArtifacts, extraArtifactPaths(parsed))
-  const { artifacts, missingRequired } = await resolveArtifacts(fs, workspaceRoot, specs)
+  const { artifacts, missingRequired, truncations, missingDetail } = await resolveArtifacts(
+    fs,
+    workspaceRoot,
+    specs,
+    args.artifactGlob
+  )
   if (missingRequired) {
-    return { ok: false, failureReason: 'artifact_missing', result, artifacts }
+    return {
+      ok: false,
+      failureReason: 'artifact_missing',
+      ...(missingDetail ? { detail: missingDetail } : {}),
+      result,
+      artifacts
+    }
   }
 
   if (outcome === 'failed') {
     return { ok: false, failureReason: 'worker_failed', result, artifacts }
   }
 
-  return { ok: true, result, artifacts }
+  return {
+    ok: true,
+    result,
+    artifacts,
+    ...(truncations.length > 0 ? { artifactGlobTruncations: truncations } : {})
+  }
 }

@@ -157,7 +157,8 @@ export class WorkflowRunController {
         objective: run.objective,
         definition: run.workflowSnapshot,
         workspace,
-        placementWorktreeId
+        placementWorktreeId,
+        signal: this.abort.signal
       },
       followUps: {
         db,
@@ -191,6 +192,9 @@ export class WorkflowRunController {
       if (batch) {
         for (const message of batch.messages) {
           await this.routeMessage(session, message)
+        }
+        if (this.abort.signal.aborted) {
+          break // Unacknowledged, so the next controller replays what this one left unsettled.
         }
         db.acknowledgeRunDelivery({ ...mailbox, deliveryId: batch.delivery.id })
         continue

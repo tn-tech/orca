@@ -53,13 +53,27 @@ export async function handleWorkerDone(
     attemptId: attempt.id,
     reportPath: mail.reportPath,
     outcome: mail.outcome,
-    declaredArtifacts: artifactsFor(node)
+    declaredArtifacts: artifactsFor(node),
+    artifactGlob: {
+      remote: ctx.workspace.orcaIgnoreTarget.host === 'remote',
+      ...(ctx.signal ? { signal: ctx.signal } : {})
+    }
   }
   const capture =
     node.type === 'router'
       ? await captureRouterResult(node, captureArgs)
       : await captureNodeResult({ ...captureArgs, resultContract: resultContractFor(node) })
+  // Why: a stopped controller leaves the delivery unacknowledged, so the next one re-captures it.
+  if (ctx.signal?.aborted) {
+    return false
+  }
   if (capture.ok) {
+    for (const truncation of capture.artifactGlobTruncations ?? []) {
+      recorder.event('artifact_glob_truncated', truncation, {
+        attemptId: attempt.id,
+        reason: 'attempt'
+      })
+    }
     db.updateWorkflowAttempt(attempt.id, {
       resultJson: capture.result,
       artifactsJson: capture.artifacts
