@@ -163,7 +163,7 @@ Monorepo per plan.md: shared types `src/shared/workflows/`, engine `src/main/run
 
 - [X] T073 [P] [US2] Write `src/main/runtime/workflows/workflow-loop-unrolling.test.ts`: iteration bookkeeping, exit condition true exits, false with room iterates with `loop.previous.*` inputs populated, cap reached fails the loop and run, Tasks per iteration carry `workflow_iteration`
 - [X] T074 [P] [US2] Extend `src/renderer/src/components/workflows/editor/workflow-editor-state.test.ts`: saving a Loop without `maxIterations` is blocked with a message; drawing a back-edge outside a Loop is refused and the "wrap in Loop" action wraps the selected nodes
-- [ ] T075 [P] [US2] Extend `tests/e2e/workflows/two-node-run.e2e.test.ts` with a `feature-with-qa` loop run (approval auto-answered by the test via `workflow.run.answer`) asserting three iterations, per-iteration results in `workflow.run.show`, and that the run resumes within 5 s of the answer (SC-006)
+- [X] T075 [P] [US2] Extend `tests/e2e/workflows/two-node-run.e2e.test.ts` with a `feature-with-qa` loop run (approval auto-answered by the test via `workflow.run.answer`) asserting three iterations, per-iteration results in `workflow.run.show`, and that the run resumes within 5 s of the answer (SC-006)
 
 ### Implementation for User Story 2
 
