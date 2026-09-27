@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import { Loader2, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { translate } from '@/i18n/i18n'
@@ -10,6 +10,7 @@ import { hasBlockingWorkflowProblems } from './editor/workflow-validation-merge'
 import FileConflictDialog from './editor/FileConflictDialog'
 import TrustedSourcesDialog from './TrustedSourcesDialog'
 import WorkflowListPane from './WorkflowListPane'
+import { repoTrustHostKey } from './workflow-repo-trust-host'
 import AttemptPanel from './run-view/AttemptPanel'
 import RunCanvasOverlay from './run-view/RunCanvasOverlay'
 import RunToolbar from './run-view/RunToolbar'
@@ -24,6 +25,12 @@ export default function WorkflowsPage(): React.JSX.Element {
     (s) => s.settings?.activeRuntimeEnvironmentId?.trim() || null
   )
   const [trustedSourcesOpen, setTrustedSourcesOpen] = useState(false)
+  // FR-018a: the editor's Trust dialog (RoleEditor, before any run exists) must land its decision
+  // on the repo's own host, not always `local`.
+  const repoTrustHost = useMemo(
+    () => repoTrustHostKey(controller.activeRepo),
+    [controller.activeRepo]
+  )
 
   const openName = session.openRef?.name
   // While a run exists, a selected node shows its attempt instead of its editable settings
@@ -179,6 +186,7 @@ export default function WorkflowsPage(): React.JSX.Element {
                       }
                       allowlistedSources={controller.allowlistedSources}
                       repo={controller.repoId}
+                      host={repoTrustHost}
                       settings={controller.settings}
                       workflow={
                         session.openRef

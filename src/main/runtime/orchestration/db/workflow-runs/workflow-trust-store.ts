@@ -70,16 +70,23 @@ export function listSourceTrust(this: OrchestrationDb): SourceTrustView[] {
   return rows.map(toSourceTrustView)
 }
 
+/** Forgets a decision (FR-018a revoke: back to "ask again", not `refused`). No-op if absent. */
+export function clearSourceTrust(this: OrchestrationDb, source: string): void {
+  this.db.prepare('DELETE FROM workflow_source_trust WHERE source = ?').run(source)
+}
+
 export type WorkflowTrustStoreMethods = {
   getSourceTrust: typeof getSourceTrust
   setSourceTrust: typeof setSourceTrust
   listSourceTrust: typeof listSourceTrust
+  clearSourceTrust: typeof clearSourceTrust
 }
 
 export function attachWorkflowTrustStore(ctor: { prototype: object }): void {
   Object.assign(ctor.prototype, {
     getSourceTrust,
     setSourceTrust,
-    listSourceTrust
+    listSourceTrust,
+    clearSourceTrust
   })
 }

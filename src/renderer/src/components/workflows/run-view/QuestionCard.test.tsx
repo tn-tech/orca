@@ -70,12 +70,17 @@ describe('QuestionCard', () => {
     )
   })
 
-  it('renders nothing for a trust question whose payload does not match the documented shape', () => {
-    const { container } = render(
-      <QuestionCard question={trustQuestion({ optionsJson: {} })} settings={settings} />
+  it('falls back to the plain-prompt summary for a trust question whose payload does not decode (review note)', () => {
+    render(
+      <QuestionCard
+        question={trustQuestion({ optionsJson: {}, prompt: 'Trust an unnamed source?' })}
+        settings={settings}
+      />
     )
 
-    expect(container).toBeEmptyDOMElement()
+    expect(screen.getByText('Waiting on you')).toBeInTheDocument()
+    expect(screen.getByText('Trust an unnamed source?')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Review' })).not.toBeInTheDocument()
   })
 
   it('falls back to a plain prompt for question kinds without an answer flow yet (US5)', () => {

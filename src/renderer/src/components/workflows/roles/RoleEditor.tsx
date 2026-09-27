@@ -42,6 +42,9 @@ export type RoleEditorProps = {
   allowlistedSources?: readonly string[]
   /** Import/re-import (FR-016) needs somewhere to send the RPC; omit to hide that action. */
   repo?: string
+  /** The open repo's trust host (FR-018a: `local`, `ssh:<id>`, `wsl:<distro>`) — where the Trust
+   *  dialog's decision actually lands. Omit defaults to `local`. */
+  host?: string
   settings?: RuntimeWorkflowSettings
   /** Enables re-import; omit to hide that action (a role with no saved-workflow context yet). */
   workflow?: RoleEditorWorkflowContext
@@ -109,6 +112,7 @@ export default function RoleEditor({
   roles,
   allowlistedSources,
   repo,
+  host,
   settings,
   workflow,
   onReloadFromDisk
@@ -358,6 +362,7 @@ export default function RoleEditor({
           source={sourceIdentifier(trustSource)}
           skills={trustScope.skills}
           agents={trustScope.agents}
+          host={host}
           onOpenChange={(open) => {
             if (!open) {
               setTrustSource(undefined)

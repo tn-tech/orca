@@ -31,6 +31,8 @@ export type RolesPanelProps = {
   onRemoveRole: (roleId: string) => void
   allowlistedSources?: readonly string[]
   repo?: string
+  /** The open repo's trust host (FR-018a); forwarded to `RoleEditor`'s Trust dialog. */
+  host?: string
   settings?: RuntimeWorkflowSettings
   workflow?: RoleEditorWorkflowContext
   onReloadFromDisk?: () => void | Promise<void>
@@ -51,6 +53,7 @@ export default function RolesPanel({
   onRemoveRole,
   allowlistedSources,
   repo,
+  host,
   settings,
   workflow,
   onReloadFromDisk
@@ -263,6 +266,7 @@ export default function RolesPanel({
                   roles={roles}
                   allowlistedSources={allowlistedSources}
                   repo={repo}
+                  host={host}
                   settings={settings}
                   workflow={workflow}
                   onReloadFromDisk={onReloadFromDisk}

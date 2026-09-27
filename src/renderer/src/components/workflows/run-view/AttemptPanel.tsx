@@ -45,6 +45,18 @@ function attemptReasonClassName(state: WorkflowAttemptState): string {
   return state === 'failed' ? 'text-destructive' : 'text-muted-foreground'
 }
 
+/** `join_skipped` (workflow-join-settlement.ts's `JOIN_SKIPPED_REASON`) is a machine reason code,
+ *  not copy meant to be read as-is (review note) — every other `failureReason` is already a
+ *  free-text message from the engine. */
+function attemptReasonLabel(failureReason: string): string {
+  return failureReason === 'join_skipped'
+    ? translate(
+        'auto.components.workflows.run-view.AttemptPanel.reasonJoinSkipped',
+        'Every branch was skipped.'
+      )
+    : failureReason
+}
+
 /** FR-032's exact vocabulary; every `WorkflowAttemptState` gets a case. */
 function attemptStateLabel(state: WorkflowAttemptState): string {
   switch (state) {
@@ -142,7 +154,7 @@ function IterationRow({ attempt }: { attempt: NodeAttemptView }): React.JSX.Elem
       ) : null}
       {attempt.failureReason ? (
         <p className={cn('mt-1.5 text-[11px]', attemptReasonClassName(attempt.state))}>
-          {attempt.failureReason}
+          {attemptReasonLabel(attempt.failureReason)}
         </p>
       ) : null}
     </li>
@@ -321,7 +333,7 @@ export default function AttemptPanel({
 
       {attempt.failureReason ? (
         <p className={cn('text-xs', attemptReasonClassName(attempt.state))}>
-          {attempt.failureReason}
+          {attemptReasonLabel(attempt.failureReason)}
         </p>
       ) : null}
 

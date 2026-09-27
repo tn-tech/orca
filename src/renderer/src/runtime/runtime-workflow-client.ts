@@ -278,6 +278,16 @@ export function workflowTrustDecide(
   return callWorkflowRpc(settings, 'workflow.trust.decide', params)
 }
 
+/** Forgets a source's decision on `host` (FR-018a revoke: the next run asks again), as opposed
+ *  to `workflowTrustDecide(..., 'refused')` (which fails the node instead of asking). A host that
+ *  predates this method answers `method_not_found`. */
+export function workflowTrustRevoke(
+  settings: RuntimeWorkflowSettings,
+  params: { source: string; host?: string }
+): Promise<Record<string, never>> {
+  return callWorkflowRpc(settings, 'workflow.trust.revoke', params)
+}
+
 export function workflowProposalAccept(
   settings: RuntimeWorkflowSettings,
   params: { runId: string; proposalId: string }

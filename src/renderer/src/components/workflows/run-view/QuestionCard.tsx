@@ -5,8 +5,8 @@ import { Button } from '@/components/ui/button'
 import { translate } from '@/i18n/i18n'
 import type { RuntimeWorkflowSettings } from '@/runtime/runtime-workflow-client'
 import type { RunQuestionView } from '../../../../../shared/workflows/workflow-run-types'
+import { trustQuestionSubject } from '../../../../../shared/workflows/workflow-trust-question-subject'
 import TrustSourceDialog from '../roles/TrustSourceDialog'
-import { trustQuestionSubject } from './trust-question-subject'
 
 export type QuestionCardProps = {
   question: RunQuestionView
@@ -15,18 +15,20 @@ export type QuestionCardProps = {
 
 /** FR-018a: a pending `trust` question, with a Review action that opens the same decision dialog
  *  the role editor uses, scoped to the question's own host so the decision lands on the right
- *  `workflow_source_trust` row instead of always `local`. */
+ *  `workflow_source_trust` row instead of always `local`. A payload that doesn't decode falls
+ *  back to the plain-prompt summary rather than disappearing (review note) — the run is still
+ *  waiting on a person even if this client can't render the structured reason why. */
 function TrustQuestionCard({
   question,
   settings
 }: {
   question: RunQuestionView
   settings: RuntimeWorkflowSettings
-}): React.JSX.Element | null {
+}): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const subject = trustQuestionSubject(question)
   if (!subject) {
-    return null
+    return <PendingQuestionSummary question={question} />
   }
   return (
     <div className="space-y-2 rounded-md border border-workspace-status-review/40 bg-workspace-status-review/10 p-3">

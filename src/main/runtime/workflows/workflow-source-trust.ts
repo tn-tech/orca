@@ -10,17 +10,21 @@ import {
   WORKFLOW_PLUGIN_ID_MESSAGE
 } from '../../../shared/workflows/workflow-plugin-id'
 import type { RunQuestionView } from '../../../shared/workflows/workflow-run-types'
-import { parseWslUncPath } from '../../../shared/wsl-paths'
+import {
+  LOCAL_TRUST_HOST,
+  workflowTrustHostKey
+} from '../../../shared/workflows/workflow-trust-host-key'
+import {
+  trustQuestionSubject,
+  type TrustQuestionSubject
+} from '../../../shared/workflows/workflow-trust-question-subject'
 import type { OrchestrationDb } from '../orchestration/db'
 import type { WorkflowSourceTrustDecision } from '../orchestration/db/workflow-runs/workflow-trust-store'
 import type { WorkflowRunChangeNotifier } from './workflow-run-recorder'
 import { WorkflowRunRecorder } from './workflow-run-recorder'
-import type {
-  WorkflowSkillTrustGate,
-  WorkflowSkillTrustQuestion
-} from './workflow-skill-provisioning'
+import type { WorkflowSkillTrustGate } from './workflow-skill-provisioning'
 
-export const LOCAL_TRUST_HOST = 'local'
+export { LOCAL_TRUST_HOST, workflowTrustHostKey, trustQuestionSubject }
 
 export type SourceTrustDecisionView = {
   source: string
@@ -28,19 +32,6 @@ export type SourceTrustDecisionView = {
   decision: WorkflowSourceTrustDecision
   decidedBy: string
   decidedAt: string
-}
-
-/** Where a run workspace's nodes execute, as a trust scope. */
-export function workflowTrustHostKey(workspace: {
-  workspaceRoot: string
-  orcaIgnoreTarget: { host: 'local' } | { host: 'remote'; connectionId: string }
-}): string {
-  if (workspace.orcaIgnoreTarget.host === 'remote') {
-    return `ssh:${workspace.orcaIgnoreTarget.connectionId}`
-  }
-  const wsl = parseWslUncPath(workspace.workspaceRoot)
-  // Windows resolves distro names case-insensitively, so `Ubuntu` and `UBUNTU` are one host.
-  return wsl ? `wsl:${wsl.distro.toLowerCase()}` : LOCAL_TRUST_HOST
 }
 
 /** A valid plugin id never starts with `[`, so a local key cannot collide with an encoded one. */
@@ -86,34 +77,10 @@ export function listSourceTrustDecisions(db: OrchestrationDb): SourceTrustDecisi
   }))
 }
 
-type TrustQuestionSubject = Required<Pick<WorkflowSkillTrustQuestion, 'source' | 'host'>> & {
-  skills: string[]
-  agents: string[]
-}
-
 export const TRUST_QUESTION_CHOICES = [
   { id: 'trusted', label: 'Trust this source' },
   { id: 'refused', label: 'Refuse' }
 ] as const
-
-/** The source and host a `trust` question asks about; `undefined` for any other question. */
-export function trustQuestionSubject(question: RunQuestionView): TrustQuestionSubject | undefined {
-  const options = question.optionsJson
-  if (question.kind !== 'trust' || !options || typeof options !== 'object') {
-    return undefined
-  }
-  const subject = Array.isArray(options) ? undefined : options.trust
-  if (!subject || typeof subject !== 'object' || Array.isArray(subject)) {
-    return undefined
-  }
-  const { source, host, skills, agents } = subject
-  if (typeof source !== 'string' || typeof host !== 'string') {
-    return undefined
-  }
-  const strings = (value: unknown) =>
-    Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
-  return { source, host, skills: strings(skills), agents: strings(agents) }
-}
 
 /** Reuses the attempt's pending trust question for the same source rather than asking twice. */
 export function raiseTrustQuestion(
@@ -141,6 +108,18 @@ export function raiseTrustQuestion(
       `skill(s) ${question.skills.join(', ')} there for ${question.agents.join(', ')}.`,
     options: { choices: [...TRUST_QUESTION_CHOICES], trust: question }
   })
+}
+
+/**
+ * Forgets a source's decision on `host` (FR-018a "revocable from settings"): the next run
+ * needing it there asks again, unlike deciding `refused` (which fails the node instead of
+ * asking). A no-op when nothing is recorded for that source and host.
+ */
+export function revokeSourceTrust(
+  db: OrchestrationDb,
+  args: { host: string; source: string }
+): void {
+  db.clearSourceTrust(trustRecordKey(args.host, args.source))
 }
 
 /**

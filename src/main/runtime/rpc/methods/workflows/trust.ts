@@ -1,12 +1,14 @@
 import { defineMethod } from '../../core'
 import {
   WorkflowProposalAction,
-  WorkflowTrustDecide
+  WorkflowTrustDecide,
+  WorkflowTrustRevoke
 } from '../../../../../shared/rpc-contract/workflow-run-params'
 import {
   decideSourceTrust,
   LOCAL_TRUST_HOST,
-  listSourceTrustDecisions
+  listSourceTrustDecisions,
+  revokeSourceTrust
 } from '../../../workflows/workflow-source-trust'
 import { wakeWorkflowRun } from '../../../workflows/workflow-run-wake'
 
@@ -41,6 +43,19 @@ export const WORKFLOW_TRUST_METHODS = [
       for (const runId of runIds) {
         wakeWorkflowRun(runId)
       }
+      return {}
+    }
+  }),
+  // FR-018a "revocable from settings": forgets the decision so the next run asks again, unlike
+  // deciding `refused` (which fails the node instead). A no-op for a source with no decision.
+  defineMethod({
+    name: 'workflow.trust.revoke',
+    params: WorkflowTrustRevoke,
+    handler: (params, { runtime }) => {
+      revokeSourceTrust(runtime.getOrchestrationDb(), {
+        host: params.host ?? LOCAL_TRUST_HOST,
+        source: params.source
+      })
       return {}
     }
   }),

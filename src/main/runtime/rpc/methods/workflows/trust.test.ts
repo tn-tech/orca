@@ -12,7 +12,7 @@ function makeRequest(method: string, params?: unknown): RpcRequest {
   return { id: 'req-1', authToken: 'tok', method, params }
 }
 
-describe('workflow.trust.list / workflow.trust.decide', () => {
+describe('workflow.trust.list / workflow.trust.decide / workflow.trust.revoke', () => {
   let db: OrchestrationDb
   let runtime: OrcaRuntimeService
   let dispatcher: RpcDispatcher
@@ -80,6 +80,38 @@ describe('workflow.trust.list / workflow.trust.decide', () => {
       makeRequest('workflow.trust.decide', { source: 'acme-decks' })
     )
     expect(response.ok).toBe(false)
+    expect(db.listSourceTrust()).toEqual([])
+  })
+
+  it('revoke forgets a decision, scoped to its own host', async () => {
+    await dispatcher.dispatch(
+      makeRequest('workflow.trust.decide', {
+        source: 'acme-decks',
+        host: 'ssh:devbox',
+        decision: 'trusted'
+      })
+    )
+    await dispatcher.dispatch(
+      makeRequest('workflow.trust.decide', { source: 'acme-decks', decision: 'trusted' })
+    )
+
+    const revoked = await dispatcher.dispatch(
+      makeRequest('workflow.trust.revoke', { source: 'acme-decks', host: 'ssh:devbox' })
+    )
+
+    expect(revoked).toMatchObject({ ok: true, result: {} })
+    const listed = await dispatcher.dispatch(makeRequest('workflow.trust.list'))
+    expect(listed).toMatchObject({
+      ok: true,
+      result: { decisions: [{ source: 'acme-decks', host: 'local', decision: 'trusted' }] }
+    })
+  })
+
+  it('revoking an unknown source/host is a no-op', async () => {
+    const response = await dispatcher.dispatch(
+      makeRequest('workflow.trust.revoke', { source: 'never-decided' })
+    )
+    expect(response).toMatchObject({ ok: true, result: {} })
     expect(db.listSourceTrust()).toEqual([])
   })
 })

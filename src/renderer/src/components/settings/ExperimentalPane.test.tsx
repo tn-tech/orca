@@ -18,6 +18,10 @@ vi.mock('./EphemeralVmsPane', () => ({
   EphemeralVmsPane: () => <div data-testid="ephemeral-vms-pane">Cloud VM pane</div>
 }))
 
+vi.mock('../workflows/TrustedSourcesList', () => ({
+  default: () => <div data-testid="trusted-sources-list">Trusted sources list</div>
+}))
+
 vi.mock('../ui/select', async () => {
   const React = await import('react')
 
@@ -466,6 +470,29 @@ describe('ExperimentalPane', () => {
 
     expect(updateSettings).toHaveBeenCalledWith({ experimentalAgentHibernation: true })
     root.unmount()
+  })
+
+  it('hides the trusted-sources settings section while Workflows itself is off', () => {
+    const markup = renderToStaticMarkup(
+      <ExperimentalPane settings={getDefaultSettings('/tmp')} updateSettings={vi.fn()} />
+    )
+
+    expect(markup).not.toContain('Trusted skill sources')
+  })
+
+  it('shows the trusted-sources settings section once Workflows is on (FR-018a)', () => {
+    const markup = renderToStaticMarkup(
+      <ExperimentalPane
+        settings={{ ...getDefaultSettings('/tmp'), experimentalWorkflows: true }}
+        updateSettings={vi.fn()}
+      />
+    )
+
+    expect(markup).toContain('Trusted skill sources')
+    expect(markup).toContain('Trusted sources list')
+    expect(getExperimentalPaneSearchEntries().map((entry) => entry.title)).toContain(
+      'Trusted skill sources'
+    )
   })
 
   it('enables new card style through the experimental switch', async () => {

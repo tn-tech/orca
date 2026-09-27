@@ -37,8 +37,9 @@ Host capability: `workflow.engine.v1` (`WORKFLOW_ENGINE_RUNTIME_CAPABILITY`).
 ## Trust and proposals
 | Method | Params | Result |
 |---|---|---|
-| `workflow.trust.list` | `{}` | `{ decisions: { source, decision, decidedAt }[] }` |
-| `workflow.trust.decide` | `{ source, decision: 'trusted'\|'refused' }` | `{}` |
+| `workflow.trust.list` | `{}` | `{ decisions: { source, host, decision, decidedBy, decidedAt }[] }` |
+| `workflow.trust.decide` | `{ source, host?, decision: 'trusted'\|'refused' }` | `{}` (`host` defaults to `local`; deciding again replaces an earlier decision) |
+| `workflow.trust.revoke` | `{ source, host? }` | `{}` (forgets the decision — the next run asks again — rather than recording `refused`; a no-op if nothing was recorded; a host predating this method answers `method_not_found`) |
 | `workflow.proposal.accept` (P3) | `{ runId, proposalId }` | `{ revision }` |
 | `workflow.proposal.export` (P3) | `{ runId, proposalId }` | `{ exportPath }` |
 

@@ -537,7 +537,8 @@ import {
   WorkflowRunSendMessage,
   WorkflowRunShow,
   WorkflowRunStart,
-  WorkflowTrustDecide
+  WorkflowTrustDecide,
+  WorkflowTrustRevoke
 } from './workflow-run-params'
 import { WorkspacePortKillParams, WorkspacePortScanParams } from './workspace-ports-params'
 import { WorktreeCreate, WorktreePrefetchCreateBase } from './worktree-create-params'
@@ -1201,6 +1202,7 @@ export const RPC_PARAMS_BY_METHOD = {
   'workflow.run.start': WorkflowRunStart,
   'workflow.trust.decide': WorkflowTrustDecide,
   'workflow.trust.list': null,
+  'workflow.trust.revoke': WorkflowTrustRevoke,
   'workflow.validate': WorkflowValidate,
   'workflow.write': WorkflowWrite,
   'workspacePorts.kill': WorkspacePortKillParams,

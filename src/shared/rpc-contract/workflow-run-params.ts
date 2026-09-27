@@ -93,6 +93,17 @@ export const WorkflowTrustDecide = z
   })
   .strict()
 
+/** Forgets a source's decision on `host` (FR-018a revoke: back to "ask again"), as opposed to
+ *  `workflow.trust.decide`'s `refused` (which fails the node instead of asking). A new method
+ *  rather than a widened `decision` enum, so a host that predates it answers `method_not_found`
+ *  instead of silently misinterpreting an unknown decision value. */
+export const WorkflowTrustRevoke = z
+  .object({
+    source: requiredString('Missing trust source'),
+    host: OptionalString
+  })
+  .strict()
+
 /** Shared by workflow.proposal.accept / .export — both address one proposal on one run. */
 export const WorkflowProposalAction = z
   .object({

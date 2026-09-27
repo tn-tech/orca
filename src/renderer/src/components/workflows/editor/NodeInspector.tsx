@@ -29,6 +29,8 @@ export type NodeInspectorProps = {
   onRemoveRole: (roleId: string) => void
   allowlistedSources?: readonly string[]
   repo?: string
+  /** The open repo's trust host (FR-018a); forwarded to `RolesPanel` -> `RoleEditor`. */
+  host?: string
   settings?: RuntimeWorkflowSettings
   workflow?: RoleEditorWorkflowContext
   onReloadFromDisk?: () => void | Promise<void>
@@ -116,6 +118,7 @@ export default function NodeInspector({
   onRemoveRole,
   allowlistedSources,
   repo,
+  host,
   settings,
   workflow,
   onReloadFromDisk
@@ -156,6 +159,7 @@ export default function NodeInspector({
         onRemoveRole={onRemoveRole}
         allowlistedSources={allowlistedSources}
         repo={repo}
+        host={host}
         settings={settings}
         workflow={workflow}
         onReloadFromDisk={onReloadFromDisk}

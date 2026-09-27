@@ -1,9 +1,9 @@
-// Renderer-side decode of a `trust` question's optionsJson (data-model.md §workflow_run_questions:
-// `{ choices, trust: { source, host, skills, agents } }`). Mirrors the shape produced by
-// `workflow-source-trust.ts`'s `trustQuestionSubject`, which lives under src/main/runtime and
-// can't be imported from the renderer.
-import type { JsonValue } from '../../../../../shared/workflows/workflow-condition-schema'
-import type { RunQuestionView } from '../../../../../shared/workflows/workflow-run-types'
+// Decodes a `trust` question's `optionsJson` (FR-018a, data-model.md §workflow_run_questions):
+// `{ choices, trust: { source, host, skills, agents } }`. Shared because the engine raises the
+// question (workflow-source-trust.ts) and the renderer reads it back (run-view/QuestionCard.tsx)
+// from the same wire shape.
+import type { JsonValue } from './workflow-condition-schema'
+import type { RunQuestionView } from './workflow-run-types'
 
 export type TrustQuestionSubject = {
   source: string

@@ -22,7 +22,8 @@ import {
   WorkflowRunSendMessage,
   WorkflowRunShow,
   WorkflowRunStart,
-  WorkflowTrustDecide
+  WorkflowTrustDecide,
+  WorkflowTrustRevoke
 } from '../../../../../shared/rpc-contract/workflow-run-params'
 
 // Every workflow.* row in specs/001-visual-dag-workflows/contracts/rpc-methods.md, paired with
@@ -49,6 +50,7 @@ const CONTRACT_METHODS: readonly (readonly [string, unknown])[] = [
   ['workflow.run.events', WorkflowRunEvents],
   ['workflow.trust.list', null],
   ['workflow.trust.decide', WorkflowTrustDecide],
+  ['workflow.trust.revoke', WorkflowTrustRevoke],
   ['workflow.proposal.accept', WorkflowProposalAction],
   ['workflow.proposal.export', WorkflowProposalAction]
 ]

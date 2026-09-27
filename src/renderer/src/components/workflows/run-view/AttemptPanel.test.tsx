@@ -268,7 +268,9 @@ describe('AttemptPanel', () => {
     )
 
     expect(screen.getByText('Cancelled')).toBeInTheDocument()
-    expect(screen.getByText('join_skipped')).not.toHaveClass('text-destructive')
+    // Also translated, not the raw machine reason code (review note).
+    expect(screen.queryByText('join_skipped')).not.toBeInTheDocument()
+    expect(screen.getByText('Every branch was skipped.')).not.toHaveClass('text-destructive')
   })
 
   it('shows installed skills and prompt-fallback skills from the recorded provisioning event (US4 AS3)', () => {

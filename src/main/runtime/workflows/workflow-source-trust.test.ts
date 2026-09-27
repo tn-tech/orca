@@ -5,6 +5,7 @@ import {
   decideSourceTrust,
   listSourceTrustDecisions,
   raiseTrustQuestion,
+  revokeSourceTrust,
   sourceTrustGate,
   trustQuestionSubject,
   workflowTrustHostKey
@@ -81,6 +82,49 @@ describe('source trust store (FR-018a)', () => {
     expect(await local.decide({ source: 'acme-decks' })).toBe('trusted')
     expect(await ssh.decide({ source: 'acme-decks' })).toBe('needs-question')
     expect(await local.decide({ source: 'other' })).toBe('needs-question')
+  })
+
+  it('revoke forgets a decision, so the next run asks again (FR-018a)', async () => {
+    decideSourceTrust(db, notifier, {
+      host: 'local',
+      source: 'acme-decks',
+      decision: 'trusted',
+      decidedBy: 'client-1'
+    })
+    expect(await sourceTrustGate(db, 'local').decide({ source: 'acme-decks' })).toBe('trusted')
+
+    revokeSourceTrust(db, { host: 'local', source: 'acme-decks' })
+
+    expect(await sourceTrustGate(db, 'local').decide({ source: 'acme-decks' })).toBe(
+      'needs-question'
+    )
+    expect(listSourceTrustDecisions(db)).toEqual([])
+  })
+
+  it('revoke is scoped to its own host', () => {
+    decideSourceTrust(db, notifier, {
+      host: 'ssh:devbox',
+      source: 'acme-decks',
+      decision: 'trusted',
+      decidedBy: 'client-1'
+    })
+    decideSourceTrust(db, notifier, {
+      host: 'local',
+      source: 'acme-decks',
+      decision: 'trusted',
+      decidedBy: 'client-1'
+    })
+
+    revokeSourceTrust(db, { host: 'ssh:devbox', source: 'acme-decks' })
+
+    expect(listSourceTrustDecisions(db)).toEqual([
+      expect.objectContaining({ host: 'local', source: 'acme-decks', decision: 'trusted' })
+    ])
+  })
+
+  it('revoking a source/host with no decision is a no-op', () => {
+    expect(() => revokeSourceTrust(db, { host: 'local', source: 'never-decided' })).not.toThrow()
+    expect(listSourceTrustDecisions(db)).toEqual([])
   })
 
   it('keeps a local id shaped like an encoded key from colliding with a remote decision', async () => {

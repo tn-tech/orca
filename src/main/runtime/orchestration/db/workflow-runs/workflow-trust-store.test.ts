@@ -47,4 +47,18 @@ describe('workflow-trust-store', () => {
         .sort()
     ).toEqual(['source-a', 'source-b'])
   })
+
+  it('forgets a decision, leaving no record behind', () => {
+    const d = createDb()
+    d.setSourceTrust('github.com/acme/skills', 'trusted', 'user_1')
+    d.clearSourceTrust('github.com/acme/skills')
+    expect(d.getSourceTrust('github.com/acme/skills')).toBeUndefined()
+    expect(d.listSourceTrust()).toEqual([])
+  })
+
+  it('is a no-op clearing a source with no decision', () => {
+    const d = createDb()
+    expect(() => d.clearSourceTrust('never-decided')).not.toThrow()
+    expect(d.listSourceTrust()).toEqual([])
+  })
 })

@@ -148,6 +148,21 @@ describe('RoleEditor (FR-015, FR-016)', () => {
     expect(screen.getByText('claude, codex')).toBeInTheDocument()
   })
 
+  it("scopes the trust dialog to the repo's own host, not always local (review fix)", () => {
+    renderEditor({
+      role: role({
+        skills: [
+          { name: 'speckit-plan', source: { kind: 'plugin', plugin: 'speckit' }, required: true }
+        ]
+      }),
+      host: 'ssh:devbox'
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Trust…' }))
+
+    expect(screen.getByText('ssh:devbox')).toBeInTheDocument()
+  })
+
   describe('re-import (FR-016)', () => {
     it('shows Re-import (not "Import from repository…") for an already-imported role', () => {
       renderEditor({ role: importedRole(), repo: 'repo-1', settings, workflow: cleanWorkflow() })
