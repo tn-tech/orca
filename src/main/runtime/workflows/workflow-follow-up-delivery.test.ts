@@ -6,6 +6,7 @@ import { AgentAnswerDeliveryBackoff } from './workflow-agent-answer-delivery'
 import {
   deliverFollowUps,
   failUndeliveredFollowUps,
+  followUpRequestId,
   queueFollowUp,
   type FollowUpDeliveryContext,
   type FollowUpWorker
@@ -19,6 +20,7 @@ import { WorkflowRunRecorder, type WorkflowRunChangeNotifier } from './workflow-
 import { registerWorkflowRunWaker } from './workflow-run-wake'
 
 const NOW = 1_800_000_000_000
+const LATER = NOW + 120_000
 
 describe('workflow follow-up delivery', () => {
   let db: OrchestrationDb
@@ -28,8 +30,10 @@ describe('workflow follow-up delivery', () => {
   let runId: string
   let attemptId: string
   let recorder: WorkflowRunRecorder
+  let mailId: string
   let orchestrationCall: Mock<WorkflowOrchestrationClient['call']>
   let workerInputCall: Mock<WorkflowWorkerInputClient['call']>
+  let sendTerminalPrompt: Mock<FollowUpDeliveryContext['sendTerminalPrompt']>
   let worker: FollowUpWorker | undefined
   let backoff: AgentAnswerDeliveryBackoff
 
@@ -49,15 +53,22 @@ describe('workflow follow-up delivery', () => {
     }).id
     recorder = new WorkflowRunRecorder(db, notifier, runId)
     recorder.transitionRun('running', 'run_started')
-    attemptId = recorder.createAttempt({ id: 'implement', type: 'agent' }).id
-    recorder.transitionAttempt(attemptId, 'provisioning')
-    recorder.transitionAttempt(attemptId, 'running')
+    attemptId = runningAttempt('implement')
     db.updateWorkflowAttempt(attemptId, { dispatchId: 'dispatch_1' })
+    // What orchestration.send commits: a real mailbox row the agent's `check` later marks read.
+    mailId = db.insertMessage({
+      from: 'workflow-engine',
+      to: 'dispatch:dispatch_1',
+      subject: 'Follow-up',
+      body: 'x',
+      type: 'status'
+    }).id
     orchestrationCall = vi.fn<WorkflowOrchestrationClient['call']>(async () => ({
-      message: { id: 'msg_1' }
+      message: { id: mailId }
     }))
-    workerInputCall = vi.fn<WorkflowWorkerInputClient['call']>(async () => ({
-      send: { accepted: true }
+    workerInputCall = vi.fn<WorkflowWorkerInputClient['call']>(async () => ({ ok: false }))
+    sendTerminalPrompt = vi.fn<FollowUpDeliveryContext['sendTerminalPrompt']>(async () => ({
+      accepted: true
     }))
     worker = { kind: 'terminal', handle: 'term_worker_1' }
     backoff = new AgentAnswerDeliveryBackoff()
@@ -65,12 +76,20 @@ describe('workflow follow-up delivery', () => {
 
   afterEach(() => db.close())
 
+  function runningAttempt(nodeId: string): string {
+    const id = recorder.createAttempt({ id: nodeId, type: 'agent' }).id
+    recorder.transitionAttempt(id, 'provisioning')
+    recorder.transitionAttempt(id, 'running')
+    return id
+  }
+
   function ctx(): FollowUpDeliveryContext {
     return {
       db,
       recorder,
       client: { call: orchestrationCall },
       workerInput: { call: workerInputCall },
+      sendTerminalPrompt,
       resolveWorker: () => worker,
       backoff
     }
@@ -84,8 +103,8 @@ describe('workflow follow-up delivery', () => {
     return db.listWorkflowMessages(runId).find((candidate) => candidate.id === id)
   }
 
-  function eventKinds(): string[] {
-    return db.listWorkflowEvents(runId).map((event) => event.kind)
+  function events(kind: string) {
+    return db.listWorkflowEventsOfKind(runId, kind)
   }
 
   describe('queueFollowUp', () => {
@@ -104,6 +123,11 @@ describe('workflow follow-up delivery', () => {
         text: 'Also update the changelog.'
       })
       expect(queued.deliveredAt).toBeUndefined()
+      expect(events('follow_up_queued')[0]?.payloadJson).toMatchObject({
+        messageId: queued.id,
+        mode: 'queued',
+        sender: 'mobile_7'
+      })
       expect(notifier.notifyWorkflowRunChanged).toHaveBeenLastCalledWith({
         runId,
         reason: 'message'
@@ -111,11 +135,32 @@ describe('workflow follow-up delivery', () => {
       expect(wake).toHaveBeenCalledTimes(1)
     })
 
+    it('stores neither the message nor its event when recording the event fails', () => {
+      vi.spyOn(db, 'appendWorkflowEvent').mockImplementationOnce(() => {
+        throw new Error('disk full')
+      })
+
+      expect(() => queue('queued')).toThrow('disk full')
+      expect(db.listWorkflowMessages(runId)).toEqual([])
+    })
+
     it('refuses an empty message', () => {
       expect(() => queue('queued', '   ')).toThrow(
         expect.objectContaining({ code: 'invalid_argument' })
       )
       expect(db.listWorkflowMessages(runId)).toEqual([])
+    })
+
+    it('refuses a message to a node waiting on a person rather than running', () => {
+      recorder.transitionAttempt(attemptId, 'waiting')
+
+      expect(() => queue('queued')).toThrow(expect.objectContaining({ code: 'invalid_argument' }))
+    })
+
+    it('accepts a message to a node whose worker is unverifiable', () => {
+      recorder.transitionAttempt(attemptId, 'unverifiable')
+
+      expect(queue('queued').state).toBe('queued')
     })
 
     it('refuses a message to a node attempt that already ended', () => {
@@ -146,7 +191,7 @@ describe('workflow follow-up delivery', () => {
   })
 
   describe('queued mode', () => {
-    it('sends to the dispatch mailbox, then records it delivered with mode and sender', async () => {
+    it('sends to the dispatch mailbox under a request id derived from the message', async () => {
       const queued = queue('queued')
 
       await deliverFollowUps(ctx(), NOW)
@@ -154,42 +199,94 @@ describe('workflow follow-up delivery', () => {
       expect(orchestrationCall).toHaveBeenCalledTimes(1)
       expect(orchestrationCall).toHaveBeenCalledWith(
         'orchestration.send',
-        expect.objectContaining({ to: 'dispatch:dispatch_1', body: 'Also update the changelog.' })
+        expect.objectContaining({ to: 'dispatch:dispatch_1', body: 'Also update the changelog.' }),
+        { requestId: followUpRequestId(queued) }
       )
+      expect(events('follow_up_sent')[0]?.payloadJson).toMatchObject({
+        messageId: queued.id,
+        orchestrationMessageId: mailId
+      })
       expect(workerInputCall).not.toHaveBeenCalled()
-      expect(message(queued.id)).toMatchObject({ state: 'delivered', mode: 'queued' })
+      expect(sendTerminalPrompt).not.toHaveBeenCalled()
+    })
+
+    it('stays queued, and is never sent again, until the agent reads it', async () => {
+      const queued = queue('queued')
+
+      await deliverFollowUps(ctx(), NOW)
+      await deliverFollowUps(ctx(), LATER)
+
+      expect(message(queued.id)?.state).toBe('queued')
+      expect(orchestrationCall).toHaveBeenCalledTimes(1)
+      expect(events('follow_up_delivered')).toEqual([])
+    })
+
+    it('records it delivered, with mode and sender, once the agent read it at its checkpoint', async () => {
+      const queued = queue('queued')
+      await deliverFollowUps(ctx(), NOW)
+
+      db.markAsRead([mailId])
+      await deliverFollowUps(ctx(), LATER)
+
+      expect(message(queued.id)?.state).toBe('delivered')
       expect(message(queued.id)?.deliveredAt).toBeDefined()
-      const delivered = db
-        .listWorkflowEvents(runId)
-        .find((event) => event.kind === 'follow_up_delivered')
-      expect(delivered?.payloadJson).toMatchObject({
+      expect(orchestrationCall).toHaveBeenCalledTimes(1)
+      expect(events('follow_up_delivered')[0]?.payloadJson).toMatchObject({
         messageId: queued.id,
         mode: 'queued',
         sender: 'mobile_7'
       })
     })
 
-    it('keeps the message queued when the send fails, and retries once the backoff is due', async () => {
+    it('does not poll the mailbox again before its backoff is due', async () => {
+      const queued = queue('queued')
+      await deliverFollowUps(ctx(), NOW)
+      db.markAsRead([mailId])
+
+      await deliverFollowUps(ctx(), NOW + 1)
+
+      expect(message(queued.id)?.state).toBe('queued')
+      expect(backoff.nextRetryAt()).toBeGreaterThan(NOW + 1)
+    })
+
+    it('keeps it queued when the send fails and resends under the same request id', async () => {
       const queued = queue('queued')
       orchestrationCall.mockRejectedValueOnce(new Error('dispatch_inactive'))
 
       await deliverFollowUps(ctx(), NOW)
       expect(message(queued.id)?.state).toBe('queued')
-      expect(eventKinds()).toContain('follow_up_delivery_failed')
-
+      expect(events('follow_up_sent')).toEqual([])
       await deliverFollowUps(ctx(), NOW + 1)
       expect(orchestrationCall).toHaveBeenCalledTimes(1)
 
-      await deliverFollowUps(ctx(), NOW + 60_000)
+      await deliverFollowUps(ctx(), LATER)
       expect(orchestrationCall).toHaveBeenCalledTimes(2)
-      expect(message(queued.id)?.state).toBe('delivered')
+      const requestIds = orchestrationCall.mock.calls.map(([, , options]) => options?.requestId)
+      expect(requestIds).toEqual([followUpRequestId(queued), followUpRequestId(queued)])
+      expect(events('follow_up_sent')).toHaveLength(1)
+    })
+
+    it('records a repeated failure once, and again only when the failure changes', async () => {
+      queue('queued')
+      orchestrationCall.mockRejectedValueOnce(new Error('dispatch_inactive'))
+      orchestrationCall.mockRejectedValueOnce(new Error('dispatch_inactive'))
+      orchestrationCall.mockRejectedValueOnce(new Error('runtime_timeout'))
+
+      await deliverFollowUps(ctx(), NOW)
+      await deliverFollowUps(ctx(), NOW + 60_000)
+      await deliverFollowUps(ctx(), NOW + 180_000)
+
+      expect(events('follow_up_delivery_failed').map((event) => event.payloadJson)).toEqual([
+        expect.objectContaining({ error: 'dispatch_inactive' }),
+        expect.objectContaining({ error: 'runtime_timeout' })
+      ])
     })
 
     it('waits, without sending, while the attempt has no dispatch yet', async () => {
-      const pendingAttempt = recorder.createAttempt({ id: 'review', type: 'agent' })
+      const undispatched = runningAttempt('review')
       const queued = queueFollowUp(db, notifier, {
         runId,
-        attemptId: pendingAttempt.id,
+        attemptId: undispatched,
         text: 'hi',
         mode: 'queued',
         sender: 'user'
@@ -209,41 +306,43 @@ describe('workflow follow-up delivery', () => {
 
       expect(orchestrationCall).not.toHaveBeenCalled()
       expect(message(queued.id)?.state).toBe('failed')
-      expect(eventKinds()).toContain('follow_up_undeliverable')
+      expect(events('follow_up_undeliverable')).toHaveLength(1)
     })
   })
 
   describe('interrupt mode', () => {
-    it('types into a terminal worker with terminal.send and records it as an interrupt', async () => {
+    it('pastes into a terminal worker as an agent prompt and records it as an interrupt', async () => {
       const queued = queue('interrupt', 'Stop and use postgres instead.')
 
       await deliverFollowUps(ctx(), NOW)
 
-      expect(workerInputCall).toHaveBeenCalledWith('terminal.send', {
-        terminal: 'term_worker_1',
-        text: 'Stop and use postgres instead.',
-        enter: true
-      })
+      expect(sendTerminalPrompt).toHaveBeenCalledWith(
+        'term_worker_1',
+        'Stop and use postgres instead.'
+      )
       expect(orchestrationCall).not.toHaveBeenCalled()
+      expect(workerInputCall).not.toHaveBeenCalled()
       expect(message(queued.id)).toMatchObject({
         state: 'delivered',
         mode: 'interrupt',
         sender: 'mobile_7'
       })
-      const delivered = db
-        .listWorkflowEvents(runId)
-        .find((event) => event.kind === 'follow_up_delivered')
-      expect(delivered?.payloadJson).toMatchObject({ mode: 'interrupt', sender: 'mobile_7' })
+      expect(events('follow_up_delivered')[0]?.payloadJson).toMatchObject({
+        mode: 'interrupt',
+        sender: 'mobile_7'
+      })
     })
 
-    it('keeps it queued when the terminal did not accept the input (e.g. unreachable SSH host)', async () => {
+    it('keeps it queued when the terminal refused the prompt (e.g. unreachable SSH host)', async () => {
       const queued = queue('interrupt')
-      workerInputCall.mockResolvedValueOnce({ send: { accepted: false, bytesWritten: 0 } })
+      sendTerminalPrompt.mockRejectedValueOnce(new Error('terminal_not_writable'))
 
       await deliverFollowUps(ctx(), NOW)
 
       expect(message(queued.id)?.state).toBe('queued')
-      expect(eventKinds()).toContain('follow_up_delivery_failed')
+      expect(events('follow_up_delivery_failed')[0]?.payloadJson).toMatchObject({
+        error: 'terminal_not_writable'
+      })
     })
 
     it('sends a user turn to a structured worker with agentSession.send', async () => {
@@ -274,6 +373,7 @@ describe('workflow follow-up delivery', () => {
         },
         body
       })
+      expect(sendTerminalPrompt).not.toHaveBeenCalled()
       expect(message(queued.id)).toMatchObject({ state: 'delivered', mode: 'interrupt' })
     })
 
@@ -291,7 +391,7 @@ describe('workflow follow-up delivery', () => {
 
       await deliverFollowUps(ctx(), NOW)
       expect(message(queued.id)?.state).toBe('queued')
-      await deliverFollowUps(ctx(), NOW + 60_000)
+      await deliverFollowUps(ctx(), LATER)
 
       expect(message(queued.id)?.state).toBe('delivered')
       const [first, second] = workerInputCall.mock.calls.map(([, params]) =>
@@ -330,7 +430,7 @@ describe('workflow follow-up delivery', () => {
 
       await deliverFollowUps(ctx(), NOW)
 
-      expect(workerInputCall).not.toHaveBeenCalled()
+      expect(sendTerminalPrompt).not.toHaveBeenCalled()
       expect(message(queued.id)?.state).toBe('queued')
     })
   })

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  AGENT_SESSION_PENDING_SEND_RESULT_RUNTIME_CAPABILITY,
   ORCHESTRATION_CONTRACT_VERSION,
   STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY
 } from '../../../shared/protocol-version'
@@ -54,6 +55,26 @@ describe('workflow orchestration client', () => {
     expect(first).not.toHaveProperty('principal')
   })
 
+  it('uses a caller-supplied request id for a mutation, so a replay returns its receipt', async () => {
+    const requests: RpcRequest[] = []
+    const dispatcher = {
+      dispatchAsWorkflowEngine: async (request: RpcRequest): Promise<RpcResponse> => {
+        requests.push(request)
+        return { id: request.id, ok: true, result: {}, _meta: { runtimeId: 'rt' } }
+      }
+    }
+    const client = createWorkflowOrchestrationClient({ dispatcher, principal: PRINCIPAL })
+
+    await client.call('orchestration.taskCreate', { spec: 'a' }, { requestId: 'follow-up:wfm_1' })
+    await client.call('orchestration.taskCreate', { spec: 'a' }, { requestId: 'follow-up:wfm_1' })
+
+    expect(requests.map((request) => request.orchestrationRequestId)).toEqual([
+      'follow-up:wfm_1',
+      'follow-up:wfm_1'
+    ])
+    expect(requests[0]?.id).not.toBe(requests[1]?.id)
+  })
+
   it('surfaces RPC failures as OrchestrationError with the wire code', async () => {
     const dispatcher = {
       dispatchAsWorkflowEngine: async (request: RpcRequest): Promise<RpcResponse> => ({
@@ -91,19 +112,22 @@ describe('workflow orchestration client', () => {
     }
     const client = createWorkflowWorkerInputClient({ dispatcher, principal: PRINCIPAL })
 
-    await client.call('terminal.send', { terminal: 'term_1', text: 'hi', enter: true })
+    await client.call('agentSession.send', { body: 'hi' })
 
     expect(calls).toHaveLength(1)
     expect(calls[0]?.principal).toEqual(PRINCIPAL)
     expect(calls[0]?.request).toMatchObject({
-      method: 'terminal.send',
-      params: { terminal: 'term_1', text: 'hi', enter: true }
+      method: 'agentSession.send',
+      params: { body: 'hi' }
     })
     expect(calls[0]?.request.orchestrationRequestId).toBeUndefined()
     expect(calls[0]?.options).toMatchObject({
       clientId: `workflow-engine:${WORKFLOW_RUN_ID}`,
       clientKind: 'runtime',
-      clientCapabilities: [STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY]
+      clientCapabilities: [
+        STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY,
+        AGENT_SESSION_PENDING_SEND_RESULT_RUNTIME_CAPABILITY
+      ]
     })
   })
 
@@ -117,7 +141,7 @@ describe('workflow orchestration client', () => {
       })
     }
     const client = createWorkflowWorkerInputClient({ dispatcher, principal: PRINCIPAL })
-    await expect(client.call('terminal.send', { terminal: 'term_1' })).rejects.toMatchObject({
+    await expect(client.call('agentSession.send', { body: 'x' })).rejects.toMatchObject({
       name: 'OrchestrationError',
       code: 'terminal_handle_stale'
     })

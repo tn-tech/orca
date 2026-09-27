@@ -120,4 +120,21 @@ describe('workflow-event-store', () => {
       expect(d.listWorkflowEventsTail(run.id, 50).map((e) => e.id)).toEqual([e1.id, e2.id])
     })
   })
+
+  describe('listWorkflowEventsOfKind', () => {
+    it('returns every event of one kind for the run, oldest first, past the page limit', () => {
+      const d = createDb()
+      const run = createRun(d)
+      const other = createRun(d)
+      const sent = Array.from({ length: 205 }, (_, i) => {
+        d.appendWorkflowEvent({ runId: run.id, kind: 'noise', payloadJson: { i } })
+        return d.appendWorkflowEvent({ runId: run.id, kind: 'follow_up_sent', payloadJson: { i } })
+      })
+      d.appendWorkflowEvent({ runId: other.id, kind: 'follow_up_sent' })
+
+      const found = d.listWorkflowEventsOfKind(run.id, 'follow_up_sent')
+
+      expect(found.map((e) => e.id)).toEqual(sent.map((e) => e.id))
+    })
+  })
 })

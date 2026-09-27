@@ -1,14 +1,16 @@
 // Follow-up messages to a running node's agent (FR-036/FR-036a, spec US5 AS6a, research R8). A
 // person's message is recorded `queued` on the attempt (queueFollowUp) and wakes the run; the
-// controller then delivers it on its next pass. Queued mode goes through `orchestration.send` to
-// `dispatch:<id>`, whose mailbox nudge prompts the agent at its next checkpoint; "interrupt now"
-// is direct input into the worker's session: `terminal.send` for a terminal worker,
-// `agentSession.send` for a structured one. A message is `delivered` only once the host confirmed
-// it; anything it could not confirm (an unreachable SSH host, an unsettled send) stays queued and
-// is retried with backoff. A message whose attempt ended first can never arrive: it fails.
-import { createHash } from 'node:crypto'
-import type { AgentJournalMessageItem } from '../../../shared/agent-session-journal-types'
-import { computeAgentSessionPayloadFingerprint } from '../../../shared/agent-session-mutation-envelope'
+// controller then works it on each pass.
+//
+// Queued mode goes through `orchestration.send` to `dispatch:<id>` under a request id derived from
+// the message, so a send replayed after a crash returns the first receipt instead of a second
+// mail. The mail's id is recorded in a `follow_up_sent` event and the row stays `queued` until the
+// agent's next checkpoint reads it (`orchestration check` marks it read): only then `delivered`.
+// "Interrupt now" writes into the worker's session (workflow-follow-up-interrupt.ts) and is
+// `delivered` once the host accepted it. Anything unconfirmed (an unreachable SSH host, an
+// unsettled send) stays queued and is retried with backoff; a message whose attempt ended first
+// fails. Terminal interrupts are at-least-once: a crash after the paste but before the row is
+// updated pastes it again on the next pass.
 import type {
   NodeAttemptView,
   RunMessageView,
@@ -16,16 +18,21 @@ import type {
 } from '../../../shared/workflows/workflow-run-types'
 import type { OrchestrationDb } from '../orchestration/db'
 import { OrchestrationError } from '../orchestration/orchestration-error'
-import { createStructuredMailboxPointerHost } from '../orchestration/structured-mailbox-pointer-host'
-import { resolveStructuredWorkerForDispatch } from '../rpc/methods/orchestration-structured-worker-lifecycle'
 import type { AgentAnswerDeliveryBackoff } from './workflow-agent-answer-delivery'
 import { engineCoordinatorHandle } from './workflow-engine-principal'
-import type {
-  WorkflowOrchestrationClient,
-  WorkflowWorkerInputClient
-} from './workflow-orchestration-client'
+import {
+  readPath,
+  sendInterrupt,
+  type FollowUpInterruptPorts,
+  type FollowUpOutcome,
+  type FollowUpWorker
+} from './workflow-follow-up-interrupt'
+import type { WorkflowOrchestrationClient } from './workflow-orchestration-client'
+import { atomically } from './workflow-question-deadlines'
 import { WorkflowRunRecorder, type WorkflowRunChangeNotifier } from './workflow-run-recorder'
 import { wakeWorkflowRun } from './workflow-run-wake'
+
+export { resolveFollowUpWorker, type FollowUpWorker } from './workflow-follow-up-interrupt'
 
 const TERMINAL_RUN_STATES = new Set(['completed', 'failed', 'cancelled'])
 const ENDED_ATTEMPT_STATES = new Set<NodeAttemptView['state']>([
@@ -34,28 +41,24 @@ const ENDED_ATTEMPT_STATES = new Set<NodeAttemptView['state']>([
   'skipped',
   'cancelled'
 ])
+// FR-036 "a running node's agent"; unverifiable is a running worker whose host went quiet.
+const MESSAGEABLE_ATTEMPT_STATES = new Set<NodeAttemptView['state']>(['running', 'unverifiable'])
+const SENT_EVENT = 'follow_up_sent'
+const FAILED_EVENT = 'follow_up_delivery_failed'
 
-/** The session behind a dispatch; a structured one needs its current fence to be written to. */
-export type FollowUpWorker =
-  | { kind: 'terminal'; handle: string }
-  | { kind: 'structured'; sessionId: string; runtimeFence: number | null }
-
-export type FollowUpDeliveryContext = {
+export type FollowUpDeliveryContext = FollowUpInterruptPorts & {
   db: OrchestrationDb
   recorder: WorkflowRunRecorder
   client: WorkflowOrchestrationClient
-  workerInput: WorkflowWorkerInputClient
   resolveWorker(dispatchId: string): FollowUpWorker | undefined
   backoff: AgentAnswerDeliveryBackoff
 }
-
-type DeliveryOutcome = { kind: 'delivered' } | { kind: 'retry'; why: string } | { kind: 'rejected' }
 
 function invalid(message: string, data: Record<string, string>): OrchestrationError {
   return new OrchestrationError('invalid_argument', message, data)
 }
 
-/** Records a person's follow-up on a live node attempt and wakes the run to deliver it. */
+/** Records a person's follow-up on a running node attempt and wakes the run to deliver it. */
 export function queueFollowUp(
   db: OrchestrationDb,
   notifier: WorkflowRunChangeNotifier,
@@ -85,127 +88,84 @@ export function queueFollowUp(
   if (!attempt) {
     throw invalid(`Run ${runId} has no node attempt ${attemptId}.`, { runId, attemptId })
   }
-  if (ENDED_ATTEMPT_STATES.has(attempt.state)) {
-    throw invalid(`Node attempt ${attemptId} is no longer running (${attempt.state}).`, {
+  if (!MESSAGEABLE_ATTEMPT_STATES.has(attempt.state)) {
+    throw invalid(`Node attempt ${attemptId} is not running (${attempt.state}).`, {
       runId,
       attemptId
     })
   }
-  const message = db.createWorkflowMessage({ runId, attemptId, sender, text, mode })
-  new WorkflowRunRecorder(db, notifier, runId).event(
-    'follow_up_queued',
-    { messageId: message.id, mode, sender },
-    { attemptId, reason: 'message' }
-  )
+  let message: RunMessageView | undefined
+  atomically(db, () => {
+    message = db.createWorkflowMessage({ runId, attemptId, sender, text, mode })
+    new WorkflowRunRecorder(db, notifier, runId).event(
+      'follow_up_queued',
+      { messageId: message.id, mode, sender },
+      { attemptId, reason: 'message' }
+    )
+  })
+  if (!message) {
+    throw new Error(`Follow-up for ${attemptId} was not recorded.`)
+  }
   wakeWorkflowRun(runId)
   return message
 }
 
-/** Terminal or structured, from the handle the dispatch was started with (as workerStop does). */
-export function resolveFollowUpWorker(
-  db: OrchestrationDb,
-  dispatchId: string
-): FollowUpWorker | undefined {
-  const structured = resolveStructuredWorkerForDispatch(db, dispatchId)
-  if (structured) {
-    return {
-      kind: 'structured',
-      sessionId: structured.sessionId,
-      runtimeFence: createStructuredMailboxPointerHost().currentFence(structured.sessionId)
+/** The orchestration request id a queued follow-up is always sent under. */
+export function followUpRequestId(message: Pick<RunMessageView, 'id'>): string {
+  return `workflow-follow-up:${message.id}`
+}
+
+/** Mail already sent per follow-up, from its `follow_up_sent` markers. */
+function sentMail(db: OrchestrationDb, runId: string): Map<string, string> {
+  const sent = new Map<string, string>()
+  for (const event of db.listWorkflowEventsOfKind(runId, SENT_EVENT)) {
+    const messageId = readPath(event.payloadJson, ['messageId'])
+    const mailId = readPath(event.payloadJson, ['orchestrationMessageId'])
+    if (typeof messageId === 'string' && typeof mailId === 'string') {
+      sent.set(messageId, mailId)
     }
   }
-  const handle =
-    db.getWorkerDispatch(dispatchId)?.agent_terminal_handle ??
-    db.getDispatchContextById(dispatchId)?.assignee_handle
-  return handle ? { kind: 'terminal', handle } : undefined
+  return sent
 }
 
-function userTurn(text: string): AgentJournalMessageItem {
-  return { kind: 'message', role: 'user', blocks: [{ type: 'text', text }] }
-}
-
-/** Stable per message: the operation id is the host's idempotency key, so a retry lands once. */
-function followUpOperationId(message: RunMessageView): string {
-  const digest = createHash('sha256')
-    .update(JSON.stringify(['workflow-follow-up', message.id]))
-    .digest('hex')
-  return `${String(Date.parse(message.createdAt)).padStart(13, '0')}-${digest.slice(0, 32)}`
-}
-
-function readPath(value: unknown, keys: readonly string[]): unknown {
-  let current = value
-  for (const key of keys) {
-    if (typeof current !== 'object' || current === null) {
-      return undefined
-    }
-    current = Reflect.get(current, key)
+/** The last recorded failure per follow-up, so a repeated one is not recorded on every retry. */
+function lastFailures(db: OrchestrationDb, runId: string): Map<string, unknown> {
+  const failures = new Map<string, unknown>()
+  for (const event of db.listWorkflowEventsOfKind(runId, FAILED_EVENT)) {
+    failures.set(
+      String(readPath(event.payloadJson, ['messageId'])),
+      readPath(event.payloadJson, ['error'])
+    )
   }
-  return current
+  return failures
 }
 
-async function interrupt(
+async function sendQueued(
   ctx: FollowUpDeliveryContext,
-  worker: FollowUpWorker,
+  dispatchId: string,
   message: RunMessageView
-): Promise<DeliveryOutcome> {
-  if (worker.kind === 'terminal') {
-    const result = await ctx.workerInput.call('terminal.send', {
-      terminal: worker.handle,
-      text: message.text,
-      enter: true
-    })
-    return readPath(result, ['send', 'accepted']) === true
-      ? { kind: 'delivered' }
-      : { kind: 'retry', why: 'terminal_input_not_accepted' }
-  }
-  if (worker.runtimeFence === null) {
-    return { kind: 'retry', why: 'agent_session_not_attached' }
-  }
-  const body = userTurn(message.text)
-  const result = await ctx.workerInput.call('agentSession.send', {
-    envelope: {
-      sessionId: worker.sessionId,
-      clientOperationId: followUpOperationId(message),
-      expectedRuntimeFence: worker.runtimeFence,
-      payloadFingerprint: computeAgentSessionPayloadFingerprint({
-        method: 'agentSession.send',
-        sessionId: worker.sessionId,
-        fields: { body }
-      })
-    },
-    body
-  })
-  if (readPath(result, ['ok']) !== true) {
-    const code = readPath(result, ['refusal', 'code'])
-    return { kind: 'retry', why: typeof code === 'string' ? code : 'agent_session_send_refused' }
-  }
-  // `pending` is not yet an acknowledgement; only `accepted` confirms the turn reached the agent.
-  const state = readPath(result, ['value', 'submission', 'dispatchState'])
-  if (state === 'accepted') {
-    return { kind: 'delivered' }
-  }
-  return state === 'rejected'
-    ? { kind: 'rejected' }
-    : { kind: 'retry', why: `agent_session_send_${String(state)}` }
-}
-
-async function deliver(
-  ctx: FollowUpDeliveryContext,
-  attempt: NodeAttemptView & { dispatchId: string },
-  message: RunMessageView
-): Promise<DeliveryOutcome> {
-  if (message.mode === 'queued') {
-    await ctx.client.call('orchestration.send', {
-      to: `dispatch:${attempt.dispatchId}`,
+): Promise<FollowUpOutcome> {
+  const receipt = await ctx.client.call(
+    'orchestration.send',
+    {
+      to: `dispatch:${dispatchId}`,
       from: engineCoordinatorHandle(ctx.recorder.runId),
       type: 'status',
       subject: `Follow-up from ${message.sender}`,
       body: message.text
-    })
-    return { kind: 'delivered' }
+    },
+    { requestId: followUpRequestId(message) }
+  )
+  const mailId = readPath(receipt, ['message', 'id'])
+  if (typeof mailId !== 'string') {
+    return { kind: 'retry', why: 'orchestration_send_without_message' }
   }
-  const worker = ctx.resolveWorker(attempt.dispatchId)
-  return worker ? interrupt(ctx, worker, message) : { kind: 'retry', why: 'worker_not_found' }
+  ctx.recorder.event(
+    SENT_EVENT,
+    { messageId: message.id, orchestrationMessageId: mailId },
+    { attemptId: message.attemptId, reason: 'message' }
+  )
+  return { kind: 'retry', why: 'unread' }
 }
 
 function settleUndeliverable(
@@ -223,11 +183,40 @@ function settleUndeliverable(
   }
 }
 
+function markDelivered(ctx: FollowUpDeliveryContext, message: RunMessageView): void {
+  ctx.backoff.clear(message.id)
+  if (ctx.db.deliverWorkflowMessage(message.id)?.state === 'delivered') {
+    ctx.recorder.event(
+      'follow_up_delivered',
+      { messageId: message.id, mode: message.mode, sender: message.sender },
+      { attemptId: message.attemptId, reason: 'message' }
+    )
+  }
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-/** Delivers every due queued follow-up of the run; only the run's controller calls it. */
+async function attemptDelivery(
+  ctx: FollowUpDeliveryContext,
+  dispatchId: string,
+  message: RunMessageView
+): Promise<FollowUpOutcome> {
+  try {
+    if (message.mode === 'queued') {
+      return await sendQueued(ctx, dispatchId, message)
+    }
+    const worker = ctx.resolveWorker(dispatchId)
+    return worker
+      ? await sendInterrupt(ctx, worker, message)
+      : { kind: 'retry', why: 'worker_not_found' }
+  } catch (error) {
+    return { kind: 'retry', why: errorMessage(error) }
+  }
+}
+
+/** Works every due queued follow-up of the run; only the run's controller calls it. */
 export async function deliverFollowUps(
   ctx: FollowUpDeliveryContext,
   now: number = Date.now()
@@ -236,6 +225,8 @@ export async function deliverFollowUps(
   const pending = db.listPendingWorkflowMessages(recorder.runId)
   backoff.retainOnly(new Set(pending.map((message) => message.id)))
   const attempts = new Map(db.listWorkflowAttempts(recorder.runId).map((a) => [a.id, a]))
+  const sent = sentMail(db, recorder.runId)
+  const failures = lastFailures(db, recorder.runId)
   for (const message of pending) {
     const attempt = attempts.get(message.attemptId)
     if (!attempt || ENDED_ATTEMPT_STATES.has(attempt.state)) {
@@ -246,33 +237,31 @@ export async function deliverFollowUps(
     if (!dispatchId || !backoff.isDue(message.id, now)) {
       continue
     }
-    const options = { attemptId: attempt.id, reason: 'message' as const }
-    let outcome: DeliveryOutcome
-    try {
-      outcome = await deliver(ctx, { ...attempt, dispatchId }, message)
-    } catch (error) {
-      outcome = { kind: 'retry', why: errorMessage(error) }
-    }
-    if (outcome.kind === 'retry') {
-      backoff.recordFailure(message.id, now)
-      recorder.event(
-        'follow_up_delivery_failed',
-        { messageId: message.id, mode: message.mode, error: outcome.why },
-        options
-      )
+    const mailId = sent.get(message.id)
+    if (mailId !== undefined) {
+      // Sent already: never again. Delivered once the agent's checkpoint read it.
+      if (db.getMessageById(mailId)?.read === 1) {
+        markDelivered(ctx, message)
+      } else {
+        backoff.recordFailure(message.id, now)
+      }
       continue
     }
-    backoff.clear(message.id)
-    if (outcome.kind === 'rejected') {
+    const outcome = await attemptDelivery(ctx, dispatchId, message)
+    if (outcome.kind === 'delivered') {
+      markDelivered(ctx, message)
+    } else if (outcome.kind === 'rejected') {
+      backoff.clear(message.id)
       settleUndeliverable(db, recorder, message, 'agent_session_send_rejected')
-      continue
-    }
-    if (db.deliverWorkflowMessage(message.id)?.state === 'delivered') {
-      recorder.event(
-        'follow_up_delivered',
-        { messageId: message.id, mode: message.mode, sender: message.sender },
-        options
-      )
+    } else {
+      backoff.recordFailure(message.id, now)
+      if (outcome.why !== 'unread' && failures.get(message.id) !== outcome.why) {
+        recorder.event(
+          FAILED_EVENT,
+          { messageId: message.id, mode: message.mode, error: outcome.why },
+          { attemptId: message.attemptId, reason: 'message' }
+        )
+      }
     }
   }
 }

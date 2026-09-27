@@ -10,7 +10,8 @@ import type { WorkflowNodeLaunchContext } from './workflow-run-node-launch'
 const FIRST_RETRY_MS = 1_000
 const MAX_RETRY_MS = 60_000
 
-/** Per-controller retry schedule; a restart simply retries at once. */
+/** Per-controller retry schedule keyed by id; a restart simply retries at once. Named for its
+ *  first user, it also paces follow-up delivery and read polling (workflow-follow-up-delivery.ts). */
 export class AgentAnswerDeliveryBackoff {
   private readonly retries = new Map<string, { failures: number; nextAt: number }>()
 

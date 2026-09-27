@@ -44,6 +44,8 @@ export type WorkflowRunControllerRuntime = WorkflowRunChangeNotifier & {
     handle: string,
     options?: { signal?: AbortSignal; exclusive?: boolean }
   ): Promise<MessageWaitResult>
+  /** Bracketed paste of sanitised text, then Enter once it settled: "interrupt now" follow-ups. */
+  sendTerminalAgentPrompt(handle: string, prompt: string): Promise<{ accepted: boolean }>
 }
 
 export type WorkflowRunControllerDeps = {
@@ -157,6 +159,8 @@ export class WorkflowRunController {
         recorder: this.recorder,
         client,
         workerInput: createWorkflowWorkerInputClient(engine),
+        sendTerminalPrompt: (handle, prompt) =>
+          this.deps.runtime.sendTerminalAgentPrompt(handle, prompt),
         resolveWorker: (dispatchId) => resolveFollowUpWorker(db, dispatchId),
         backoff: this.followUpBackoff
       }

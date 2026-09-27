@@ -104,16 +104,34 @@ export function listWorkflowEventsTail(
   return rows.map(toEventView).toReversed()
 }
 
+/** Every event of one kind for the run, oldest first and unpaged: callers look up a few markers
+ *  (e.g. `follow_up_sent`) without walking the whole history. */
+export function listWorkflowEventsOfKind(
+  this: OrchestrationDb,
+  runId: string,
+  kind: string
+): RunEventView[] {
+  const rows = selectWorkflowRows<WorkflowRunEventRow>(
+    this.db,
+    'SELECT * FROM workflow_run_events WHERE run_id = ? AND kind = ? ORDER BY id ASC',
+    runId,
+    kind
+  )
+  return rows.map(toEventView)
+}
+
 export type WorkflowEventStoreMethods = {
   appendWorkflowEvent: typeof appendWorkflowEvent
   listWorkflowEvents: typeof listWorkflowEvents
   listWorkflowEventsTail: typeof listWorkflowEventsTail
+  listWorkflowEventsOfKind: typeof listWorkflowEventsOfKind
 }
 
 export function attachWorkflowEventStore(ctor: { prototype: object }): void {
   Object.assign(ctor.prototype, {
     appendWorkflowEvent,
     listWorkflowEvents,
-    listWorkflowEventsTail
+    listWorkflowEventsTail,
+    listWorkflowEventsOfKind
   })
 }

@@ -1,11 +1,17 @@
 // Follow-ups end to end through a live controller: the real dispatcher carries the engine's
-// orchestration.send and terminal.send; only the PTY write itself is faked.
+// orchestration.send; the harness fakes only the terminal prompt write.
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { AgentAnswerDeliveryBackoff } from './workflow-agent-answer-delivery'
 import { approvalDriver } from './workflow-approval-test-fixtures'
-import { queueFollowUp } from './workflow-follow-up-delivery'
+import { deliverFollowUps, queueFollowUp } from './workflow-follow-up-delivery'
+import {
+  createWorkflowOrchestrationClient,
+  createWorkflowWorkerInputClient
+} from './workflow-orchestration-client'
+import { WorkflowRunRecorder } from './workflow-run-recorder'
 import { createControllerHarness, waitUntil } from './workflow-run-controller-test-harness'
 
 describe('follow-up delivery through the run controller', () => {
@@ -46,7 +52,23 @@ describe('follow-up delivery through the run controller', () => {
     return h.db.listWorkflowMessages(runId).find((message) => message.id === messageId)?.state
   }
 
-  it('delivers a queued follow-up into the dispatch mailbox and marks it delivered', async () => {
+  /** The harness answers worker-start prompts; a follow-up prompt gets `answer` instead. */
+  function interceptFollowUpPrompt(text: string, answer: () => Promise<{ accepted: boolean }>) {
+    const spy = vi.mocked(h.runtime.sendTerminalAgentPrompt)
+    const workerPrompt = spy.getMockImplementation()
+    const followUps: string[] = []
+    spy.mockImplementation(async (handle, prompt, options) => {
+      if (prompt !== text) {
+        return workerPrompt!(handle, prompt, options)
+      }
+      followUps.push(handle)
+      const { accepted } = await answer()
+      return { handle, accepted, bytesWritten: accepted ? prompt.length : 0 }
+    })
+    return followUps
+  }
+
+  it('shows a queued follow-up delivered only once the agent read it from its mailbox', async () => {
     const { run, controller, finished, attempt, dispatchId } = await running()
 
     const message = queueFollowUp(h.db, h.runtime, {
@@ -56,52 +78,98 @@ describe('follow-up delivery through the run controller', () => {
       mode: 'queued',
       sender: 'mobile_7'
     })
+    await waitUntil(() => h.db.getAllMessages(`dispatch:${dispatchId}`).length === 1)
+    const [mail] = h.db.getAllMessages(`dispatch:${dispatchId}`)
+    expect(mail).toMatchObject({ body: 'Also update the changelog.', type: 'status', read: 0 })
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(state(run.id, message.id)).toBe('queued')
+
+    // What the agent's `orchestration check` does at its next checkpoint.
+    h.db.markAsRead([mail!.id])
     await waitUntil(() => state(run.id, message.id) === 'delivered')
 
-    const mail = h.db.getAllMessages(`dispatch:${dispatchId}`)
-    expect(mail).toEqual([
-      expect.objectContaining({ body: 'Also update the changelog.', type: 'status' })
-    ])
+    expect(h.db.getAllMessages(`dispatch:${dispatchId}`)).toHaveLength(1)
     controller.stop()
     await finished
   })
 
-  it('types an interrupt into the terminal worker through terminal.send', async () => {
-    const sendTerminal = vi
-      .spyOn(h.runtime, 'sendTerminal')
-      .mockImplementation(async (handle) => ({ handle, accepted: true, bytesWritten: 10 }))
+  it('does not resend after a crash between the send and recording it', async () => {
+    const { run, controller, finished, attempt, dispatchId } = await running()
+    controller.stop()
+    await finished
+    const message = queueFollowUp(h.db, h.runtime, {
+      runId: run.id,
+      attemptId: attempt.id,
+      text: 'Also update the changelog.',
+      mode: 'queued',
+      sender: 'user'
+    })
+    const recorder = new WorkflowRunRecorder(h.db, h.runtime, run.id)
+    const principal = { kind: 'workflow-engine' as const, workflowRunId: run.id }
+    const followUps = {
+      db: h.db,
+      recorder,
+      client: createWorkflowOrchestrationClient({ dispatcher: h.dispatcher, principal }),
+      workerInput: createWorkflowWorkerInputClient({ dispatcher: h.dispatcher, principal }),
+      sendTerminalPrompt: vi.fn(),
+      resolveWorker: () => undefined,
+      backoff: new AgentAnswerDeliveryBackoff()
+    }
+    const append = h.db.appendWorkflowEvent.bind(h.db)
+    const crash = vi.spyOn(h.db, 'appendWorkflowEvent').mockImplementation((event) => {
+      if (event.kind === 'follow_up_sent') {
+        throw new Error('process died')
+      }
+      return append(event)
+    })
+    await deliverFollowUps(followUps, Date.now())
+    expect(h.db.listWorkflowEventsOfKind(run.id, 'follow_up_sent')).toEqual([])
+    crash.mockRestore()
+
+    await deliverFollowUps(followUps, Date.now() + 120_000)
+
+    const mailbox = h.db.getAllMessages(`dispatch:${dispatchId}`)
+    expect(mailbox).toHaveLength(1)
+    expect(h.db.listWorkflowEventsOfKind(run.id, 'follow_up_sent')).toEqual([
+      expect.objectContaining({
+        payloadJson: expect.objectContaining({
+          messageId: message.id,
+          orchestrationMessageId: mailbox[0]?.id
+        })
+      })
+    ])
+  })
+
+  it('pastes an interrupt into the terminal worker as an agent prompt', async () => {
+    const text = 'Stop and use postgres.'
+    const followUps = interceptFollowUpPrompt(text, async () => ({ accepted: true }))
     const { run, controller, finished, attempt, handle } = await running()
 
     const message = queueFollowUp(h.db, h.runtime, {
       runId: run.id,
       attemptId: attempt.id,
-      text: 'Stop and use postgres.',
+      text,
       mode: 'interrupt',
       sender: 'user'
     })
     await waitUntil(() => state(run.id, message.id) === 'delivered')
 
-    expect(sendTerminal).toHaveBeenCalledWith(
-      handle,
-      { text: 'Stop and use postgres.', enter: true, interrupt: false },
-      expect.anything()
-    )
+    expect(followUps).toEqual([handle])
     expect(h.db.getAllMessages(`dispatch:${attempt.dispatchId}`)).toEqual([])
     controller.stop()
     await finished
   })
 
   it('fails follow-ups still queued when the run ends', async () => {
-    vi.spyOn(h.runtime, 'sendTerminal').mockImplementation(async (handle) => ({
-      handle,
-      accepted: false,
-      bytesWritten: 0
-    }))
+    const text = 'never lands'
+    interceptFollowUpPrompt(text, async () => {
+      throw new Error('terminal_not_writable')
+    })
     const { run, finished, attempt } = await running()
     const message = queueFollowUp(h.db, h.runtime, {
       runId: run.id,
       attemptId: attempt.id,
-      text: 'never lands',
+      text,
       mode: 'interrupt',
       sender: 'user'
     })
