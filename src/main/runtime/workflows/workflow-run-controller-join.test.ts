@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Node } from '../../../shared/workflows/workflow-definition-types'
+import { resolveApproval } from './workflow-approval-gates'
+import { approvalNode, HOUR_MS } from './workflow-approval-test-fixtures'
 import {
   branchAgent,
   fanOutWorkflow,
@@ -16,15 +18,9 @@ import {
   waitUntil
 } from './workflow-run-controller-test-harness'
 
-const gate: Node = {
-  id: 'gate',
-  type: 'approval',
-  title: 'Gate',
-  question: 'ok?',
-  options: ['yes'],
-  timeoutMs: 1000,
-  escalationGraceMs: 1000
-}
+const gate = approvalNode({ question: 'ok?', options: ['yes'] })
+// Reflection is not run by the engine yet: a branch that can never settle.
+const unrun: Node = { id: 'unrun', type: 'reflection', title: 'Unrun', prompt: 'Reflect.' }
 
 describe('WorkflowRunController Join execution', () => {
   let workspaceRoot: string
@@ -138,8 +134,7 @@ describe('WorkflowRunController Join execution', () => {
     await expect(finished).resolves.toBe('completed')
   })
 
-  it('cancels a Join left Waiting on a branch nothing can settle, then fails the run', async () => {
-    // The Approval seam (not yet run by the engine) stands in for a branch that never settles.
+  it('keeps a Join Waiting while a pending approval branch has not been answered', async () => {
     const workflow = joinWorkflow(
       ['a'],
       [
@@ -151,6 +146,40 @@ describe('WorkflowRunController Join execution', () => {
       joinNode('all', 'fail')
     )
     workflow.nodes.push(gate)
+    const run = h.createRun(workflow)
+    const finished = h.createController(run.id).run()
+    await d.report(run.id, 'a', 'succeeded')
+    await d.reached(run.id, 'join', ['waiting'])
+    await d.reached(run.id, 'gate', ['waiting'])
+    // The run stays up while a person has not answered, well short of the approval's timeout.
+    await vi.advanceTimersByTimeAsync(HOUR_MS / 2)
+    expect(d.attempt(run.id, 'join')?.state).toBe('waiting')
+    expect(h.db.getWorkflowRun(run.id)?.state).toBe('waiting')
+
+    const question = h.db.listWorkflowQuestions(run.id).find((q) => q.kind === 'approval')
+    resolveApproval(h.db, h.runtime, {
+      runId: run.id,
+      questionId: question?.id ?? '',
+      optionId: 'yes',
+      answeredBy: 'user_1'
+    })
+    await d.reached(run.id, 'join', ['completed'])
+    await d.report(run.id, 'integrate', 'succeeded')
+    await expect(finished).resolves.toBe('completed')
+  })
+
+  it('cancels a Join left Waiting on a branch nothing can settle, then fails the run', async () => {
+    const workflow = joinWorkflow(
+      ['a'],
+      [
+        { id: 'e1', from: 'start', to: 'a' },
+        { id: 'e2', from: 'start', to: 'unrun' },
+        { id: 'e3', from: 'a', to: 'join' },
+        { id: 'e4', from: 'unrun', to: 'join' }
+      ],
+      joinNode('all', 'fail')
+    )
+    workflow.nodes.push(unrun)
     const run = h.createRun(workflow)
     const finished = h.createController(run.id).run()
     await d.report(run.id, 'a', 'succeeded')
@@ -168,7 +197,7 @@ describe('WorkflowRunController Join execution', () => {
           id: 'qa',
           type: 'loop',
           title: 'QA',
-          body: { nodeIds: ['a', 'gate', 'join'] },
+          body: { nodeIds: ['a', 'unrun', 'join'] },
           entryNodeId: 'a',
           exitNodeId: 'join',
           maxIterations: 2,
@@ -176,15 +205,15 @@ describe('WorkflowRunController Join execution', () => {
           onCapReached: 'fail'
         },
         branchAgent('a'),
-        gate,
+        unrun,
         joinNode('all', 'fail'),
         { id: 'end', type: 'end', title: 'Done' }
       ],
       edges: [
         { id: 'e1', from: 'start', to: 'qa' },
         { id: 'e2', from: 'a', to: 'join' },
-        { id: 'e3', from: 'a', to: 'gate' },
-        { id: 'e4', from: 'gate', to: 'join', fromPort: 'yes' },
+        { id: 'e3', from: 'a', to: 'unrun' },
+        { id: 'e4', from: 'unrun', to: 'join' },
         { id: 'e5', from: 'qa', to: 'end', fromPort: 'exit' }
       ]
     })

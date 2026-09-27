@@ -1,6 +1,7 @@
 import type { Edge, Node, Workflow } from '../../../shared/workflows/workflow-definition-types'
 import { evaluateCondition } from '../../../shared/workflows/workflow-condition-evaluation'
 import type { NodeAttemptView } from '../../../shared/workflows/workflow-run-types'
+import { approvalChoseEdge } from './workflow-approval-choice'
 import { decideJoin, JOIN_SKIPPED_REASON, type IncomingBranch } from './workflow-join-policy'
 import { routerChoseEdge } from './workflow-router-choice'
 
@@ -22,7 +23,7 @@ export type IncomingEdgeOutcome =
 
 export type FrontierDecision = { eligible: string[]; skipped: string[] }
 
-// Approval/Reflection frontiers land with their own phases; they stay pending here.
+// The Reflection frontier lands with its own phase; it stays pending here.
 // Loop bodies advance per iteration in workflow-loop-unrolling.ts; the Loop node itself is offered here.
 export const FRONTIER_NODE_TYPES: ReadonlySet<Node['type']> = new Set<Node['type']>([
   'start',
@@ -30,8 +31,20 @@ export const FRONTIER_NODE_TYPES: ReadonlySet<Node['type']> = new Set<Node['type
   'agent',
   'router',
   'loop',
-  'join'
+  'join',
+  'approval'
 ])
+
+/** Whether a completed ported node (Router choice, Approval option) picked `edge`'s port. */
+function portChoseEdge(
+  edge: Edge,
+  source: FrontierAttempt,
+  sourceType: 'router' | 'approval'
+): boolean {
+  return sourceType === 'router'
+    ? routerChoseEdge(edge, source.resultJson)
+    : approvalChoseEdge(edge, source.resultJson)
+}
 
 export function nodeTypeOf(nodes: readonly Node[], nodeId: string): Node['type'] | undefined {
   return nodes.find((node) => node.id === nodeId)?.type
@@ -54,7 +67,10 @@ export function latestAttemptByNode<T extends FrontierAttempt>(
   return latest
 }
 
-/** `sourceType` is the type of the node `source` belongs to; a Router's ports are its choices. */
+/**
+ * `sourceType` is the type of the node `source` belongs to; a Router's ports are its choices and
+ * an Approval's are its options.
+ */
 export function incomingEdgeOutcome(
   edge: Edge,
   source: FrontierAttempt | undefined,
@@ -64,16 +80,15 @@ export function incomingEdgeOutcome(
   if (sourceSkipped) {
     return 'source-skipped'
   }
-  const routerPort = sourceType === 'router'
-  // The caller resolves an `exit` edge's source to its Loop's attempt (loopExitSourceId).
-  // Approval option ports land with that node type; `body` edges are back-edges the loop
-  // unrolling owns.
-  if ((edge.fromPort !== undefined && edge.fromPort !== 'exit' && !routerPort) || !source) {
+  const portType = sourceType === 'router' || sourceType === 'approval' ? sourceType : undefined
+  // The caller resolves an `exit` edge's source to its Loop's attempt (loopExitSourceId);
+  // `body` edges are back-edges the loop unrolling owns.
+  if ((edge.fromPort !== undefined && edge.fromPort !== 'exit' && !portType) || !source) {
     return 'unresolved'
   }
   switch (source.state) {
     case 'completed':
-      return (!routerPort || routerChoseEdge(edge, source.resultJson)) &&
+      return (!portType || portChoseEdge(edge, source, portType)) &&
         (!edge.condition || evaluateCondition(edge.condition, source.resultJson))
         ? 'fired'
         : 'not-taken'
@@ -97,7 +112,7 @@ export function incomingEdgeOutcome(
  * Outcome of one incoming edge; conditions read only the source attempt's result (FR-027).
  * Contract: the controller persists a `skipped` attempt for every `computeFrontier(...).skipped`
  * node (the run view shows Skipped), so skips are read from attempts, never from frontier state.
- * Pass `sourceType` for port edges; without it a Router choice edge reads as unresolved.
+ * Pass `sourceType` for port edges; without it a Router or Approval port edge reads as unresolved.
  */
 export function classifyIncomingEdge(
   edge: Edge,

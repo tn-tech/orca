@@ -6,6 +6,11 @@ import type { RunSnapshot } from '../../../shared/workflows/workflow-run-types'
 import type { OrchestrationDb } from '../orchestration/db'
 import type { MessageRow } from '../orchestration/types'
 import type { MessageWaitResult } from '../runtime-message-waiters'
+import { settleApprovals } from './workflow-approval-gates'
+import {
+  armApprovalDeadlineTimer,
+  type WorkflowApprovalEscalationListener
+} from './workflow-approval-deadlines'
 import { artifactsFor, resultContractFor } from './workflow-brief-builder'
 import {
   createWorkflowOrchestrationClient,
@@ -40,6 +45,7 @@ export type WorkflowRunControllerDeps = {
   runtime: WorkflowRunControllerRuntime
   dispatcher: WorkflowOrchestrationDispatcher
   resolveWorkspace(run: RunSnapshot): Promise<WorkflowRunWorkspaceAccess>
+  onApprovalEscalated?: WorkflowApprovalEscalationListener
 }
 
 const TERMINAL_RUN_STATES = new Set<WorkflowRunState>(['completed', 'failed', 'cancelled'])
@@ -143,7 +149,10 @@ export class WorkflowRunController {
         return state
       }
       // Also on rehydrate: an answer recorded while no controller ran resumes here.
-      if (await resumeAnsweredTrustWaits(session.launch)) {
+      if (
+        (await resumeAnsweredTrustWaits(session.launch)) ||
+        (await settleApprovals(session.launch, { onEscalated: this.deps.onApprovalEscalated }))
+      ) {
         await this.advance(session)
         continue
       }
@@ -157,10 +166,13 @@ export class WorkflowRunController {
         continue
       }
       const wake = this.wakeSignal
-      const woke = await runtime.waitForMessage(`run:${session.engineRunId}`, {
-        exclusive: true,
-        signal: AbortSignal.any([this.abort.signal, wake.signal])
-      })
+      const disarm = armApprovalDeadlineTimer(db, this.deps.workflowRunId, () => wake.abort())
+      const woke = await runtime
+        .waitForMessage(`run:${session.engineRunId}`, {
+          exclusive: true,
+          signal: AbortSignal.any([this.abort.signal, wake.signal])
+        })
+        .finally(disarm)
       if (wake.signal.aborted) {
         this.wakeSignal = new AbortController()
       }

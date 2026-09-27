@@ -11,7 +11,7 @@ import type { RpcResponse } from '../rpc/core'
 import { RpcDispatcher } from '../rpc/dispatcher'
 import { ORCHESTRATION_METHODS } from '../rpc/methods/orchestration'
 import { localWorkflowFilesystem } from './workflow-file-store-filesystem'
-import { WorkflowRunController } from './workflow-run-controller'
+import { WorkflowRunController, type WorkflowRunControllerDeps } from './workflow-run-controller'
 
 export const RUN_WORKTREE_ID = 'repo::run'
 
@@ -129,8 +129,12 @@ export function createControllerHarness(workspaceRoot: string) {
     })
   }
 
-  function createController(workflowRunId: string): WorkflowRunController {
+  function createController(
+    workflowRunId: string,
+    extra: Pick<WorkflowRunControllerDeps, 'onApprovalEscalated'> = {}
+  ): WorkflowRunController {
     return new WorkflowRunController({
+      ...extra,
       workflowRunId,
       db,
       runtime,

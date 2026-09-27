@@ -12,15 +12,8 @@ const join = (id: string): Node => ({
   policy: 'all',
   onFailure: 'fail'
 })
-const gate: Node = {
-  id: 'gate',
-  type: 'approval',
-  title: 'Gate',
-  question: 'ok?',
-  options: ['yes'],
-  timeoutMs: 1000,
-  escalationGraceMs: 1000
-}
+// Reflection is not run by the engine yet, so it stands in for a branch that never settles.
+const gate: Node = { id: 'gate', type: 'reflection', title: 'Gate', prompt: 'Reflect.' }
 
 /** start -> qa{ entry a ... exit e } -> end; `e` completes on its own path from `a`. */
 function loopWith(bodyNodes: Node[], bodyEdges: Edge[]) {
@@ -93,13 +86,13 @@ describe('Loop settlement with a Join in the body', () => {
     ])
   })
 
-  // a -> j <- gate(approval): the Approval seam leaves j Waiting forever.
+  // a -> j <- gate(reflection): the unrun Reflection leaves j Waiting forever.
   const stuckSideJoin = loopWith(
     [gate, join('j')],
     [
       { id: 'a-j', from: 'a', to: 'j' },
       { id: 'a-gate', from: 'a', to: 'gate' },
-      { id: 'gate-j', from: 'gate', to: 'j', fromPort: 'yes' }
+      { id: 'gate-j', from: 'gate', to: 'j' }
     ]
   )
   const joinWaiting = [...running, at('j', 'waiting')]

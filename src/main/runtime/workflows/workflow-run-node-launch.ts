@@ -1,9 +1,11 @@
-// Starts one frontier-eligible node: Start/End/Join settle at once; a role-dispatching node gets its
-// attempt, brief, just-in-time Task and worker (research R3, R5; FR-024, FR-026).
+// Starts one frontier-eligible node: Start/End/Join settle at once, an Approval opens its gate; a
+// role-dispatching node gets its attempt, brief, just-in-time Task and worker (research R3, R5;
+// FR-024, FR-026).
 import type { BriefReferenceInputs } from '../../../shared/workflows/workflow-brief-references'
 import type { Node, Workflow } from '../../../shared/workflows/workflow-definition-types'
 import type { NodeAttemptView } from '../../../shared/workflows/workflow-run-types'
 import type { OrchestrationDb } from '../orchestration/db'
+import { openApproval } from './workflow-approval-gates'
 import { writeBrief, type BriefNode, type OrcaIgnoreTarget } from './workflow-brief-builder'
 import type { WorkflowFilesystem } from './workflow-file-store-filesystem'
 import { createNodeTask } from './workflow-frontier-node-task'
@@ -207,10 +209,9 @@ export async function launchEligibleNode(
     await settleJoin(ctx, node, iteration)
     return
   }
-  if (isBriefNode(node)) {
-    await launchBriefNode(ctx, node, attempts, iteration)
+  if (node.type === 'approval') {
+    await openApproval(ctx, node, attempts, iteration)
     return
   }
-  // The frontier never offers Approval yet; offering one would re-offer it forever.
-  throw new Error(`Workflow node ${nodeId} (${node.type}) cannot be launched by this engine yet.`)
+  await launchBriefNode(ctx, node, attempts, iteration)
 }

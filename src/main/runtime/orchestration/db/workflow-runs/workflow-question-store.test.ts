@@ -152,6 +152,27 @@ describe('workflow-question-store', () => {
     expect(escalated?.state).toBe('escalated')
   })
 
+  it('keeps an escalated question open: listed, answerable, and expirable', () => {
+    const d = createDb()
+    const run = createRun(d)
+    const ask = (attemptId: string) =>
+      d.createWorkflowQuestion({ runId: run.id, attemptId, kind: 'approval', prompt: 'Proceed?' })
+    const answered = ask('wfa_1')
+    const expired = ask('wfa_2')
+    const closed = ask('wfa_3')
+    d.escalateWorkflowQuestion(answered.id)
+    d.escalateWorkflowQuestion(expired.id)
+    d.answerWorkflowQuestion(closed.id, 'yes', 'user_1')
+    expect(d.listOpenWorkflowQuestions(run.id).map((q) => q.id)).toEqual([answered.id, expired.id])
+
+    expect(d.answerWorkflowQuestion(answered.id, 'yes', 'user_2')).toMatchObject({
+      state: 'answered',
+      answeredBy: 'user_2'
+    })
+    expect(d.expireWorkflowQuestion(expired.id)?.state).toBe('expired')
+    expect(d.listOpenWorkflowQuestions(run.id)).toEqual([])
+  })
+
   describe('expiry', () => {
     it('finds pending questions whose timeout has passed and can expire them', () => {
       const d = createDb()

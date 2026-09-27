@@ -167,15 +167,7 @@ describe('computeFrontier', () => {
         agent('a'),
         agent('b'),
         { id: 'join', type: 'join', title: 'Join', policy: 'all', onFailure: 'fail' },
-        {
-          id: 'gate',
-          type: 'approval',
-          title: 'Gate',
-          question: 'ok?',
-          options: ['yes'],
-          timeoutMs: 1000,
-          escalationGraceMs: 1000
-        },
+        { id: 'gate', type: 'reflection', title: 'Gate', prompt: 'Reflect.' },
         end
       ],
       [
@@ -184,7 +176,7 @@ describe('computeFrontier', () => {
         { id: 'e3', from: 'a', to: 'join' },
         { id: 'e4', from: 'b', to: 'join' },
         { id: 'e5', from: 'join', to: 'gate' },
-        { id: 'e6', from: 'gate', to: 'end', fromPort: 'yes' }
+        { id: 'e6', from: 'gate', to: 'end' }
       ]
     )
     const attempts = [
@@ -194,6 +186,51 @@ describe('computeFrontier', () => {
       attempt('join', 'completed')
     ]
     expect(computeFrontier(def, attempts)).toEqual({ eligible: [], skipped: [] })
+  })
+})
+
+describe('Approval option ports', () => {
+  // start -> gate -(approve)-> a, gate -(reject)-> b
+  const def = workflow(
+    [
+      start,
+      {
+        id: 'gate',
+        type: 'approval',
+        title: 'Gate',
+        question: 'ok?',
+        options: ['approve', 'reject'],
+        timeoutMs: 1000,
+        escalationGraceMs: 1000
+      },
+      agent('a'),
+      agent('b'),
+      end
+    ],
+    [
+      { id: 'e1', from: 'start', to: 'gate' },
+      { id: 'e2', from: 'gate', to: 'a', fromPort: 'approve' },
+      { id: 'e3', from: 'gate', to: 'b', fromPort: 'reject' },
+      { id: 'e4', from: 'a', to: 'end' },
+      { id: 'e5', from: 'b', to: 'end' }
+    ]
+  )
+
+  it('offers an Approval and holds its option edges until it completes', () => {
+    const started = [attempt('start', 'completed')]
+    expect(computeFrontier(def, started)).toEqual({ eligible: ['gate'], skipped: [] })
+    expect(computeFrontier(def, [...started, attempt('gate', 'waiting')])).toEqual({
+      eligible: [],
+      skipped: []
+    })
+  })
+
+  it('fires only the edge of the chosen option', () => {
+    const answered = [
+      attempt('start', 'completed'),
+      attempt('gate', 'completed', { resultJson: { option: 'reject' } })
+    ]
+    expect(computeFrontier(def, answered)).toEqual({ eligible: ['b'], skipped: ['a'] })
   })
 })
 

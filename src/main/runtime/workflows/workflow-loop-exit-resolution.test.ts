@@ -21,16 +21,8 @@ function loop(bodyNodeIds: string[]): LoopNode {
   }
 }
 
-// Approval is still a pending seam in the engine (the frontier never offers it).
-const gate: Node = {
-  id: 'route',
-  type: 'approval',
-  title: 'Route',
-  question: 'pick',
-  options: ['yes', 'no'],
-  timeoutMs: 1000,
-  escalationGraceMs: 1000
-}
+// Reflection is still a pending seam in the engine (the frontier never offers it).
+const gate: Node = { id: 'route', type: 'reflection', title: 'Route', prompt: 'Reflect.' }
 
 function at(
   nodeId: string,
@@ -65,7 +57,7 @@ describe('Loop exit resolution', () => {
       [
         entry,
         { id: 'a', from: 'implement', to: 'route' },
-        { id: 'b', from: 'route', to: 'review', fromPort: 'yes' },
+        { id: 'b', from: 'route', to: 'review' },
         exitEdge
       ]
     )
@@ -128,7 +120,7 @@ describe('Loop exit resolution', () => {
       [
         entry,
         { id: 'a', from: 'implement', to: 'review' },
-        { id: 'b', from: 'route', to: 'review', fromPort: 'yes' },
+        { id: 'b', from: 'route', to: 'review' },
         exitEdge
       ]
     )

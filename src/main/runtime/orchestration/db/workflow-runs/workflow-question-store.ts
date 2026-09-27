@@ -123,6 +123,20 @@ export function listPendingWorkflowQuestions(
   return rows.map(toQuestionView)
 }
 
+/**
+ * Questions still waiting for a person: `pending`, or `escalated` (timed out, still answerable
+ * until the escalation grace ends).
+ */
+export function listOpenWorkflowQuestions(this: OrchestrationDb, runId: string): RunQuestionView[] {
+  const rows = selectWorkflowRows<WorkflowRunQuestionRow>(
+    this.db,
+    `SELECT * FROM workflow_run_questions
+     WHERE run_id = ? AND state IN ('pending', 'escalated') ORDER BY rowid`,
+    runId
+  )
+  return rows.map(toQuestionView)
+}
+
 /** Every question for a run, any state — the run view (workflow.run.show) unlike the pending-only list above. */
 export function listWorkflowQuestions(this: OrchestrationDb, runId: string): RunQuestionView[] {
   const rows = selectWorkflowRows<WorkflowRunQuestionRow>(
@@ -142,10 +156,11 @@ export function answerWorkflowQuestion(
 ): RunQuestionView | undefined {
   this.db
     .prepare(
-      // Why: the state guard keeps a late answer from overwriting one the run already recorded.
+      // Why: the state guard keeps a late answer from overwriting one the run already recorded;
+      // an escalated question stays answerable until it expires.
       `UPDATE workflow_run_questions
        SET state = 'answered', answer = ?, answered_by = ?, answered_at = ?
-       WHERE id = ? AND state = 'pending'`
+       WHERE id = ? AND state IN ('pending', 'escalated')`
     )
     .run(answer, answeredBy, Date.now(), id)
   const row = selectQuestionRow(this.db, id)
@@ -171,7 +186,7 @@ export function expireWorkflowQuestion(
 ): RunQuestionView | undefined {
   this.db
     .prepare(
-      "UPDATE workflow_run_questions SET state = 'expired' WHERE id = ? AND state = 'pending'"
+      "UPDATE workflow_run_questions SET state = 'expired' WHERE id = ? AND state IN ('pending', 'escalated')"
     )
     .run(id)
   const row = selectQuestionRow(this.db, id)
@@ -195,6 +210,7 @@ export function listExpiredWorkflowQuestions(
 export type WorkflowQuestionStoreMethods = {
   createWorkflowQuestion: typeof createWorkflowQuestion
   listPendingWorkflowQuestions: typeof listPendingWorkflowQuestions
+  listOpenWorkflowQuestions: typeof listOpenWorkflowQuestions
   listWorkflowQuestions: typeof listWorkflowQuestions
   answerWorkflowQuestion: typeof answerWorkflowQuestion
   escalateWorkflowQuestion: typeof escalateWorkflowQuestion
@@ -206,6 +222,7 @@ export function attachWorkflowQuestionStore(ctor: { prototype: object }): void {
   Object.assign(ctor.prototype, {
     createWorkflowQuestion,
     listPendingWorkflowQuestions,
+    listOpenWorkflowQuestions,
     listWorkflowQuestions,
     answerWorkflowQuestion,
     escalateWorkflowQuestion,

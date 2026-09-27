@@ -53,7 +53,7 @@ export function answeredTrustWaits(db: OrchestrationDb, runId: string): NodeAtte
 export function leaveRunWaitIfClear(db: OrchestrationDb, recorder: WorkflowRunRecorder): void {
   if (
     db.getWorkflowRun(recorder.runId)?.state === 'waiting' &&
-    db.listPendingWorkflowQuestions(recorder.runId).length === 0
+    db.listOpenWorkflowQuestions(recorder.runId).length === 0
   ) {
     recorder.transitionRun('running', 'run_resumed', { reason: 'questions_answered' })
   }
