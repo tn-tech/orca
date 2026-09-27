@@ -25,7 +25,7 @@ const noop = {
   onCreate: vi.fn().mockResolvedValue(undefined),
   onDuplicate: vi.fn().mockResolvedValue(undefined),
   onDelete: vi.fn().mockResolvedValue(undefined),
-  draftUnsaved: false,
+  unsavedGuard: null,
   onDraft: vi.fn(),
   onOpenDraft: vi.fn()
 }
@@ -184,8 +184,8 @@ describe('WorkflowListPane', () => {
     expect(screen.getByLabelText('Objective')).toBeInTheDocument()
   })
 
-  describe('unsaved-draft discard confirmation', () => {
-    it('asks to discard before opening a different workflow, and proceeds once confirmed', async () => {
+  describe('unsaved-content discard confirmation', () => {
+    it('asks to discard an unsaved draft before opening a different workflow, and proceeds once confirmed', async () => {
       const onOpen = vi.fn()
       const target = row()
       render(
@@ -195,7 +195,7 @@ describe('WorkflowListPane', () => {
           error={null}
           selected={null}
           {...noop}
-          draftUnsaved
+          unsavedGuard="draft"
           onOpen={onOpen}
         />
       )
@@ -219,7 +219,7 @@ describe('WorkflowListPane', () => {
           error={null}
           selected={null}
           {...noop}
-          draftUnsaved
+          unsavedGuard="draft"
           onOpen={onOpen}
         />
       )
@@ -231,7 +231,7 @@ describe('WorkflowListPane', () => {
       expect(screen.queryByText('Discard unsaved draft?')).not.toBeInTheDocument()
     })
 
-    it('asks to discard before opening the New workflow dialog', async () => {
+    it('asks to discard an unsaved draft before opening the New workflow dialog', async () => {
       render(
         <WorkflowListPane
           rows={[]}
@@ -239,7 +239,7 @@ describe('WorkflowListPane', () => {
           error={null}
           selected={null}
           {...noop}
-          draftUnsaved
+          unsavedGuard="draft"
         />
       )
 
@@ -253,7 +253,7 @@ describe('WorkflowListPane', () => {
       expect(await screen.findByLabelText('Name')).toBeInTheDocument()
     })
 
-    it('does not prompt when there is no unsaved draft', () => {
+    it('does not prompt when there is nothing unsaved', () => {
       const onOpen = vi.fn()
       const target = row()
       render(
@@ -271,6 +271,76 @@ describe('WorkflowListPane', () => {
 
       expect(onOpen).toHaveBeenCalledExactlyOnceWith(target)
       expect(screen.queryByText('Discard unsaved draft?')).not.toBeInTheDocument()
+    })
+
+    it('asks to discard unsaved changes (a dirty ordinary workflow, not a draft) before opening the Draft dialog', async () => {
+      render(
+        <WorkflowListPane
+          rows={[]}
+          loading={false}
+          error={null}
+          selected={null}
+          {...noop}
+          unsavedGuard="changes"
+        />
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Draft from objective' }))
+
+      expect(screen.queryByLabelText('Objective')).not.toBeInTheDocument()
+      expect(await screen.findByText('Discard unsaved changes?')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Discard' }))
+
+      expect(await screen.findByLabelText('Objective')).toBeInTheDocument()
+    })
+
+    it('asks to discard unsaved changes before opening a different workflow', async () => {
+      const onOpen = vi.fn()
+      const target = row()
+      render(
+        <WorkflowListPane
+          rows={[target]}
+          loading={false}
+          error={null}
+          selected={null}
+          {...noop}
+          unsavedGuard="changes"
+          onOpen={onOpen}
+        />
+      )
+
+      fireEvent.click(screen.getByText('ship-it'))
+
+      expect(onOpen).not.toHaveBeenCalled()
+      expect(await screen.findByText('Discard unsaved changes?')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Discard' }))
+
+      expect(onOpen).toHaveBeenCalledExactlyOnceWith(target)
+    })
+
+    it('asks to discard unsaved changes before Duplicate', async () => {
+      render(
+        <WorkflowListPane
+          rows={[row({ name: 'ship-it' })]}
+          loading={false}
+          error={null}
+          selected={null}
+          {...noop}
+          unsavedGuard="changes"
+        />
+      )
+
+      openRowMenu()
+      fireEvent.click(await screen.findByText('Duplicate'))
+
+      expect(screen.queryByLabelText('Name')).not.toBeInTheDocument()
+      expect(await screen.findByText('Discard unsaved changes?')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Discard' }))
+
+      expect(await screen.findByLabelText('Name')).toHaveValue('ship-it-copy')
     })
   })
 })

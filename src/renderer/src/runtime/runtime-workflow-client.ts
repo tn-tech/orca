@@ -1,35 +1,17 @@
-import type { GlobalSettings } from '../../../shared/global-settings-types'
 import type {
   Role,
   Workflow,
   WorkflowProblem
 } from '../../../shared/workflows/workflow-definition-types'
 import type { WorkflowRunSource } from '../../../shared/workflows/workflow-run-types'
-import { callRuntimeRpc, getActiveRuntimeTarget } from './runtime-rpc-client'
+import {
+  callWorkflowRpc,
+  WORKFLOW_DRAFT_TIMEOUT_MS,
+  WORKFLOW_RUN_ACTION_TIMEOUT_MS,
+  type RuntimeWorkflowSettings
+} from './runtime-workflow-rpc'
 
-export type RuntimeWorkflowSettings =
-  | Pick<GlobalSettings, 'activeRuntimeEnvironmentId'>
-  | null
-  | undefined
-
-const WORKFLOW_RPC_TIMEOUT_MS = 15_000
-// Why: run mutations may wait on the workflow engine (start/pause/rerun/etc.); give them room.
-// Exported for runtime-workflow-run-client.ts, which shares this budget for its own run mutations.
-export const WORKFLOW_RUN_ACTION_TIMEOUT_MS = 30_000
-// Why above the server's own 15-minute planner timeout (workflow-draft.ts DEFAULT_TIMEOUT_MS): the
-// RPC must outlive it so the server's response — a definition, or its own timeout problem — always
-// arrives before the client gives up first.
-const WORKFLOW_DRAFT_TIMEOUT_MS = 15 * 60_000 + 30_000
-
-/** Exported for runtime-workflow-run-client.ts (the "Runs" section, split out to stay ≤300 lines). */
-export function callWorkflowRpc<TResult>(
-  settings: RuntimeWorkflowSettings,
-  method: string,
-  params?: unknown,
-  timeoutMs = WORKFLOW_RPC_TIMEOUT_MS
-): Promise<TResult> {
-  return callRuntimeRpc<TResult>(getActiveRuntimeTarget(settings), method, params, { timeoutMs })
-}
+export type { RuntimeWorkflowSettings } from './runtime-workflow-rpc'
 
 // ---- Definitions ----
 

@@ -95,6 +95,28 @@ describe('RunToolbar', () => {
     expect(screen.getByText('Completed')).toBeInTheDocument()
   })
 
+  it('shows disabledReason as the Run button title when Run is disabled', () => {
+    render(
+      <RunToolbar
+        canRun={false}
+        disabledReason="Save this draft before running it."
+        starting={false}
+        stopping={false}
+        onRun={vi.fn()}
+        onStop={vi.fn()}
+        onRelayout={vi.fn()}
+      />
+    )
+    fireEvent.change(screen.getByRole('textbox', { name: 'Objective' }), {
+      target: { value: 'Add CSV export' }
+    })
+
+    expect(screen.getByRole('button', { name: 'Run' })).toHaveAttribute(
+      'title',
+      'Save this draft before running it.'
+    )
+  })
+
   it('calls onRelayout from the Re-layout action', () => {
     const onRelayout = vi.fn()
     render(

@@ -17204,7 +17204,8 @@
           "untitledDraft": "Untitled draft",
           "draftBadge": "Draft",
           "saveDraftTitle": "Save draft",
-          "saveDraftSubmit": "Save"
+          "saveDraftSubmit": "Save",
+          "runBlockedDraft": "Save this draft before running it."
         },
         "editor": {
           "AgentNodeArtifactsField": {
@@ -17280,7 +17281,6 @@
             "notesLabel": "Notes",
             "edgeHeading": "Edge condition",
             "edgeSubheading": "{{from}} → {{to}}",
-            "emptyState": "Select a node or edge to edit its settings.",
             "typeNotYetSupported": "Detailed settings for this node type land in a later unit."
           },
           "ValidationProblemsPanel": {
@@ -17295,7 +17295,7 @@
             "workspace": "Workspace: {{name}}"
           },
           "workflow-editor-commands": {
-            "cycleRefused": "This connection would create a cycle outside a Loop node.",
+            "cycleRefused": "This connection would create a cycle outside a Loop node. Wrap the selected nodes in a Loop instead.",
             "nodeNotFound": "Node \"{{id}}\" was not found in the workflow.",
             "edgeNotFound": "Edge \"{{id}}\" was not found in the workflow.",
             "noAgentSelected": "Select an agent before choosing a model or reasoning effort.",
@@ -17480,7 +17480,8 @@
         "use-workflows-page-controller": {
           "runStartFailed": "Failed to start the run.",
           "runStopNotImplemented": "Stopping a run isn't available yet.",
-          "runStopFailed": "Failed to stop the run."
+          "runStopFailed": "Failed to stop the run.",
+          "draftNoRepo": "No active repository."
         },
         "roles": {
           "ImportRoleDialog": {
@@ -17565,13 +17566,8 @@
           }
         },
         "TrustedSourcesDialog": {
-          "trusted": "Trusted {{when}}",
-          "refused": "Refused {{when}}",
-          "revoke": "Revoke",
           "title": "Trusted skill sources",
-          "description": "One decision per plugin source and host (FR-018a). Revoking asks again the next time a run needs it there.",
-          "loading": "Loading…",
-          "empty": "No trust decisions yet."
+          "description": "One decision per plugin source and host (FR-018a). Revoking asks again the next time a run needs it there."
         },
         "TrustedSourcesList": {
           "trusted": "Trusted {{when}}",
@@ -17587,7 +17583,9 @@
           "title": "Discard unsaved draft?",
           "description": "This draft hasn't been saved. Leaving it now discards it.",
           "cancel": "Cancel",
-          "confirm": "Discard"
+          "confirm": "Discard",
+          "titleChanges": "Discard unsaved changes?",
+          "descriptionChanges": "This workflow has unsaved changes. Leaving it now discards them."
         },
         "DraftWorkflowDialog": {
           "reviewTitle": "Review before opening",
@@ -17600,9 +17598,10 @@
           "objectiveLabel": "Objective",
           "objectivePlaceholder": "e.g. Triage new support tickets and draft a reply for review.",
           "methodNotSupported": "Drafting a workflow from an objective isn't supported by this host yet.",
-          "submittingHint": "This can take several minutes. Closing this dialog won't stop the planner — it keeps running.",
+          "submittingHint": "This can take several minutes. Closing this dialog discards this draft — the planner may keep running briefly.",
           "cancel": "Cancel",
-          "submit": "Draft workflow"
+          "submit": "Draft workflow",
+          "close": "Close"
         }
       }
     },

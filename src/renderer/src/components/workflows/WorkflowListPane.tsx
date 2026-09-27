@@ -28,9 +28,10 @@ export type WorkflowListPaneProps = {
   onCreate: (name: string, source: WorkflowRunSource) => Promise<void>
   onDuplicate: (row: WorkflowSummary, newName: string) => Promise<void>
   onDelete: (row: WorkflowSummary) => Promise<void>
-  /** True while an agent-drafted workflow sits open, unsaved (US6) — actions that would replace
-   *  the editor's contents ask to discard it first. */
-  draftUnsaved: boolean
+  /** Non-null when leaving the editor's current contents would lose something unsaved: 'draft'
+   *  for an unsaved agent-drafted workflow (US6), 'changes' for dirty edits to an ordinary saved
+   *  workflow. Actions that would replace the editor's contents confirm discarding first. */
+  unsavedGuard: 'draft' | 'changes' | null
   onDraft: (objective: string) => Promise<WorkflowDraftResult>
   onOpenDraft: (definition: Workflow) => void
 }
@@ -49,7 +50,7 @@ export default function WorkflowListPane({
   onCreate,
   onDuplicate,
   onDelete,
-  draftUnsaved,
+  unsavedGuard,
   onDraft,
   onOpenDraft
 }: WorkflowListPaneProps): React.JSX.Element {
@@ -80,9 +81,9 @@ export default function WorkflowListPane({
     setDraftDialogOpen(true)
   }
 
-  /** Runs `action` now, unless an unsaved draft is open — then it waits on the discard prompt. */
-  function guardDraftDiscard(action: () => void): void {
-    if (draftUnsaved) {
+  /** Runs `action` now, unless there's unsaved content open — then it waits on the discard prompt. */
+  function guardUnsavedDiscard(action: () => void): void {
+    if (unsavedGuard) {
       setPendingDiscardAction(() => action)
     } else {
       action()
@@ -100,7 +101,7 @@ export default function WorkflowListPane({
             type="button"
             variant="ghost"
             size="icon-xs"
-            onClick={() => guardDraftDiscard(openDraftDialog)}
+            onClick={() => guardUnsavedDiscard(openDraftDialog)}
             aria-label={translate(
               'auto.components.workflows.WorkflowListPane.draft',
               'Draft from objective'
@@ -112,7 +113,7 @@ export default function WorkflowListPane({
             type="button"
             variant="ghost"
             size="icon-xs"
-            onClick={() => guardDraftDiscard(openCreateDialog)}
+            onClick={() => guardUnsavedDiscard(openCreateDialog)}
             aria-label={translate('auto.components.workflows.WorkflowListPane.new', 'New workflow')}
           >
             <Plus />
@@ -148,7 +149,7 @@ export default function WorkflowListPane({
                   <button
                     type="button"
                     className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-                    onClick={() => guardDraftDiscard(() => onOpen(row))}
+                    onClick={() => guardUnsavedDiscard(() => onOpen(row))}
                   >
                     {!row.valid ? (
                       <AlertTriangle className="size-3.5 shrink-0 text-destructive" />
@@ -182,7 +183,7 @@ export default function WorkflowListPane({
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem
-                          onSelect={() => guardDraftDiscard(() => openDuplicateDialog(row))}
+                          onSelect={() => guardUnsavedDiscard(() => openDuplicateDialog(row))}
                         >
                           {translate(
                             'auto.components.workflows.WorkflowListPane.duplicate',
@@ -252,6 +253,7 @@ export default function WorkflowListPane({
       />
       <DiscardDraftDialog
         open={pendingDiscardAction !== null}
+        reason={unsavedGuard ?? 'draft'}
         onOpenChange={(open) => !open && setPendingDiscardAction(null)}
         onConfirm={() => {
           const action = pendingDiscardAction

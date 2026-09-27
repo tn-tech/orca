@@ -1,5 +1,7 @@
 // Run-lifecycle half of runtime-workflow-client.ts, split out to keep that file ≤300 lines;
 // re-exported from there so existing `@/runtime/runtime-workflow-client` imports keep working.
+// Imports the RPC primitive from the leaf module (never from runtime-workflow-client.ts itself,
+// which re-exports this file) to avoid a circular import between the two.
 import type { OrchestrationWorkerReadResult } from '../../../shared/orchestration-worker-output'
 import type { WorkflowRunState } from '../../../shared/workflows/workflow-node-states'
 import type {
@@ -15,7 +17,7 @@ import {
   callWorkflowRpc,
   WORKFLOW_RUN_ACTION_TIMEOUT_MS,
   type RuntimeWorkflowSettings
-} from './runtime-workflow-client'
+} from './runtime-workflow-rpc'
 
 /** `workflow.run.show` result: the run row plus its attempts/questions/messages and event tail. */
 export type WorkflowRunSnapshotView = RunSnapshot & {

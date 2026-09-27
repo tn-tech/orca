@@ -40,6 +40,9 @@ export type RunToolbarProps = {
   runObjective?: string
   /** FR-009: Run stays disabled while a blocking validation problem remains. */
   canRun: boolean
+  /** Shown as the Run button's title when `canRun` is false and there's a reason to explain
+   *  (e.g. US6 AS2: an unsaved draft has no file to run against yet). */
+  disabledReason?: string
   starting: boolean
   stopping: boolean
   onRun: (objective: string) => void
@@ -53,6 +56,7 @@ export default function RunToolbar({
   runState,
   runObjective,
   canRun,
+  disabledReason,
   starting,
   stopping,
   onRun,
@@ -108,6 +112,7 @@ export default function RunToolbar({
           type="button"
           size="sm"
           disabled={!canRun || starting || objective.trim().length === 0}
+          title={!canRun ? disabledReason : undefined}
           onClick={() => onRun(objective.trim())}
         >
           <Play />

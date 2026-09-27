@@ -2508,23 +2508,6 @@
           }
         }
       },
-      "workflows": {
-        "TrustedSourcesDialog": {
-          "empty": "No trust decisions yet.",
-          "loading": "Loading…",
-          "refused": "Refused {{when}}",
-          "revoke": "Revoke",
-          "trusted": "Trusted {{when}}"
-        },
-        "editor": {
-          "NodeInspector": {
-            "emptyState": "Select a node or edge to edit its settings."
-          },
-          "workflow-editor-commands": {
-            "cycleRefused": "This connection would create a cycle outside a Loop node."
-          }
-        }
-      },
       "workspace": {
         "cleanup": {
           "WorkspaceCleanupDialog": {

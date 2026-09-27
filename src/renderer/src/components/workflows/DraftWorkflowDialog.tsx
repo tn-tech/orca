@@ -39,13 +39,12 @@ export default function DraftWorkflowDialog({
   const [error, setError] = useState<string | undefined>()
   const [unsupported, setUnsupported] = useState(false)
   const [result, setResult] = useState<WorkflowDraftResult | null>(null)
-  // The planner keeps running server-side even after the user walks away from this dialog (there
-  // is no cancel RPC yet); once closed, its eventual result must not reach into the editor.
+  // The planner may keep running server-side briefly even after the user walks away from this
+  // dialog (there is no cancel RPC yet); once closed, its eventual result must not reach into the
+  // editor. Reset on reopen so a later draft this same instance requests isn't dropped too.
   const abandonedRef = useRef(false)
   useEffect(() => {
-    if (!open) {
-      abandonedRef.current = true
-    }
+    abandonedRef.current = !open
   }, [open])
 
   async function handleSubmit(event: React.FormEvent): Promise<void> {
@@ -188,7 +187,7 @@ export default function DraftWorkflowDialog({
                 <p className="text-xs text-muted-foreground">
                   {translate(
                     'auto.components.workflows.DraftWorkflowDialog.submittingHint',
-                    "This can take several minutes. Closing this dialog won't stop the planner — it keeps running."
+                    'This can take several minutes. Closing this dialog discards this draft — the planner may keep running briefly.'
                   )}
                 </p>
               ) : error ? (
@@ -197,7 +196,9 @@ export default function DraftWorkflowDialog({
             </div>
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-                {translate('auto.components.workflows.DraftWorkflowDialog.cancel', 'Cancel')}
+                {submitting
+                  ? translate('auto.components.workflows.DraftWorkflowDialog.close', 'Close')
+                  : translate('auto.components.workflows.DraftWorkflowDialog.cancel', 'Cancel')}
               </Button>
               <Button
                 type="submit"

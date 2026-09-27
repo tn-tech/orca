@@ -147,7 +147,7 @@ describe('DraftWorkflowDialog (US6)', () => {
     expect(onOpenDraft).not.toHaveBeenCalled()
   })
 
-  it('shows a note that the planner keeps running while it drafts', async () => {
+  it('shows a note that closing discards the draft while the planner keeps running', async () => {
     const deferred = createDeferred<{
       definition: Workflow
       problems: []
@@ -163,9 +163,36 @@ describe('DraftWorkflowDialog (US6)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Draft workflow' }))
 
     expect(await screen.findByText(/can take several minutes/i)).toBeInTheDocument()
+    expect(screen.getByText(/closing this dialog discards this draft/i)).toBeInTheDocument()
 
     deferred.resolve({ definition: draftedWorkflow(), problems: [], draft: true, runId: 'run-1' })
     await waitFor(() => expect(onDraft).toHaveBeenCalled())
+  })
+
+  it('labels the footer button "Close" (not "Cancel") while the planner is running', async () => {
+    const deferred = createDeferred<{
+      definition: Workflow
+      problems: []
+      draft: true
+      runId: string
+    }>()
+    const onDraft = vi.fn().mockReturnValue(deferred.promise)
+    render(
+      <DraftWorkflowDialog open onOpenChange={vi.fn()} onDraft={onDraft} onOpenDraft={vi.fn()} />
+    )
+
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Objective'), { target: { value: 'Triage tickets.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Draft workflow' }))
+    await waitFor(() => expect(onDraft).toHaveBeenCalled())
+
+    expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument()
+    // Two now: the dialog's own sr-only close control, plus our footer button relabeled "Close".
+    expect(screen.getAllByRole('button', { name: 'Close' })).toHaveLength(2)
+
+    deferred.resolve({ definition: draftedWorkflow(), problems: [], draft: true, runId: 'run-1' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
   })
 
   it('ignores the result once the dialog is closed while the planner is still running', async () => {
@@ -202,6 +229,68 @@ describe('DraftWorkflowDialog (US6)', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(onOpenDraft).not.toHaveBeenCalled()
+  })
+
+  it('resets the abandoned flag on reopen, so a later draft can still land in the editor', async () => {
+    const firstDeferred = createDeferred<{
+      definition: Workflow
+      problems: []
+      draft: true
+      runId: string
+    }>()
+    const onDraft = vi.fn().mockReturnValueOnce(firstDeferred.promise)
+    const onOpenDraft = vi.fn()
+    const onOpenChange = vi.fn()
+    const { rerender } = render(
+      <DraftWorkflowDialog
+        open
+        onOpenChange={onOpenChange}
+        onDraft={onDraft}
+        onOpenDraft={onOpenDraft}
+      />
+    )
+    fireEvent.change(screen.getByLabelText('Objective'), { target: { value: 'Triage tickets.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Draft workflow' }))
+    await waitFor(() => expect(onDraft).toHaveBeenCalledTimes(1))
+
+    // Close without a result (abandoned)...
+    rerender(
+      <DraftWorkflowDialog
+        open={false}
+        onOpenChange={onOpenChange}
+        onDraft={onDraft}
+        onOpenDraft={onOpenDraft}
+      />
+    )
+    // ...the stale request settles while closed, dropped because it was abandoned...
+    await Promise.resolve().then(() => {
+      firstDeferred.resolve({
+        definition: draftedWorkflow(),
+        problems: [],
+        draft: true,
+        runId: 'run-1'
+      })
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(onOpenDraft).not.toHaveBeenCalled()
+
+    // ...then reopening the same instance (no remount) must not stay abandoned forever.
+    rerender(
+      <DraftWorkflowDialog
+        open
+        onOpenChange={onOpenChange}
+        onDraft={onDraft}
+        onOpenDraft={onOpenDraft}
+      />
+    )
+    const definition = draftedWorkflow({ name: 'second-draft' })
+    onDraft.mockResolvedValueOnce({ definition, problems: [], draft: true, runId: 'run-2' })
+    fireEvent.change(screen.getByLabelText('Objective'), {
+      target: { value: 'Triage tickets again.' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Draft workflow' }))
+
+    await waitFor(() => expect(onOpenDraft).toHaveBeenCalledExactlyOnceWith(definition))
   })
 
   it('shows a friendly message and stops accepting input when the host lacks workflow.draft', async () => {

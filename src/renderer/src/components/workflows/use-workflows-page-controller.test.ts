@@ -360,5 +360,40 @@ describe('useWorkflowsPageController', () => {
       expect(result.current.session.editor.state.definition).toEqual(drafted)
       expect(result.current.run.runId).toBeNull()
     })
+
+    it('saveDraft writes the draft then refreshes the list, so it appears without a remount', async () => {
+      const drafted = savedWorkflow({ name: 'triage-tickets' })
+      workflowWriteMock.mockResolvedValue({ revision: 'rev-1' })
+      const { result } = renderHook(() => useWorkflowsPageController())
+      act(() => result.current.openDraft(drafted))
+      workflowListMock.mockClear()
+
+      await act(() => result.current.saveDraft('triage-tickets', 'project'))
+
+      expect(workflowWriteMock).toHaveBeenCalledWith(settings, {
+        repo: 'repo-1',
+        name: 'triage-tickets',
+        source: 'project',
+        definition: expect.objectContaining({ name: 'triage-tickets' })
+      })
+      expect(workflowListMock).toHaveBeenCalledWith(settings, 'repo-1')
+      expect(result.current.session.isDraft).toBe(false)
+      expect(result.current.session.openRef).toEqual({ name: 'triage-tickets', source: 'project' })
+    })
+
+    it('saveDraft does not refresh the list when the write fails', async () => {
+      const drafted = savedWorkflow({ name: 'triage-tickets' })
+      workflowWriteMock.mockRejectedValueOnce(new Error('workflow_name_taken'))
+      const { result } = renderHook(() => useWorkflowsPageController())
+      act(() => result.current.openDraft(drafted))
+      workflowListMock.mockClear()
+
+      await expect(
+        act(() => result.current.saveDraft('triage-tickets', 'project'))
+      ).rejects.toThrow('workflow_name_taken')
+
+      expect(workflowListMock).not.toHaveBeenCalled()
+      expect(result.current.session.isDraft).toBe(true)
+    })
   })
 })

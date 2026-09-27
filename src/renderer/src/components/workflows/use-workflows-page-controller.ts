@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '@/store'
 import { useActiveRepo, useActiveWorktree } from '@/store/selectors'
+import { translate } from '@/i18n/i18n'
 import {
   workflowDelete,
   workflowDraft,
@@ -89,7 +90,9 @@ export function useWorkflowsPageController() {
     () => mergeWorkflowValidationProblems(localProblems, hostProblems),
     [localProblems, hostProblems]
   )
-  const canRun = session.status === 'ready' && !hasBlockingWorkflowProblems(problems)
+  // US6 AS2: an unsaved draft has no file to run against yet — save it first.
+  const canRun =
+    session.status === 'ready' && !session.isDraft && !hasBlockingWorkflowProblems(problems)
 
   const { run, clearActiveRun } = useWorkflowRunControls({
     settings,
@@ -173,14 +176,21 @@ export function useWorkflowsPageController() {
   const draftWorkflow = useCallback(
     (objective: string): Promise<WorkflowDraftResult> => {
       if (!repoId) {
-        return Promise.reject(new Error('No active repository.'))
+        return Promise.reject(
+          new Error(
+            translate(
+              'auto.components.workflows.use-workflows-page-controller.draftNoRepo',
+              'No active repository.'
+            )
+          )
+        )
       }
       return workflowDraft(settings, { repo: repoId, objective })
     },
     [repoId, settings]
   )
 
-  /** Loads a drafted definition into the editor, unsaved, until `session.saveDraftAs` (US6 AS2). */
+  /** Loads a drafted definition into the editor, unsaved, until `saveDraft` (US6 AS2). */
   const openDraft = useCallback(
     (definition: Workflow) => {
       setSelectedNodeId(undefined)
@@ -189,6 +199,19 @@ export function useWorkflowsPageController() {
       session.openDraft(definition)
     },
     [clearActiveRun, session]
+  )
+
+  /** First save of an open draft (US6 AS2): writes it, then refreshes the list — unlike `open`,
+   *  the list has no row for a draft yet, and it only reloads on mount/repo-change/an explicit
+   *  refresh, so skipping this would leave the newly-saved workflow missing from the pane. Rethrows
+   *  (from `session.saveDraftAs`) on failure, so the naming dialog can show the error and no refresh
+   *  happens for a save that didn't land. */
+  const saveDraft = useCallback(
+    async (name: string, source: WorkflowRunSource) => {
+      await session.saveDraftAs(name, source)
+      await list.refresh()
+    },
+    [list, session]
   )
 
   const deleteWorkflow = useCallback(
@@ -228,7 +251,8 @@ export function useWorkflowsPageController() {
     duplicateWorkflow,
     deleteWorkflow,
     draftWorkflow,
-    openDraft
+    openDraft,
+    saveDraft
   }
 }
 

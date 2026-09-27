@@ -40,6 +40,13 @@ export default function WorkflowsPage(): React.JSX.Element {
 
   const openName = session.openRef?.name
   const draftName = session.isDraft ? session.editor.state.definition.name : undefined
+  // Guards WorkflowListPane's entry points against silently discarding either kind of unsaved
+  // content: an agent-drafted workflow never written to disk, or dirty edits to a saved one.
+  const unsavedGuard: 'draft' | 'changes' | null = session.isDraft
+    ? 'draft'
+    : session.status === 'ready' && session.editor.state.dirty
+      ? 'changes'
+      : null
   const headerTitle =
     openName ??
     draftName ??
@@ -117,7 +124,7 @@ export default function WorkflowsPage(): React.JSX.Element {
           onCreate={controller.createWorkflow}
           onDuplicate={controller.duplicateWorkflow}
           onDelete={controller.deleteWorkflow}
-          draftUnsaved={session.isDraft}
+          unsavedGuard={unsavedGuard}
           onDraft={controller.draftWorkflow}
           onOpenDraft={controller.openDraft}
         />
@@ -145,6 +152,14 @@ export default function WorkflowsPage(): React.JSX.Element {
                   runState={run.snapshot?.state}
                   runObjective={run.snapshot?.objective}
                   canRun={controller.canRun}
+                  disabledReason={
+                    session.isDraft
+                      ? translate(
+                          'auto.components.workflows.WorkflowsPage.runBlockedDraft',
+                          'Save this draft before running it.'
+                        )
+                      : undefined
+                  }
                   starting={run.starting}
                   stopping={run.stopping}
                   onRun={(objective) => void run.start(objective)}
@@ -261,7 +276,7 @@ export default function WorkflowsPage(): React.JSX.Element {
         submitLabel={translate('auto.components.workflows.WorkflowsPage.saveDraftSubmit', 'Save')}
         initialName={draftName || undefined}
         onOpenChange={setNamingDraft}
-        onSubmit={(name, source) => session.saveDraftAs(name, source)}
+        onSubmit={(name, source) => controller.saveDraft(name, source)}
       />
     </main>
   )
