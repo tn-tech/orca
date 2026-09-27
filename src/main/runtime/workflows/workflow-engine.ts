@@ -6,7 +6,11 @@ import type { GraphValidationContext } from '../../../shared/workflows/workflow-
 import { validateWorkflowGraph } from '../../../shared/workflows/workflow-graph-validation'
 import type { Workflow } from '../../../shared/workflows/workflow-definition-types'
 import type { WorkflowProblem } from '../../../shared/workflows/workflow-problem'
-import type { RunSnapshot, WorkflowRunSource } from '../../../shared/workflows/workflow-run-types'
+import type {
+  RunQuestionView,
+  RunSnapshot,
+  WorkflowRunSource
+} from '../../../shared/workflows/workflow-run-types'
 import {
   getSshFilesystemProvider,
   onSshFilesystemProviderRegistered,
@@ -14,6 +18,7 @@ import {
 } from '../../providers/ssh-filesystem-dispatch'
 import type { OrchestrationDb } from '../orchestration/db'
 import { generateId } from '../orchestration/db/generated-id'
+import { answerAgentQuestion } from './workflow-agent-questions'
 import type { OrcaIgnoreTarget } from './workflow-brief-builder'
 import { resolveConcurrencyLimit } from './workflow-concurrency'
 import {
@@ -198,6 +203,21 @@ export class WorkflowEngine {
   /** The DB is the source of truth for run state; the registry only tracks live controllers. */
   getSnapshot(workflowRunId: string): RunSnapshot | undefined {
     return this.deps.db.getWorkflowRun(workflowRunId)
+  }
+
+  /** First answer wins (FR-033a); the run's controller delivers it to the agent's session. */
+  answerAgentQuestion(
+    runId: string,
+    questionId: string,
+    answer: string,
+    answeredBy: string
+  ): RunQuestionView {
+    return answerAgentQuestion(this.deps.db, this.deps.runtime, {
+      runId,
+      questionId,
+      answer,
+      answeredBy
+    })
   }
 
   /** Restarts a controller for every run a prior process left non-terminal (FR-039). */

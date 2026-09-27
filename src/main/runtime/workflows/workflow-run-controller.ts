@@ -6,23 +6,21 @@ import type { RunSnapshot } from '../../../shared/workflows/workflow-run-types'
 import type { OrchestrationDb } from '../orchestration/db'
 import type { MessageRow } from '../orchestration/types'
 import type { MessageWaitResult } from '../runtime-message-waiters'
+import { settleAgentQuestions } from './workflow-agent-question-settlement'
+import { raiseAgentQuestion } from './workflow-agent-questions'
 import { settleApprovals } from './workflow-approval-gates'
-import {
-  armApprovalDeadlineTimer,
-  type WorkflowApprovalEscalationListener
-} from './workflow-approval-deadlines'
-import { artifactsFor, resultContractFor } from './workflow-brief-builder'
 import {
   createWorkflowOrchestrationClient,
   type WorkflowOrchestrationClient,
   type WorkflowOrchestrationDispatcher
 } from './workflow-orchestration-client'
-import { captureNodeResult } from './workflow-result-capture'
-import { captureRouterResult, recordRouterChoice } from './workflow-router'
-import { advanceRun } from './workflow-run-advance'
-import { classifyRunMail, type RunMail } from './workflow-run-mailbox-message'
 import {
-  requireBriefNode,
+  armQuestionDeadlineTimer,
+  type WorkflowQuestionListener
+} from './workflow-question-deadlines'
+import { advanceRun } from './workflow-run-advance'
+import { classifyRunMail } from './workflow-run-mailbox-message'
+import {
   resumeAnsweredTrustWaits,
   type WorkflowNodeLaunchContext,
   type WorkflowRunWorkspaceAccess
@@ -31,6 +29,7 @@ import { WorkflowRunRecorder, type WorkflowRunChangeNotifier } from './workflow-
 import { settleRunIfQuiet } from './workflow-run-settlement'
 import { registerWorkflowRunWaker } from './workflow-run-wake'
 import { releaseRunSkills } from './workflow-skill-provisioning-host'
+import { handleWorkerDone } from './workflow-worker-done'
 
 export type WorkflowRunControllerRuntime = WorkflowRunChangeNotifier & {
   waitForMessage(
@@ -45,7 +44,10 @@ export type WorkflowRunControllerDeps = {
   runtime: WorkflowRunControllerRuntime
   dispatcher: WorkflowOrchestrationDispatcher
   resolveWorkspace(run: RunSnapshot): Promise<WorkflowRunWorkspaceAccess>
-  onApprovalEscalated?: WorkflowApprovalEscalationListener
+  /** `workflow-attention` notification seams; run and change events always fire. */
+  onApprovalEscalated?: WorkflowQuestionListener
+  onAgentQuestionRaised?: WorkflowQuestionListener
+  onAgentQuestionEscalated?: WorkflowQuestionListener
 }
 
 const TERMINAL_RUN_STATES = new Set<WorkflowRunState>(['completed', 'failed', 'cancelled'])
@@ -149,10 +151,7 @@ export class WorkflowRunController {
         return state
       }
       // Also on rehydrate: an answer recorded while no controller ran resumes here.
-      if (
-        (await resumeAnsweredTrustWaits(session.launch)) ||
-        (await settleApprovals(session.launch, { onEscalated: this.deps.onApprovalEscalated }))
-      ) {
+      if (await this.settleQuestions(session.launch)) {
         await this.advance(session)
         continue
       }
@@ -166,7 +165,7 @@ export class WorkflowRunController {
         continue
       }
       const wake = this.wakeSignal
-      const disarm = armApprovalDeadlineTimer(db, this.deps.workflowRunId, () => wake.abort())
+      const disarm = armQuestionDeadlineTimer(db, this.deps.workflowRunId, () => wake.abort())
       const woke = await runtime
         .waitForMessage(`run:${session.engineRunId}`, {
           exclusive: true,
@@ -184,6 +183,15 @@ export class WorkflowRunController {
     return this.readRun().state
   }
 
+  private async settleQuestions(launch: WorkflowNodeLaunchContext): Promise<boolean> {
+    const { onApprovalEscalated, onAgentQuestionEscalated } = this.deps
+    return (
+      (await resumeAnsweredTrustWaits(launch)) ||
+      (await settleApprovals(launch, { onEscalated: onApprovalEscalated })) ||
+      (await settleAgentQuestions(launch, { onEscalated: onAgentQuestionEscalated }))
+    )
+  }
+
   private async routeMessage(session: ControllerSession, message: MessageRow): Promise<void> {
     const mail = classifyRunMail(
       this.deps.db,
@@ -196,93 +204,19 @@ export class WorkflowRunController {
         this.recorder.event('mailbox_message_ignored', { ...summary, reason: mail.reason })
         return
       case 'deferred':
-        // Seam: question/escalation handling (US4) consumes these; until then they are only logged.
         this.recorder.event('mailbox_message_deferred', summary, {
           attemptId: mail.attempt.id,
           reason: 'attempt'
         })
         return
+      case 'question':
+        // Stored before the delivery is acknowledged; a replay finds it already stored.
+        raiseAgentQuestion(session.launch, message, mail, this.deps.onAgentQuestionRaised)
+        return
       case 'worker_done':
-        await this.handleWorkerDone(session, message, mail)
-    }
-  }
-
-  private async handleWorkerDone(
-    session: ControllerSession,
-    message: MessageRow,
-    mail: Extract<RunMail, { kind: 'worker_done' }>
-  ): Promise<void> {
-    const { attempt } = mail
-    const received = { messageId: message.id, dispatchId: mail.dispatchId, outcome: mail.outcome }
-    // Replayed deliveries and late reports find the attempt already settled.
-    if (attempt.state !== 'running' && attempt.state !== 'unverifiable') {
-      this.recorder.event(
-        'worker_done_stale',
-        { ...received, attemptState: attempt.state },
-        {
-          attemptId: attempt.id,
-          reason: 'attempt'
+        if (await handleWorkerDone(session.launch, message, mail)) {
+          await this.advance(session)
         }
-      )
-      return
-    }
-    this.recorder.event(
-      'worker_done_received',
-      { ...received, reportPath: mail.reportPath },
-      { attemptId: attempt.id, reason: 'attempt' }
-    )
-    if (attempt.state === 'unverifiable') {
-      this.recorder.transitionAttempt(attempt.id, 'running')
-    }
-    const node = requireBriefNode(session.launch.definition, attempt.nodeId)
-    const captureArgs = {
-      fs: session.launch.workspace.fs,
-      workspaceRoot: session.launch.workspace.workspaceRoot,
-      runId: this.deps.workflowRunId,
-      attemptId: attempt.id,
-      reportPath: mail.reportPath,
-      outcome: mail.outcome,
-      declaredArtifacts: artifactsFor(node)
-    }
-    const capture =
-      node.type === 'router'
-        ? await captureRouterResult(node, captureArgs)
-        : await captureNodeResult({ ...captureArgs, resultContract: resultContractFor(node) })
-    const { db } = this.deps
-    if (capture.ok) {
-      db.updateWorkflowAttempt(attempt.id, {
-        resultJson: capture.result,
-        artifactsJson: capture.artifacts
-      })
-      // Why: taskCreate readies a successor only once every dep Task is completed.
-      await this.ensureTaskStatus(session, attempt.taskId, 'completed')
-      if (node.type === 'router') {
-        recordRouterChoice(this.recorder, attempt, capture.result)
-      }
-      this.recorder.transitionAttempt(attempt.id, 'completed')
-    } else {
-      db.updateWorkflowAttempt(attempt.id, {
-        failureReason: capture.failureReason,
-        ...(capture.result !== undefined ? { resultJson: capture.result } : {}),
-        ...(capture.artifacts ? { artifactsJson: capture.artifacts } : {})
-      })
-      await this.ensureTaskStatus(session, attempt.taskId, 'failed')
-      this.recorder.transitionAttempt(attempt.id, 'failed', {
-        workerReport: message.body,
-        ...(capture.detail !== undefined ? { detail: capture.detail } : {}),
-        ...(capture.rawBody !== undefined ? { rawBody: capture.rawBody } : {})
-      })
-    }
-    await this.advance(session)
-  }
-
-  private async ensureTaskStatus(
-    session: ControllerSession,
-    taskId: string | undefined,
-    status: 'completed' | 'failed'
-  ): Promise<void> {
-    if (taskId && this.deps.db.getTask(taskId)?.status !== status) {
-      await session.client.call('orchestration.taskUpdate', { id: taskId, status })
     }
   }
 

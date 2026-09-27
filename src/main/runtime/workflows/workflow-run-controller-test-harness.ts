@@ -131,7 +131,10 @@ export function createControllerHarness(workspaceRoot: string) {
 
   function createController(
     workflowRunId: string,
-    extra: Pick<WorkflowRunControllerDeps, 'onApprovalEscalated'> = {}
+    extra: Pick<
+      WorkflowRunControllerDeps,
+      'onApprovalEscalated' | 'onAgentQuestionRaised' | 'onAgentQuestionEscalated'
+    > = {}
   ): WorkflowRunController {
     return new WorkflowRunController({
       ...extra,
@@ -186,6 +189,29 @@ export function createControllerHarness(workspaceRoot: string) {
     })
   }
 
+  /** What the worker's CLI does: `orchestration ask` blocks until answered, closed or timed out. */
+  function askQuestion(args: {
+    handle: string
+    question: string
+    options?: string
+  }): Promise<RpcResponse> {
+    const capability = /--dispatch-capability (\S+)/.exec(prompts.get(args.handle) ?? '')?.[1]
+    requestSequence += 1
+    return dispatcher.dispatch({
+      id: `ask_${requestSequence}`,
+      authToken: 'test-token',
+      method: 'orchestration.ask',
+      params: {
+        from: args.handle,
+        question: args.question,
+        ...(args.options ? { options: args.options } : {})
+      },
+      orchestrationContractVersion: ORCHESTRATION_CONTRACT_VERSION,
+      orchestrationRequestId: `ask_request_${requestSequence}`,
+      ...(capability ? { orchestrationCapability: capability } : {})
+    })
+  }
+
   return {
     db,
     runtime,
@@ -196,7 +222,8 @@ export function createControllerHarness(workspaceRoot: string) {
     createRun,
     createController,
     writeResult,
-    sendWorkerDone
+    sendWorkerDone,
+    askQuestion
   }
 }
 

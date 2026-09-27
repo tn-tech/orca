@@ -388,4 +388,23 @@ describe('WorkflowEngine', () => {
     expect(warn).toHaveBeenCalledTimes(1)
     expect(warn.mock.calls[0]?.[0]).toContain('exceeded its 10ms deadline')
   })
+
+  it('records a person’s answer to an agent question for the run’s controller to deliver', () => {
+    const engine = createEngine()
+    const run = h.createRun()
+    const asked = h.db.createWorkflowQuestion({
+      runId: run.id,
+      attemptId: 'wfa_asker',
+      kind: 'agent-question',
+      prompt: 'Which database?'
+    })
+    expect(engine.answerAgentQuestion(run.id, asked.id, 'postgres', 'user_1')).toMatchObject({
+      state: 'answered',
+      answer: 'postgres',
+      answeredBy: 'user_1'
+    })
+    expect(h.db.listWorkflowEvents(run.id).map((event) => event.kind)).toContain(
+      'agent_question_answered'
+    )
+  })
 })

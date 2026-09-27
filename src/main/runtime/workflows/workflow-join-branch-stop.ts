@@ -74,12 +74,15 @@ export type WorkerStopCause = {
   subject: Record<string, JsonValue>
 }
 
-/** Only a `stopped` receipt proves the worker is gone; anything else leaves the attempt as is. */
-export async function stopWorkerAttempt(
+/**
+ * Asks the worker to stop; `true` only for a `stopped` receipt, the one proof the worker is gone.
+ * Anything else is recorded as `<eventPrefix>_failed|_unconfirmed`, never as an exit.
+ */
+export async function requestWorkerStop(
   ctx: WorkflowNodeLaunchContext,
   attempt: NodeAttemptView,
   cause: WorkerStopCause
-): Promise<void> {
+): Promise<boolean> {
   const payload = {
     ...cause.subject,
     nodeId: attempt.nodeId,
@@ -88,7 +91,7 @@ export async function stopWorkerAttempt(
   const options = { attemptId: attempt.id, reason: 'attempt' as const }
   if (!attempt.dispatchId) {
     ctx.recorder.event(`${cause.eventPrefix}_unconfirmed`, { ...payload, state: null }, options)
-    return
+    return false
   }
   let receipt: unknown
   try {
@@ -96,21 +99,32 @@ export async function stopWorkerAttempt(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     ctx.recorder.event(`${cause.eventPrefix}_failed`, { ...payload, error: message }, options)
-    return
+    return false
   }
   const state = receiptField(receipt, 'state')
   if (state === 'stopped') {
-    ctx.recorder.transitionAttempt(attempt.id, 'cancelled', {
-      reason: cause.reason,
-      ...cause.subject
-    })
-    return
+    return true
   }
   ctx.recorder.event(
     `${cause.eventPrefix}_unconfirmed`,
     { ...payload, state, lastError: receiptField(receipt, 'lastError') },
     options
   )
+  return false
+}
+
+/** Cancels the attempt once its worker is proven stopped; otherwise leaves it as is. */
+export async function stopWorkerAttempt(
+  ctx: WorkflowNodeLaunchContext,
+  attempt: NodeAttemptView,
+  cause: WorkerStopCause
+): Promise<void> {
+  if (await requestWorkerStop(ctx, attempt, cause)) {
+    ctx.recorder.transitionAttempt(attempt.id, 'cancelled', {
+      reason: cause.reason,
+      ...cause.subject
+    })
+  }
 }
 
 /**

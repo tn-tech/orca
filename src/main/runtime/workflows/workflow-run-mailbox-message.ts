@@ -14,7 +14,14 @@ export type RunMail =
       outcome: WorkerReportOutcome
       reportPath: string | null
     }
-  /** Own-Dispatch mail no handler consumes yet (questions/escalations land with US4). */
+  /** `orchestration ask` from one of this run's Dispatches (FR-033a). */
+  | {
+      kind: 'question'
+      attempt: NodeAttemptView & { dispatchId: string }
+      prompt: string
+      options: string[]
+    }
+  /** Own-Dispatch mail no handler consumes yet. */
   | { kind: 'deferred'; attempt: NodeAttemptView }
   | { kind: 'ignored'; reason: RunMailIgnoredReason }
 
@@ -57,6 +64,21 @@ export function classifyRunMail(
     (attempt): attempt is NodeAttemptView & { dispatchId: string } =>
       attempt.dispatchId !== undefined
   )
+  if (message.type === 'question') {
+    // Why the thread, not the sender: ask files the message as `dispatch:<id>` after verifying
+    // the Dispatch capability, and only ask (or a federated relay of it) creates the thread.
+    const thread = db.getQuestion(message.id)
+    const attempt = thread
+      ? dispatched.find((candidate) => candidate.dispatchId === thread.dispatch_id)
+      : undefined
+    if (!thread || !attempt || thread.run_id !== message.run_id) {
+      return { kind: 'ignored', reason: 'foreign_sender' }
+    }
+    const options = Array.isArray(payload.options)
+      ? payload.options.filter((option): option is string => typeof option === 'string')
+      : []
+    return { kind: 'question', attempt, prompt: message.body, options }
+  }
   if (message.type !== 'worker_done') {
     const sender = dispatched.find((attempt) => isSentByDispatch(db, attempt.dispatchId, message))
     return sender

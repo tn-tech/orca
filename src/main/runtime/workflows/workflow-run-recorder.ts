@@ -12,7 +12,7 @@ import type {
 } from '../../../shared/workflows/workflow-node-states'
 import type { NodeAttemptView, RunSnapshot } from '../../../shared/workflows/workflow-run-types'
 import type { OrchestrationDb } from '../orchestration/db'
-import { closeOpenApprovals } from './workflow-approval-deadlines'
+import { closeOpenQuestions } from './workflow-question-deadlines'
 import type { WorkflowAttemptDispatchStore } from './workflow-node-dispatch'
 
 export type WorkflowRunChangeNotifier = {
@@ -59,7 +59,7 @@ export class WorkflowRunRecorder {
     const run = this.db.transitionWorkflowRun(this.runId, toState)
     this.event(kind, { state: toState, ...payload })
     if (TERMINAL_RUN_STATES.has(toState)) {
-      closeOpenApprovals(this.db, this)
+      closeOpenQuestions(this.db, this)
     }
     return run
   }

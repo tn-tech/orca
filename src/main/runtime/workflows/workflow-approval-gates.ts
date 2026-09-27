@@ -20,10 +20,10 @@ import type { ApprovalResult } from './workflow-approval-choice'
 import { approvalOptionHasEdge, stopRunForApproval } from './workflow-approval-rejection'
 import {
   applyApprovalDeadlines,
-  approvalDeadlines,
   type WorkflowApprovalEscalationListener
 } from './workflow-approval-deadlines'
 import { createNodeTask } from './workflow-frontier-node-task'
+import { questionDeadlines } from './workflow-question-deadlines'
 import type { WorkflowNodeLaunchContext } from './workflow-run-node-launch'
 import { WorkflowRunRecorder, type WorkflowRunChangeNotifier } from './workflow-run-recorder'
 import { wakeWorkflowRun } from './workflow-run-wake'
@@ -74,7 +74,7 @@ async function raiseApproval(
   if (!gateId) {
     throw new Error(`orchestration.gateCreate returned no gate id for node ${node.id}.`)
   }
-  const { escalationAt, timeoutAt } = approvalDeadlines(Date.now(), node)
+  const { escalationAt, timeoutAt } = questionDeadlines(Date.now(), node)
   const asked = ctx.db
     .listWorkflowQuestions(ctx.recorder.runId)
     .find((candidate) => candidate.attemptId === attemptId && candidate.kind === 'approval')

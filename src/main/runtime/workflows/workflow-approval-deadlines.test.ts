@@ -5,9 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   APPROVAL_DEFAULT_ANSWERER,
   APPROVAL_TIMED_OUT_REASON,
-  armApprovalDeadlineTimer,
   type WorkflowApprovalEscalationListener
 } from './workflow-approval-deadlines'
+import { armQuestionDeadlineTimer } from './workflow-question-deadlines'
 import { resolveApproval } from './workflow-approval-gates'
 import { approvalDriver, approvalNode, approvalWorkflow } from './workflow-approval-test-fixtures'
 import { createControllerHarness } from './workflow-run-controller-test-harness'
@@ -160,7 +160,7 @@ describe('Approval timeouts', () => {
       prompt: 'Far?',
       escalationAt: Date.now() + 40 * 24 * 3_600_000
     })
-    const disarm = armApprovalDeadlineTimer(h.db, run.id, wake)
+    const disarm = armQuestionDeadlineTimer(h.db, run.id, wake)
     vi.advanceTimersByTime(1000)
     expect(wake).not.toHaveBeenCalled()
     disarm()
