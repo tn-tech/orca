@@ -252,7 +252,7 @@ Monorepo per plan.md: shared types `src/shared/workflows/`, engine `src/main/run
 - [ ] T110 [US5] Add `workflow.run.list`, `workflow.run.show`, `workflow.run.answer`, `workflow.run.events` to `MOBILE_RPC_METHOD_ALLOWLIST` in `src/main/runtime/runtime-rpc/runtime-rpc-mobile-method-allowlist.ts`
 - [X] T111 [P] [US5] Create `src/renderer/src/components/workflows/editor/nodes/ApprovalNode.tsx` and `editor/ApprovalNodeFields.tsx` (question, options with one port each, timeout, escalation grace, default option); create `run-view/FollowUpComposer.tsx` (queued by default, explicit "Interrupt now" action, delivery state per message) and extend `run-view/QuestionCard.tsx` for approvals and agent questions with answerer and time
 - [ ] T112 [P] [US5] Create `mobile/src/workflows/WorkflowRunList.tsx`, `mobile/src/workflows/WorkflowPromptCard.tsx` (approval and agent question, answer via `workflow.run.answer`), and `mobile/src/workflows/use-workflow-runs.ts` (refetch on `workflowRunChanged` and `workflow-attention` notifications), navigable from the existing mobile session list
-- [ ] T113 [US5] Add `workflows answer|send` handlers to `src/cli/handlers/workflows.ts`
+- [X] T113 [US5] Add `workflows answer|send` handlers to `src/cli/handlers/workflows.ts`
 
 **Checkpoint**: Approvals and agent questions pause only their node, appear on desktop, CLI and mobile, and resume within 5 s of an answer (SC-006).
 
