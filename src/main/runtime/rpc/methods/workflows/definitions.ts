@@ -18,8 +18,10 @@ import {
   readWorkflow,
   resolveWorkflowFilePath
 } from '../../../workflows/workflow-file-store'
+import { draftWorkflow } from '../../../workflows/workflow-draft'
 import { getRepoWorkflowSourceAllowlist } from '../../../workflows/workflow-source-allowlist'
 import { agentSupportsModel, isKnownAgent } from './workflow-agent-catalog-support'
+import { workflowCallerIdentity } from './workflow-caller-identity'
 import { saveWorkflowDefinition } from './workflow-definition-save'
 import { importRoleIntoRepo } from './workflow-role-import-method'
 import {
@@ -33,11 +35,6 @@ function requireDefinition<T>(definition: T | undefined, method: string): T {
     throw new OrchestrationError('invalid_argument', `${method} requires a definition.`)
   }
   return definition
-}
-
-// Why: skeletons for U10; U10.5/US1/P3 units replace each throw with the real implementation.
-function notImplemented(): never {
-  throw new Error('workflow_not_implemented')
 }
 
 export const WORKFLOW_DEFINITION_METHODS = [
@@ -169,5 +166,31 @@ export const WORKFLOW_DEFINITION_METHODS = [
       return importRoleIntoRepo(repo, params)
     }
   }),
-  defineMethod({ name: 'workflow.draft', params: WorkflowDraft, handler: notImplemented })
+  defineMethod({
+    name: 'workflow.draft',
+    params: WorkflowDraft,
+    handler: async (params, ctx) => {
+      const objective = params.objective?.trim()
+      if (!objective) {
+        throw new OrchestrationError('invalid_argument', 'workflow.draft requires an objective.')
+      }
+      const { runtime } = ctx
+      const repo = await runtime.showRepo(params.repo)
+      return draftWorkflow(
+        {
+          engine: runtime.getWorkflowEngine(),
+          db: runtime.getOrchestrationDb(),
+          worktrees: runtime,
+          validation: { agentSupportsModel, isKnownAgent }
+        },
+        {
+          repo,
+          objective,
+          plannerAgent: runtime.getWorkflowPlannerAgent(),
+          startedByClient: workflowCallerIdentity(ctx),
+          ...(ctx.signal ? { signal: ctx.signal } : {})
+        }
+      )
+    }
+  })
 ]

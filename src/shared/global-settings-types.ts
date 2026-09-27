@@ -256,6 +256,8 @@ export type GlobalSettings = {
   experimentalWorkflows?: boolean
   /** Only toggles the sidebar shortcut; Workflows stay reachable from Settings/View menu. */
   showWorkflowsButton?: boolean
+  /** Agent the workflow planner drafts with (`workflow.draft`); unset falls back to defaultTuiAgent, then claude. */
+  workflowPlannerAgent?: TuiAgent
   /** Deprecated: Artifacts are always available. Use showArtifactsButton for sidebar visibility. */
   artifactsEnabled?: boolean
   /** Capability gate for agent-driven publishing; off until granted, enforced in main, not just the UI. */

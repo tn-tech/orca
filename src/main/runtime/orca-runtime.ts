@@ -6,6 +6,7 @@ import { registerDetectedWorktreeScanInvalidation } from '../ipc/worktrees/listi
 import { ORCHESTRATION_METHODS } from './rpc/methods/orchestration'
 import { RpcDispatcher } from './rpc/dispatcher'
 import { WORKFLOW_ENGINE_WORKER_INPUT_METHODS } from './rpc/methods/workflows/workflow-engine-worker-input-methods'
+import { resolveWorkflowPlannerAgent } from './workflows/workflow-draft-planner'
 import { WorkflowEngine } from './workflows/workflow-engine'
 import {
   dispatchWorkflowAttention,
@@ -69,6 +70,11 @@ class OrcaRuntimeService extends OrcaRuntimeWithResolveWaiter {
       attention,
       this.store?.getSettings().notifications
     )
+  }
+
+  /** The agent `workflow.draft` plans with (US6). */
+  getWorkflowPlannerAgent(): string {
+    return resolveWorkflowPlannerAgent(this.store?.getSettings())
   }
 
   /** Stops every active run controller; called on shutdown so a worker's mailbox is left quiet. */
