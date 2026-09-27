@@ -10,16 +10,31 @@ export function attemptReasonClassName(state: WorkflowAttemptState): string {
   return state === 'failed' ? 'text-destructive' : 'text-muted-foreground'
 }
 
-/** `join_skipped` (workflow-join-settlement.ts's `JOIN_SKIPPED_REASON`) is a machine reason code,
+/** `join_skipped`/`approval_timed_out`/`approval_rejected` are machine reason codes
+ *  (`workflow-join-settlement.ts`'s `JOIN_SKIPPED_REASON`, `workflow-approval-deadlines.ts`'s
+ *  `APPROVAL_TIMED_OUT_REASON`, `workflow-approval-rejection.ts`'s `APPROVAL_REJECTED_REASON`),
  *  not copy meant to be read as-is (review note) — every other `failureReason` is already a
  *  free-text message from the engine. */
 export function attemptReasonLabel(failureReason: string): string {
-  return failureReason === 'join_skipped'
-    ? translate(
+  switch (failureReason) {
+    case 'join_skipped':
+      return translate(
         'auto.components.workflows.run-view.AttemptPanel.reasonJoinSkipped',
         'Every branch was skipped.'
       )
-    : failureReason
+    case 'approval_timed_out':
+      return translate(
+        'auto.components.workflows.run-view.AttemptPanel.reasonApprovalTimedOut',
+        'The approval timed out with no answer.'
+      )
+    case 'approval_rejected':
+      return translate(
+        'auto.components.workflows.run-view.AttemptPanel.reasonApprovalRejected',
+        'The approval was answered with an option that stops the run.'
+      )
+    default:
+      return failureReason
+  }
 }
 
 /** FR-032's exact vocabulary; every `WorkflowAttemptState` gets a case. */

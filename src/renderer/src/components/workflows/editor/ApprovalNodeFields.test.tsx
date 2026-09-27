@@ -87,6 +87,30 @@ describe('ApprovalNodeFields (FR-033)', () => {
     )
   })
 
+  it('carries the default answer along when the renamed option was the default (review round 1, finding 4)', () => {
+    const onChange = vi.fn()
+    render(
+      <ApprovalNodeFields node={approvalNode({ defaultOption: 'Reject' })} onChange={onChange} />
+    )
+
+    fireEvent.change(screen.getByDisplayValue('Reject'), { target: { value: 'Decline' } })
+
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ options: ['Approve', 'Decline'], defaultOption: 'Decline' })
+    )
+  })
+
+  it('leaves an unrelated default answer alone when a different option is renamed', () => {
+    const onChange = vi.fn()
+    render(
+      <ApprovalNodeFields node={approvalNode({ defaultOption: 'Approve' })} onChange={onChange} />
+    )
+
+    fireEvent.change(screen.getByDisplayValue('Reject'), { target: { value: 'Decline' } })
+
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ defaultOption: 'Approve' }))
+  })
+
   it('removes an option, clearing the default answer if it was the one removed', () => {
     const onChange = vi.fn()
     render(
@@ -116,12 +140,36 @@ describe('ApprovalNodeFields (FR-033)', () => {
 
     expect(
       screen.getByText(
-        'Options must be non-empty and unique — a blank or repeated option gets no outgoing edge.'
+        'Options must be non-empty, unique, and not named exit or body — those are reserved for Loop ports.'
       )
     ).toBeInTheDocument()
     for (const input of screen.getAllByDisplayValue('Approve')) {
       expect(input).toHaveAttribute('aria-invalid', 'true')
     }
+  })
+
+  it('flags an option named exit or body as reserved for Loop ports', () => {
+    render(
+      <ApprovalNodeFields node={approvalNode({ options: ['exit', 'Reject'] })} onChange={vi.fn()} />
+    )
+
+    expect(screen.getByDisplayValue('exit')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByDisplayValue('Reject')).toHaveAttribute('aria-invalid', 'false')
+    expect(
+      screen.getByText(
+        'Options must be non-empty, unique, and not named exit or body — those are reserved for Loop ports.'
+      )
+    ).toBeInTheDocument()
+  })
+
+  it('explains that an option with no outgoing edge stops the run', () => {
+    render(<ApprovalNodeFields node={approvalNode()} onChange={vi.fn()} />)
+
+    expect(
+      screen.getByText(
+        'Each option gets its own outgoing edge on the canvas; choosing an option with no edge stops the run.'
+      )
+    ).toBeInTheDocument()
   })
 
   it('offers only routable options as the default answer', () => {

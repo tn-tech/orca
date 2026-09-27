@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { invalidChoiceIndices, routableChoiceIndices } from './workflow-router-choices'
+import {
+  invalidChoiceIndices,
+  reservedChoiceIndices,
+  routableChoiceIndices
+} from './workflow-router-choices'
 
 describe('routableChoiceIndices', () => {
   it('routes every choice when all are non-empty and unique', () => {
@@ -26,5 +30,19 @@ describe('invalidChoiceIndices', () => {
 
   it('flags every blank choice', () => {
     expect(invalidChoiceIndices(['', 'feature', ''])).toEqual(new Set([0, 2]))
+  })
+})
+
+describe('reservedChoiceIndices', () => {
+  it('flags choices named exit or body, reserved for Loop ports', () => {
+    expect(reservedChoiceIndices(['exit', 'feature', 'body'])).toEqual(new Set([0, 2]))
+  })
+
+  it('flags nothing when no choice is reserved', () => {
+    expect(reservedChoiceIndices(['bugfix', 'feature'])).toEqual(new Set())
+  })
+
+  it('does not flag blank or unrelated text', () => {
+    expect(reservedChoiceIndices(['', 'exiting', 'bodywork'])).toEqual(new Set())
   })
 })

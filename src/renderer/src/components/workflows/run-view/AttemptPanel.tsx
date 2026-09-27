@@ -25,6 +25,7 @@ import JoinBranchOutcomes, { readJoinBranches } from './JoinBranchOutcomes'
 import QuestionCard from './QuestionCard'
 import RouterChoiceSummary, { readRouterChoice } from './RouterChoiceSummary'
 import {
+  approvalExpiryReason,
   attemptsByIteration,
   latestNodeAttempt,
   loopActiveIteration,
@@ -172,7 +173,16 @@ export default function AttemptPanel({
       {attemptQuestions.length > 0 ? (
         <div className="space-y-2">
           {attemptQuestions.map((question) => (
-            <QuestionCard key={question.id} question={question} settings={settings} />
+            <QuestionCard
+              key={question.id}
+              question={question}
+              settings={settings}
+              expiredReason={
+                question.state === 'expired'
+                  ? approvalExpiryReason(snapshot.events, question.id)
+                  : undefined
+              }
+            />
           ))}
         </div>
       ) : null}

@@ -21,7 +21,12 @@ const badgeVariants = cva(
         /** The chip naming the machine a workspace runs on — quieter and squarer than `secondary`,
          *  so it reads as context beside a workspace name rather than as a status of its own. */
         hostContext:
-          'h-4 rounded border-border bg-accent px-1.5 text-[10px] leading-none text-muted-foreground dark:border-border/50 dark:bg-accent/80'
+          'h-4 rounded border-border bg-accent px-1.5 text-[10px] leading-none text-muted-foreground dark:border-border/50 dark:bg-accent/80',
+        /** Needs attention but isn't an error or a destructive action (e.g. an escalated
+         *  question, still answerable) — the same review/attention token the trust-required
+         *  card uses, so the two read as one severity level rather than two different ones. */
+        review:
+          'border-workspace-status-review/40 bg-workspace-status-review/10 text-workspace-status-review'
       }
     },
     defaultVariants: {

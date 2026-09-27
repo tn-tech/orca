@@ -3,6 +3,7 @@ import { Loader2, Send, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { translate } from '@/i18n/i18n'
+import { hasRuntimeRpcErrorCode } from '@/runtime/runtime-rpc-client'
 import {
   workflowRunSendMessage,
   type RuntimeWorkflowSettings
@@ -84,6 +85,9 @@ export default function FollowUpComposer({
   const [text, setText] = useState('')
   const [sending, setSending] = useState<WorkflowMessageMode | undefined>()
   const [error, setError] = useState<string | undefined>()
+  // `workflow.run.sendMessage` predates some hosts; a host that lacks it answers
+  // `method_not_found` and retrying can't succeed either, so the composer stays disabled once set.
+  const [unsupported, setUnsupported] = useState(false)
 
   async function send(mode: WorkflowMessageMode): Promise<void> {
     const trimmed = text.trim()
@@ -96,7 +100,11 @@ export default function FollowUpComposer({
       await workflowRunSendMessage(settings, { runId, attemptId, text: trimmed, mode })
       setText('')
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      if (hasRuntimeRpcErrorCode(err, 'method_not_found')) {
+        setUnsupported(true)
+      } else {
+        setError(err instanceof Error ? err.message : String(err))
+      }
     } finally {
       setSending(undefined)
     }
@@ -119,14 +127,23 @@ export default function FollowUpComposer({
           'Message the running agent…'
         )}
         className="min-h-16"
-        disabled={sending !== undefined}
+        disabled={sending !== undefined || unsupported}
       />
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      {unsupported ? (
+        <p className="text-xs text-muted-foreground">
+          {translate(
+            'auto.components.workflows.run-view.FollowUpComposer.methodNotSupported',
+            "Sending a follow-up isn't available on this host yet."
+          )}
+        </p>
+      ) : error ? (
+        <p className="text-xs text-destructive">{error}</p>
+      ) : null}
       <div className="flex gap-2">
         <Button
           type="button"
           size="sm"
-          disabled={sending !== undefined || text.trim().length === 0}
+          disabled={sending !== undefined || unsupported || text.trim().length === 0}
           onClick={() => void send('queued')}
         >
           {sending === 'queued' ? <Loader2 className="animate-spin" /> : <Send />}
@@ -136,7 +153,7 @@ export default function FollowUpComposer({
           type="button"
           variant="outline"
           size="sm"
-          disabled={sending !== undefined || text.trim().length === 0}
+          disabled={sending !== undefined || unsupported || text.trim().length === 0}
           onClick={() => void send('interrupt')}
         >
           {sending === 'interrupt' ? <Loader2 className="animate-spin" /> : <Zap />}

@@ -17404,7 +17404,9 @@
             "provisioning": "Provisioning",
             "provisioningInstalled": "Installed: {{skills}}",
             "provisioningPromptFallback": "Included in the prompt instead (no workspace location): {{skills}}",
-            "reasonJoinSkipped": "Every branch was skipped."
+            "reasonJoinSkipped": "Every branch was skipped.",
+            "reasonApprovalTimedOut": "The approval timed out with no answer.",
+            "reasonApprovalRejected": "The approval was answered with an option that stops the run."
           },
           "RunToolbar": {
             "stateQueued": "Queued",
@@ -17441,7 +17443,13 @@
             "escalated": "Escalated",
             "agentQuestionTitle": "The agent has a question",
             "answerPlaceholder": "Type your answer…",
-            "answer": "Answer"
+            "answer": "Answer",
+            "closedUnanswered": "Closed with no answer.",
+            "defaultApplied": "Default applied after timeout at {{when}}",
+            "methodNotSupported": "Answering isn't available on this host yet.",
+            "trustedAnswer": "Trusted",
+            "refusedAnswer": "Refused",
+            "defaultOnTimeout": "Default on timeout: {{option}}"
           },
           "FollowUpComposer": {
             "stateQueued": "Undelivered",
@@ -17453,7 +17461,8 @@
             "label": "Send a follow-up",
             "placeholder": "Message the running agent…",
             "send": "Send",
-            "interruptNow": "Interrupt now"
+            "interruptNow": "Interrupt now",
+            "methodNotSupported": "Sending a follow-up isn't available on this host yet."
           }
         },
         "use-workflow-editor-session": {

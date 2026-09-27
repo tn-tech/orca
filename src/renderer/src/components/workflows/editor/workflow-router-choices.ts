@@ -46,3 +46,20 @@ export function invalidChoiceIndices(choices: readonly string[]): ReadonlySet<nu
   }
   return invalid
 }
+
+/** Names reserved for Loop ports (`Edge.fromPort` 'body' | 'exit', data-model.md §1 Edge). A
+ *  Router choice or Approval option with one of these names passes the blank/duplicate check
+ *  above but is still rejected by graph validation (`graph_option_reserved_name`,
+ *  workflow-graph-structural-rules.ts) — flagged separately here so a field can point it out
+ *  inline before the user ever runs validation. */
+const RESERVED_PORT_NAMES: ReadonlySet<string> = new Set(['exit', 'body'])
+
+export function reservedChoiceIndices(choices: readonly string[]): ReadonlySet<number> {
+  const indices = new Set<number>()
+  choices.forEach((choice, index) => {
+    if (RESERVED_PORT_NAMES.has(choice)) {
+      indices.add(index)
+    }
+  })
+  return indices
+}

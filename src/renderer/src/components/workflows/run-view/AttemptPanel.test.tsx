@@ -771,5 +771,82 @@ describe('AttemptPanel', () => {
       expect(screen.getByText('Approve the plan?')).toBeInTheDocument()
       expect(screen.getByText(/Answered by rami/)).toBeInTheDocument()
     })
+
+    it('shows a settled summary instead of "Trust required" for an answered trust question (review round 1, finding 1)', () => {
+      render(
+        <AttemptPanel
+          definition={workflow()}
+          snapshot={snapshot(
+            [attempt({ state: 'waiting' })],
+            workflow(),
+            [],
+            [
+              {
+                id: 'question-2',
+                runId: 'run-1',
+                attemptId: 'attempt-1',
+                kind: 'trust',
+                prompt: 'Trust plugin source "speckit" on host local?',
+                optionsJson: {
+                  choices: [],
+                  trust: { source: 'speckit', host: 'local', skills: [], agents: [] }
+                },
+                state: 'answered',
+                answer: 'trusted',
+                answeredBy: 'rami',
+                answeredAt: '2026-01-01T00:00:00.000Z'
+              }
+            ]
+          )}
+          nodeId="implement"
+          runtimeEnvironmentId={null}
+          settings={settings}
+        />
+      )
+
+      expect(screen.queryByText('Trust required')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Review' })).not.toBeInTheDocument()
+      expect(screen.getByText('Trusted')).toBeInTheDocument()
+      expect(screen.getByText(/Answered by rami/)).toBeInTheDocument()
+    })
+
+    it('shows "Closed with no answer" for an approval the run ended before answering (workflow-approval-deadlines.ts closeOpenApprovals)', () => {
+      render(
+        <AttemptPanel
+          definition={workflow()}
+          snapshot={snapshot(
+            [attempt({ state: 'failed', failureReason: 'approval_timed_out' })],
+            workflow(),
+            [
+              {
+                id: 'event-1',
+                runId: 'run-1',
+                attemptId: 'attempt-1',
+                kind: 'approval_expired',
+                payloadJson: { questionId: 'question-3', reason: 'run_ended' },
+                createdAt: '2026-01-01T00:00:00.000Z'
+              }
+            ],
+            [
+              {
+                id: 'question-3',
+                runId: 'run-1',
+                attemptId: 'attempt-1',
+                kind: 'approval',
+                prompt: 'Approve the plan?',
+                optionsJson: null,
+                state: 'expired'
+              }
+            ]
+          )}
+          nodeId="implement"
+          runtimeEnvironmentId={null}
+          settings={settings}
+        />
+      )
+
+      expect(screen.getByText('Closed with no answer.')).toBeInTheDocument()
+      expect(screen.queryByText('Timed out with no answer.')).not.toBeInTheDocument()
+    })
   })
 })

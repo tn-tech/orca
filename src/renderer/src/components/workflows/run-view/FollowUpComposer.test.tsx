@@ -118,6 +118,26 @@ describe('FollowUpComposer (FR-036/FR-036a)', () => {
     expect(textarea).toHaveValue('Check the config too.')
   })
 
+  it('shows friendly copy and disables the composer after a method_not_found send (review round 1, minor)', async () => {
+    workflowRunSendMessageMock.mockRejectedValue(new Error('method_not_found'))
+    render(
+      <FollowUpComposer runId="run-1" attemptId="attempt-1" messages={[]} settings={settings} />
+    )
+
+    const textarea = screen.getByPlaceholderText('Message the running agent…')
+    fireEvent.change(textarea, { target: { value: 'Check the config too.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Sending a follow-up isn't available on this host yet.")
+      ).toBeInTheDocument()
+    )
+    expect(textarea).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Interrupt now' })).toBeDisabled()
+  })
+
   it('shows each message with its delivery state', () => {
     render(
       <FollowUpComposer

@@ -14,7 +14,11 @@ import { translate } from '@/i18n/i18n'
 import { createBrowserUuid } from '@/lib/browser-uuid'
 import type { ApprovalNode } from '../../../../../shared/workflows/workflow-definition-types'
 import { InspectorField } from './InspectorField'
-import { invalidChoiceIndices, routableChoiceIndices } from './workflow-router-choices'
+import {
+  invalidChoiceIndices,
+  reservedChoiceIndices,
+  routableChoiceIndices
+} from './workflow-router-choices'
 
 export type ApprovalNodeFieldsProps = {
   node: ApprovalNode
@@ -75,7 +79,10 @@ export default function ApprovalNodeFields({
     option,
     index
   }))
-  const invalidIndices = invalidChoiceIndices(node.options)
+  const invalidIndices = new Set([
+    ...invalidChoiceIndices(node.options),
+    ...reservedChoiceIndices(node.options)
+  ])
   const routableOptions = [...routableChoiceIndices(node.options)].map(
     (index) => node.options[index]
   )
@@ -88,7 +95,15 @@ export default function ApprovalNodeFields({
   )
 
   function updateOption(index: number, value: string): void {
-    onChange({ ...node, options: node.options.map((option, i) => (i === index ? value : option)) })
+    const previous = node.options[index]
+    onChange({
+      ...node,
+      options: node.options.map((option, i) => (i === index ? value : option)),
+      // Renaming the option that was the default answer must carry the rename along — otherwise
+      // `defaultOption` dangles, pointing at a name no option has anymore, and the node fails on
+      // timeout instead of applying the (renamed) default (review round 1, finding 4).
+      defaultOption: node.defaultOption === previous ? value : node.defaultOption
+    })
   }
 
   function removeOption(index: number): void {
@@ -135,7 +150,7 @@ export default function ApprovalNodeFields({
         <p className="text-xs text-muted-foreground">
           {translate(
             'auto.components.workflows.editor.ApprovalNodeFields.optionsHelp',
-            'Each option gets exactly one outgoing edge on the canvas; the answer must match one of these exactly.'
+            'Each option gets its own outgoing edge on the canvas; choosing an option with no edge stops the run.'
           )}
         </p>
         <div className="space-y-1.5">
@@ -175,7 +190,7 @@ export default function ApprovalNodeFields({
           <p className="text-xs text-destructive">
             {translate(
               'auto.components.workflows.editor.ApprovalNodeFields.invalidOptions',
-              'Options must be non-empty and unique — a blank or repeated option gets no outgoing edge.'
+              'Options must be non-empty, unique, and not named exit or body — those are reserved for Loop ports.'
             )}
           </p>
         ) : null}
