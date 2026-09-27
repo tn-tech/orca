@@ -223,7 +223,7 @@ Monorepo per plan.md: shared types `src/shared/workflows/`, engine `src/main/run
 - [X] T097 [US4] Add the skills section and prompt fallback (inline skill text for providers without a workspace skill path) to `workflow-brief-builder.ts`
 - [X] T098 [P] [US4] Create `src/renderer/src/components/workflows/roles/RoleEditor.tsx`, `roles/SkillReferenceList.tsx`, `roles/SkillSourceBadge.tsx`, `roles/ImportRoleDialog.tsx` (source must be allowlisted; shows the allowlist location on refusal), and `roles/TrustSourceDialog.tsx`
 - [X] T099 [US4] Add role assignment and override display (distinct styling, revert action) to `editor/AgentNodeFields.tsx`, and a warning banner for agents without workspace skill support
-- [ ] T100 [US4] Show the `provisioning` state and provisioning steps/results on `run-view/AttemptPanel.tsx`; surface trust questions in the run view via `run-view/QuestionCard.tsx` (created here, reused by US5)
+- [X] T100 [US4] Show the `provisioning` state and provisioning steps/results on `run-view/AttemptPanel.tsx`; surface trust questions in the run view via `run-view/QuestionCard.tsx` (created here, reused by US5)
 - [X] T101 [US4] Add `workflows trust` to `src/cli/handlers/workflows.ts`
 
 **Checkpoint**: A role imported from a test repository provisions both skill kinds before launch, with nothing untracked in git.
