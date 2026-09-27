@@ -1,6 +1,7 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Workflow } from '../../../shared/workflows/workflow-definition-types'
+import { readLocalCheckoutFile } from './workflow-checkout-file-read'
 import type { RoleFetchHost } from './workflow-role-fetch-host'
 
 export const ROLE_SOURCE = 'https://github.com/acme/roles'
@@ -69,7 +70,7 @@ export function fakeRoleFetchHost(
       gitCalls.push(args)
       return `${upstream.sha}\n`
     },
-    readFile: (path) => readFile(path, 'utf-8'),
+    readFile: readLocalCheckoutFile,
     removeDir: (path) => rm(path, { recursive: true, force: true })
   }
 }

@@ -5,6 +5,7 @@
 // Plugin skills are not fetched: they are host-scope and Claude-only (workflow-plugin-install.ts).
 import type { SkillReference } from '../../../shared/workflows/workflow-skill-reference-schema'
 import type { FallbackSkillText } from './workflow-brief-skills'
+import { CheckoutFileRefusedError } from './workflow-checkout-file-read'
 import { getRoleFetchHost, type RoleFetchHost } from './workflow-role-fetch-host'
 import { isENOENT } from '../../ipc/filesystem-auth'
 import { locateSkillMd } from './workflow-skill-md-location'
@@ -31,15 +32,25 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+type FetchedCheckout = SkillRepositoryCheckout & {
+  /** Why each refused read was refused, so a missing required skill can say so. */
+  refusals: string[]
+}
+
 /** Each file is read at most once per fetch: on SSH every read is a round trip. */
 function cachedCheckout(
   host: RoleFetchHost,
   checkoutDir: string,
   paths: readonly string[]
-): SkillRepositoryCheckout {
+): FetchedCheckout {
   const reads = new Map<string, Promise<string | null>>()
+  const refusals: string[] = []
   const readText = (path: string): Promise<string | null> =>
-    host.readFile(host.joinPath(checkoutDir, path)).catch((error: unknown) => {
+    host.readFile(host.joinPath(checkoutDir, path), checkoutDir).catch((error: unknown) => {
+      if (error instanceof CheckoutFileRefusedError) {
+        refusals.push(error.message)
+        return null
+      }
       // The CLI skips a SKILL.md it cannot read as text; anything else (a lost host) propagates.
       if (isENOENT(error) || errorMessage(error) === 'workflow_role_file_binary') {
         return null
@@ -48,6 +59,7 @@ function cachedCheckout(
     })
   return {
     paths,
+    refusals,
     readText(path) {
       const cached = reads.get(path) ?? readText(path)
       reads.set(path, cached)
@@ -60,7 +72,7 @@ async function cloneCheckout(
   host: RoleFetchHost,
   source: string,
   tempDir: string
-): Promise<SkillRepositoryCheckout> {
+): Promise<FetchedCheckout> {
   await host.clone(source, undefined, tempDir, CHECKOUT_DIR_NAME)
   const checkoutDir = host.joinPath(tempDir, CHECKOUT_DIR_NAME)
   const listing = await host.runGit(['ls-files', '-z'], checkoutDir)
@@ -78,7 +90,7 @@ async function fetchFromSource(
   const found = new Map<string, FallbackSkillText>()
   const tempDir = await host.createTempDir()
   try {
-    let checkout: SkillRepositoryCheckout
+    let checkout: FetchedCheckout
     try {
       checkout = await cloneCheckout(host, source, tempDir)
     } catch (error) {
@@ -96,9 +108,10 @@ async function fetchFromSource(
       if (match) {
         found.set(skill.name, { source, ...match })
       } else if (skill.required) {
+        const refused = checkout.refusals.length > 0 ? ` ${checkout.refusals.join(' ')}` : ''
         throw new Error(
           `Skill "${skill.name}" has no SKILL.md in ${source} where \`skills add\` looks, so its ` +
-            `instructions cannot be inlined for agent "${agent}", which cannot load workspace skills.`
+            `instructions cannot be inlined for agent "${agent}", which cannot load workspace skills.${refused}`
         )
       }
     }

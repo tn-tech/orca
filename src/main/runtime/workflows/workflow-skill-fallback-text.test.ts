@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SkillReference } from '../../../shared/workflows/workflow-skill-reference-schema'
+import { CheckoutFileRefusedError } from './workflow-checkout-file-read'
 import type { RoleFetchHost } from './workflow-role-fetch-host'
 import { fetchFallbackSkillTexts } from './workflow-skill-fallback-text'
 
 const SOURCE = 'https://github.com/acme/skills'
+/** A tracked file the fetch host refuses to read, e.g. a symlink out of the checkout. */
+const REFUSED_FILE = '\u0000refused'
 
 function skill(name: string, required = true, location = `${SOURCE}.git`): SkillReference {
   return { name, source: { kind: 'repository', location }, required }
@@ -36,6 +39,9 @@ function fakeHost(files: Record<string, string>, options: { cloneError?: Error }
       const text = files[relative]
       if (text === undefined) {
         throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
+      }
+      if (text === REFUSED_FILE) {
+        throw new CheckoutFileRefusedError(relative, 'it resolves outside the checkout')
       }
       return text
     }),
@@ -154,6 +160,35 @@ describe('fetchFallbackSkillTexts', () => {
         { allowlist: [SOURCE], getHost: () => host }
       )
     ).rejects.toThrow(/plan.*acme\/skills.*repository not found/)
+    expect(removed).toEqual(['/host/tmp/t1'])
+  })
+
+  it('skips a refused SKILL.md like an unreadable one for an optional skill', async () => {
+    const { host } = fakeHost({ 'skills/plan/SKILL.md': REFUSED_FILE })
+    const texts = await fetchFallbackSkillTexts(
+      { agent: 'aider', skills: [skill('plan', false)] },
+      { allowlist: [SOURCE], getHost: () => host }
+    )
+    expect(texts.size).toBe(0)
+    expect(host.readFile).toHaveBeenCalledWith(
+      '/host/tmp/t1/repo/skills/plan/SKILL.md',
+      '/host/tmp/t1/repo'
+    )
+  })
+
+  it('fails a required skill naming the refused path and why', async () => {
+    const { host, removed } = fakeHost({
+      'skills/other/SKILL.md': skillMd('other'),
+      'skills/plan/SKILL.md': REFUSED_FILE
+    })
+    await expect(
+      fetchFallbackSkillTexts(
+        { agent: 'aider', skills: [skill('plan')] },
+        { allowlist: [SOURCE], getHost: () => host }
+      )
+    ).rejects.toThrow(
+      /Skill "plan" has no SKILL\.md[\s\S]*"skills\/plan\/SKILL\.md".*outside the checkout/
+    )
     expect(removed).toEqual(['/host/tmp/t1'])
   })
 })

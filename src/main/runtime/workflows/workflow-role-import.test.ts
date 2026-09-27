@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -151,9 +151,10 @@ describe('workflow role import: fetch', () => {
   describe('with a real git repository and the local host', () => {
     let source: string
     let sha: string
+    let upstreamDir: string
 
     beforeEach(async () => {
-      const upstreamDir = join(root, 'upstream')
+      upstreamDir = join(root, 'upstream')
       await mkdir(join(upstreamDir, 'roles'), { recursive: true })
       await writeFile(join(upstreamDir, 'roles', 'manager.role.yaml'), roleYaml('Real.', 'unused'))
       const git = (args: string[]): Promise<{ stdout: string }> =>
@@ -176,6 +177,27 @@ describe('workflow role import: fetch', () => {
         expect(fetched.version).toBe(sha)
       }
     })
+
+    it.skipIf(process.platform === 'win32')(
+      'refuses a role file tracked as a symlink out of the checkout, naming its path',
+      async () => {
+        await writeFile(join(root, 'host-secret.yaml'), roleYaml('Host file.', 'unused'))
+        await symlink(join(root, 'host-secret.yaml'), join(upstreamDir, 'roles', 'leak.role.yaml'))
+        const git = (args: string[]): Promise<unknown> =>
+          gitExecFileAsync(args, { cwd: upstreamDir })
+        await git(['add', '.'])
+        await git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'leak'])
+        await expect(
+          fetchRoleForImport(
+            { source, roleName: 'leak' },
+            deps(localRoleFetchHost, [source, 'unused'])
+          )
+        ).rejects.toMatchObject({
+          code: 'workflow_checkout_file_refused',
+          message: expect.stringContaining('"roles/leak.role.yaml"')
+        })
+      }
+    )
 
     it('maps an unknown version to a clear error', async () => {
       await expect(

@@ -18,7 +18,9 @@ const fsProvider = {
       : SKILL_MD,
     isBinary: false
   })),
-  deletePath: vi.fn(async () => {})
+  deletePath: vi.fn(async () => {}),
+  realpath: vi.fn(async (path: string) => path),
+  stat: vi.fn(async () => ({ size: SKILL_MD.length, type: 'file' as const, mtime: 0 }))
 }
 
 vi.mock('../../providers/ssh-filesystem-dispatch', async (importOriginal) => ({
@@ -30,6 +32,7 @@ vi.mock('../../providers/ssh-git-dispatch', async (importOriginal) => ({
   requireSshGitProvider: vi.fn(() => ({ exec: gitExec }))
 }))
 
+import { CHECKOUT_FILE_MAX_BYTES } from './workflow-checkout-file-read'
 import { loadRunFallbackSkillTexts } from './workflow-skill-fallback-text'
 
 describe('prompt-fallback skill fetch over SSH', () => {
@@ -56,7 +59,10 @@ describe('prompt-fallback skill fetch over SSH', () => {
     ])
     const tempDir = gitExec.mock.calls[0]?.[1]
     expect(tempDir).toMatch(/^\/remote\/tmp\//)
-    expect(fsProvider.readFile).toHaveBeenCalledWith(`${tempDir}/repo/skills/plan/SKILL.md`)
+    expect(fsProvider.readFile).toHaveBeenCalledWith(`${tempDir}/repo/skills/plan/SKILL.md`, {
+      maxTextBytes: CHECKOUT_FILE_MAX_BYTES,
+      maxBinaryBytes: CHECKOUT_FILE_MAX_BYTES
+    })
     expect(fsProvider.deletePath).toHaveBeenCalledWith(tempDir, true)
   })
 })

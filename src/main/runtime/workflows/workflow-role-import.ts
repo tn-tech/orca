@@ -94,7 +94,7 @@ async function readRoleFileFromCheckout(
 ): Promise<string> {
   const relativePath = `${ROLE_FILE_DIRECTORY}/${roleName}${ROLE_FILE_SUFFIX}`
   try {
-    return await host.readFile(host.joinPath(checkoutDir, relativePath))
+    return await host.readFile(host.joinPath(checkoutDir, relativePath), checkoutDir)
   } catch (error) {
     if (isENOENT(error)) {
       throw new OrchestrationError('workflow_role_not_found', 'workflow_role_not_found', {

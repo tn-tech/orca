@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Repo } from '../../../shared/repo-types'
@@ -11,6 +11,7 @@ import {
 import { requireSshGitProvider } from '../../providers/ssh-git-dispatch'
 import { OrchestrationError } from '../orchestration/orchestration-error'
 import { joinWorktreeRelativePath } from '../runtime-relative-paths'
+import { readLocalCheckoutFile, readRemoteCheckoutFile } from './workflow-checkout-file-read'
 
 const ROLE_FETCH_GIT_TIMEOUT_MS = 120_000
 const TEMP_DIR_PREFIX = 'orca-role-import-'
@@ -24,7 +25,11 @@ export type RoleFetchHost = {
   clone(source: string, version: string | undefined, cwd: string, dirName: string): Promise<void>
   /** Runs git and returns stdout; throws on a non-zero exit. */
   runGit(args: string[], cwd: string): Promise<string>
-  readFile(filePath: string): Promise<string>
+  /**
+   * Text of a regular file whose real path lies inside `checkoutDir` (a clone this host made),
+   * capped at `CHECKOUT_FILE_MAX_BYTES`; anything else throws `CheckoutFileRefusedError`.
+   */
+  readFile(filePath: string, checkoutDir: string): Promise<string>
   removeDir(dirPath: string): Promise<void>
   joinPath(dirPath: string, relativePath: string): string
 }
@@ -45,7 +50,7 @@ export const localRoleFetchHost: RoleFetchHost = {
     await runLocalGit([...args, '--', source, dirName], cwd)
   },
   runGit: runLocalGit,
-  readFile: (filePath) => readFile(filePath, 'utf-8'),
+  readFile: readLocalCheckoutFile,
   removeDir: (dirPath) => rm(dirPath, { recursive: true, force: true }),
   joinPath: joinWorktreeRelativePath
 }
@@ -84,13 +89,7 @@ function sshRoleFetchHost(connectionId: string): RoleFetchHost {
       })
       return stdout
     },
-    async readFile(filePath) {
-      const result = await fsProvider.readFile(filePath)
-      if (result.isBinary) {
-        throw new Error('workflow_role_file_binary')
-      }
-      return result.content
-    },
+    readFile: (filePath, checkoutDir) => readRemoteCheckoutFile(fsProvider, filePath, checkoutDir),
     removeDir: (dirPath) => fsProvider.deletePath(dirPath, true),
     joinPath: joinWorktreeRelativePath
   }
