@@ -205,6 +205,8 @@ export default function WorkflowsPage(): React.JSX.Element {
                       nodeId={controller.selectedNodeId}
                       runtimeEnvironmentId={runtimeEnvironmentId}
                       settings={controller.settings}
+                      onWorkflowFileChanged={() => void session.checkForExternalChange()}
+                      onReloadFromDisk={session.reloadFromDisk}
                     />
                   ) : (
                     <NodeInspector

@@ -17,6 +17,7 @@ import ConditionBuilder from './ConditionBuilder'
 import { InspectorField } from './InspectorField'
 import JoinNodeFields from './JoinNodeFields'
 import LoopNodeFields from './LoopNodeFields'
+import ReflectionNodeFields from './ReflectionNodeFields'
 import RouterNodeFields from './RouterNodeFields'
 
 export type NodeInspectorProps = {
@@ -191,6 +192,8 @@ export default function NodeInspector({
         <RouterNodeFields node={node} roles={definition.roles} onChange={onNodeChange} />
       ) : node.type === 'approval' ? (
         <ApprovalNodeFields node={node} onChange={onNodeChange} />
+      ) : node.type === 'reflection' ? (
+        <ReflectionNodeFields node={node} roles={definition.roles} onChange={onNodeChange} />
       ) : (
         <p className="text-xs text-muted-foreground">
           {translate(

@@ -16,6 +16,7 @@ import {
 } from '@xyflow/react'
 import type {
   AgentNode as AgentNodeDefinition,
+  ReflectionNode as ReflectionNodeDefinition,
   RouterNode as RouterNodeDefinition,
   Workflow
 } from '../../../../../shared/workflows/workflow-definition-types'
@@ -26,6 +27,7 @@ import ApprovalNode, { type WorkflowApprovalFlowNode } from './nodes/ApprovalNod
 import EndNode, { type WorkflowEndFlowNode } from './nodes/EndNode'
 import JoinNode, { type WorkflowJoinFlowNode } from './nodes/JoinNode'
 import LoopNode, { type WorkflowLoopFlowNode } from './nodes/LoopNode'
+import ReflectionNode, { type WorkflowReflectionFlowNode } from './nodes/ReflectionNode'
 import RouterNode, { type WorkflowRouterFlowNode } from './nodes/RouterNode'
 import StartNode, { type WorkflowStartFlowNode } from './nodes/StartNode'
 
@@ -37,6 +39,7 @@ type WorkflowFlowNode =
   | WorkflowJoinFlowNode
   | WorkflowRouterFlowNode
   | WorkflowApprovalFlowNode
+  | WorkflowReflectionFlowNode
 
 const NODE_TYPES: NodeTypes = {
   agent: AgentNode,
@@ -45,7 +48,8 @@ const NODE_TYPES: NodeTypes = {
   loop: LoopNode,
   join: JoinNode,
   router: RouterNode,
-  approval: ApprovalNode
+  approval: ApprovalNode,
+  reflection: ReflectionNode
 }
 
 export type WorkflowCanvasNodeStatuses = Readonly<Record<string, WorkflowAttemptState>>
@@ -79,7 +83,7 @@ export type WorkflowCanvasProps = {
 
 function resolveAgentLabel(
   definition: Workflow,
-  node: AgentNodeDefinition | RouterNodeDefinition
+  node: AgentNodeDefinition | RouterNodeDefinition | ReflectionNodeDefinition
 ): string | undefined {
   const role = node.roleId ? definition.roles[node.roleId] : undefined
   return node.overrides?.agent ?? role?.agent
@@ -232,8 +236,21 @@ function toFlowNodes(
         ...nesting,
         data: { definitionNode: node, attemptState }
       })
+    } else if (node.type === 'reflection') {
+      flowNodes.push({
+        id: node.id,
+        type: 'reflection',
+        position,
+        selected,
+        ...nesting,
+        data: {
+          definitionNode: node,
+          agentLabel: resolveAgentLabel(definition, node),
+          attemptState,
+          workspaceLabel: nodeWorkspaces?.[node.id]
+        }
+      })
     }
-    // Reflection node component lands in a later unit (T120).
   }
   return flowNodes
 }

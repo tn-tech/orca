@@ -17384,6 +17384,10 @@
           "ApprovalNode": {
             "timeout": "Timeout: {{minutes}}m",
             "default": "(default)"
+          },
+          "ReflectionNode": {
+            "noAgent": "No agent selected",
+            "workspace": "Workspace: {{name}}"
           }
         },
         "run-view": {
@@ -17468,6 +17472,31 @@
             "send": "Send",
             "interruptNow": "Interrupt now",
             "methodNotSupported": "Sending a follow-up isn't available on this host yet."
+          },
+          "RoleProposalPanel": {
+            "stateProposed": "Proposed",
+            "stateAccepted": "Accepted",
+            "stateExported": "Exported",
+            "stateRejected": "Rejected",
+            "fieldSystemPrompt": "System prompt",
+            "fieldSkills": "Skills",
+            "exportNotImported": "Only a role imported from a repository can be exported.",
+            "fileConflict": "\"{{role}}\" changed on disk since this run. Reload the workflow to see the current version before deciding.",
+            "reload": "Reload workflow",
+            "notAllowlisted": "The role's source is not on the project allowlist. Add it to workflows.allowedSources in {{path}}.",
+            "methodNotSupported": "This isn't available on this host yet.",
+            "exported": "Exported to {{path}}.",
+            "accept": "Accept",
+            "export": "Export",
+            "heading": "Role proposals",
+            "notAllowlistedNoPath": "The role's source is not on the project allowlist."
+          },
+          "workflow-role-proposal-diff": {
+            "unchangedLineOne": "… 1 unchanged line …",
+            "unchangedLineMany": "… {{count}} unchanged lines …",
+            "skillSourcePlugin": "plugin: {{plugin}}",
+            "skillSourceRepositoryVersioned": "{{location}} @ {{version}}",
+            "skillLine": "{{name}} ({{source}})"
           }
         },
         "use-workflow-editor-session": {

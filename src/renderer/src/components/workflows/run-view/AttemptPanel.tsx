@@ -24,6 +24,7 @@ import FollowUpComposer from './FollowUpComposer'
 import JoinBranchOutcomes, { readJoinBranches } from './JoinBranchOutcomes'
 import QuestionCard from './QuestionCard'
 import { questionExpiryReason } from '../../../../../shared/workflows/workflow-question-expiry-reason'
+import RoleProposalPanel from './RoleProposalPanel'
 import RouterChoiceSummary, { readRouterChoice } from './RouterChoiceSummary'
 import {
   attemptsByIteration,
@@ -39,6 +40,12 @@ export type AttemptPanelProps = {
   /** The workflow feature's active runtime target (see `getActiveRuntimeTarget`); `null` is desktop. */
   runtimeEnvironmentId: string | null
   settings: RuntimeWorkflowSettings
+  /** Forwarded to `RoleProposalPanel` (US7): an Accept just wrote the workflow file, so the open
+   *  editor should re-check for an external change if it has this workflow open. */
+  onWorkflowFileChanged?: () => void
+  /** Forwarded to `RoleProposalPanel`: reloads the open editor from disk, offered on a proposal's
+   *  `workflow_file_conflict`. */
+  onReloadFromDisk?: () => void | Promise<void>
 }
 
 function LaunchSummary({
@@ -89,7 +96,9 @@ export default function AttemptPanel({
   snapshot,
   nodeId,
   runtimeEnvironmentId,
-  settings
+  settings,
+  onWorkflowFileChanged,
+  onReloadFromDisk
 }: AttemptPanelProps): React.JSX.Element | null {
   const node = definition.nodes.find((candidate) => candidate.id === nodeId)
   const attempt = latestNodeAttempt(snapshot.attempts, nodeId)
@@ -112,6 +121,12 @@ export default function AttemptPanel({
   )
   const joinBranches = node.type === 'join' ? readJoinBranches(attempt?.resultJson) : undefined
   const routerChoice = node.type === 'router' ? readRouterChoice(attempt?.resultJson) : undefined
+  // US7: proposals live on the run (`workflow.run.show`'s `proposals`), not the attempt's own
+  // `resultJson` — scoped to this attempt so a retried Reflection only shows its own proposals.
+  const reflectionProposals =
+    node.type === 'reflection' && attempt
+      ? (snapshot.proposals ?? []).filter((candidate) => candidate.attemptId === attempt.id)
+      : undefined
 
   if (!attempt) {
     return (
@@ -256,6 +271,15 @@ export default function AttemptPanel({
         <JoinBranchOutcomes branches={joinBranches} />
       ) : routerChoice ? (
         <RouterChoiceSummary result={routerChoice} />
+      ) : reflectionProposals && reflectionProposals.length > 0 ? (
+        <RoleProposalPanel
+          runId={snapshot.id}
+          proposals={reflectionProposals}
+          roles={snapshot.workflowSnapshot.roles}
+          settings={settings}
+          onWorkflowFileChanged={onWorkflowFileChanged}
+          onReloadFromDisk={onReloadFromDisk}
+        />
       ) : attempt.resultJson !== undefined ? (
         <InspectorField
           label={translate('auto.components.workflows.run-view.AttemptPanel.result', 'Result')}

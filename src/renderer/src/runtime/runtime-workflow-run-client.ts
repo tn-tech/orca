@@ -6,6 +6,7 @@ import type { OrchestrationWorkerReadResult } from '../../../shared/orchestratio
 import type { WorkflowRunState } from '../../../shared/workflows/workflow-node-states'
 import type {
   NodeAttemptView,
+  RoleProposalView,
   RunEventView,
   RunMessageView,
   RunQuestionView,
@@ -19,12 +20,14 @@ import {
   type RuntimeWorkflowSettings
 } from './runtime-workflow-rpc'
 
-/** `workflow.run.show` result: the run row plus its attempts/questions/messages and event tail. */
+/** `workflow.run.show` result: the run row plus its attempts/questions/messages and event tail.
+ *  `proposals` (US7, T118) is optional — an older host predating Reflection proposals omits it. */
 export type WorkflowRunSnapshotView = RunSnapshot & {
   attempts: NodeAttemptView[]
   questions: RunQuestionView[]
   messages: RunMessageView[]
   events: RunEventView[]
+  proposals?: RoleProposalView[]
 }
 
 export type WorkflowRunStartResult = { runId: string }

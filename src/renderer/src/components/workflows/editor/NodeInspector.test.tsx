@@ -10,6 +10,7 @@ import type {
   ApprovalNode,
   JoinNode,
   LoopNode,
+  ReflectionNode,
   Role,
   RouterNode,
   StartNode,
@@ -87,6 +88,16 @@ function routerNode(patch: Partial<RouterNode> = {}): RouterNode {
     title: 'Router',
     prompt: 'Decide.',
     choices: ['bugfix', 'feature'],
+    ...patch
+  }
+}
+
+function reflectionNode(patch: Partial<ReflectionNode> = {}): ReflectionNode {
+  return {
+    id: 'reflect',
+    type: 'reflection',
+    title: 'Reflect',
+    prompt: 'Review the run and propose role improvements.',
     ...patch
   }
 }
@@ -261,6 +272,26 @@ describe('NodeInspector', () => {
     expect(screen.getByRole('combobox', { name: 'Model' })).toBeInTheDocument()
     expect(screen.getByDisplayValue('bugfix')).toBeInTheDocument()
     expect(screen.getByDisplayValue('feature')).toBeInTheDocument()
+  })
+
+  it('renders ReflectionNodeFields for a selected reflection node (US7)', () => {
+    render(
+      <NodeInspector
+        definition={workflow({ nodes: [startNode(), reflectionNode()] })}
+        selectedNodeId="reflect"
+        onNodeChange={vi.fn()}
+        onEdgeConditionChange={vi.fn()}
+        onSetRole={vi.fn()}
+        onRemoveRole={vi.fn()}
+      />
+    )
+    expect(screen.getByRole('combobox', { name: 'Model' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Prompt')).toHaveValue(
+      'Review the run and propose role improvements.'
+    )
+    expect(
+      screen.queryByText('Detailed settings for this node type land in a later unit.')
+    ).not.toBeInTheDocument()
   })
 
   it('renders ApprovalNodeFields for a selected approval node', () => {
