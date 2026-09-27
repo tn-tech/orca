@@ -1,0 +1,40 @@
+// Renderer-side decode of a `trust` question's optionsJson (data-model.md §workflow_run_questions:
+// `{ choices, trust: { source, host, skills, agents } }`). Mirrors the shape produced by
+// `workflow-source-trust.ts`'s `trustQuestionSubject`, which lives under src/main/runtime and
+// can't be imported from the renderer.
+import type { JsonValue } from '../../../../../shared/workflows/workflow-condition-schema'
+import type { RunQuestionView } from '../../../../../shared/workflows/workflow-run-types'
+
+export type TrustQuestionSubject = {
+  source: string
+  host: string
+  skills: string[]
+  agents: string[]
+}
+
+function stringArray(value: JsonValue | undefined): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : []
+}
+
+/** The source/host/skills/agents a `trust` question asks about; `undefined` for any other
+ *  question kind or a payload that doesn't match the documented shape. */
+export function trustQuestionSubject(question: RunQuestionView): TrustQuestionSubject | undefined {
+  if (question.kind !== 'trust') {
+    return undefined
+  }
+  const options = question.optionsJson
+  if (!options || typeof options !== 'object' || Array.isArray(options)) {
+    return undefined
+  }
+  const subject = options.trust
+  if (!subject || typeof subject !== 'object' || Array.isArray(subject)) {
+    return undefined
+  }
+  const { source, host, skills, agents } = subject
+  if (typeof source !== 'string' || typeof host !== 'string') {
+    return undefined
+  }
+  return { source, host, skills: stringArray(skills), agents: stringArray(agents) }
+}

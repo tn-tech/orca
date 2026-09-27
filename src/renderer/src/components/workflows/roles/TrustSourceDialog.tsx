@@ -25,6 +25,9 @@ export type TrustSourceDialogProps = {
   skills: readonly string[]
   /** Agents whose runs would use this source once trusted. */
   agents: readonly string[]
+  /** The execution host this decision is scoped to (`local`, `ssh:<id>`, `wsl:<distro>`);
+   *  omitted defaults to `local` (the editor's own trust-preview flow, always local). */
+  host?: string
   onOpenChange: (open: boolean) => void
   onDecided?: (decision: TrustSourceDecision) => void
 }
@@ -38,6 +41,7 @@ export default function TrustSourceDialog({
   source,
   skills,
   agents,
+  host,
   onOpenChange,
   onDecided
 }: TrustSourceDialogProps): React.JSX.Element {
@@ -48,7 +52,11 @@ export default function TrustSourceDialog({
     setSubmitting(decision)
     setError(undefined)
     try {
-      await workflowTrustDecide(settings, { source, decision })
+      await workflowTrustDecide(settings, {
+        source,
+        decision,
+        ...(host && host !== 'local' ? { host } : {})
+      })
       onDecided?.(decision)
       onOpenChange(false)
     } catch (err) {
@@ -82,6 +90,14 @@ export default function TrustSourceDialog({
             </p>
             <p className="break-all font-mono text-xs">{source}</p>
           </div>
+          {host && host !== 'local' ? (
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">
+                {translate('auto.components.workflows.roles.TrustSourceDialog.hostLabel', 'Host')}
+              </p>
+              <p className="break-all font-mono text-xs">{host}</p>
+            </div>
+          ) : null}
           <div className="space-y-1">
             <p className="text-xs font-medium text-muted-foreground">
               {translate(

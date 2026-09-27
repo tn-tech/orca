@@ -9,7 +9,10 @@ import {
   workflowsChangedWindowDetail
 } from '@/lib/workflows-changed-window-event'
 import type { JsonValue, LoopNode } from '../../../../../shared/workflows/workflow-definition-types'
-import type { NodeAttemptView } from '../../../../../shared/workflows/workflow-run-types'
+import type {
+  NodeAttemptView,
+  RunEventView
+} from '../../../../../shared/workflows/workflow-run-types'
 import type { WorkflowAttemptState } from '../../../../../shared/workflows/workflow-node-states'
 
 export type WorkflowRunSnapshotState = {
@@ -219,6 +222,35 @@ export function nodeAttemptIterations(
     }
   }
   return iterations
+}
+
+function stringArray(value: JsonValue | undefined): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : []
+}
+
+export type AttemptProvisioningRecord = { installed: string[]; promptFallback: string[] }
+
+/** The `skills_provisioned` event `workflow-brief-attempt-dispatch.ts` records for `attemptId`
+ *  (US4 AS3/AS4, T100): skills installed for the run, and any that fell back to the prompt
+ *  instead of a workspace location (FR-020). `undefined` when provisioning installed nothing
+ *  worth reporting, or hasn't recorded an event yet. */
+export function provisioningRecordFor(
+  events: readonly RunEventView[],
+  attemptId: string
+): AttemptProvisioningRecord | undefined {
+  const event = events.find(
+    (candidate) => candidate.attemptId === attemptId && candidate.kind === 'skills_provisioned'
+  )
+  const payload = event?.payloadJson
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return undefined
+  }
+  return {
+    installed: stringArray(payload.installed),
+    promptFallback: stringArray(payload.promptFallback)
+  }
 }
 
 /** One `workspaceWorktreeId` per node with a latest attempt that recorded one (FR-035, "the run

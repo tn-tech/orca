@@ -6,7 +6,10 @@ import { focusRuntimeOrchestrationTask } from '@/components/terminal-pane/termin
 import { Button } from '@/components/ui/button'
 import { translate } from '@/i18n/i18n'
 import { cn } from '@/lib/utils'
-import type { WorkflowRunSnapshotView } from '@/runtime/runtime-workflow-client'
+import type {
+  RuntimeWorkflowSettings,
+  WorkflowRunSnapshotView
+} from '@/runtime/runtime-workflow-client'
 import { useAppStore } from '@/store'
 import { useWorktreeById } from '@/store/selectors'
 import type { Workflow } from '../../../../../shared/workflows/workflow-definition-types'
@@ -18,11 +21,13 @@ import type {
 import { workflowNodeStatusDotClassName } from '../editor/nodes/workflow-node-run-status-style'
 import { InspectorField } from '../editor/InspectorField'
 import JoinBranchOutcomes, { readJoinBranches } from './JoinBranchOutcomes'
+import QuestionCard from './QuestionCard'
 import RouterChoiceSummary, { readRouterChoice } from './RouterChoiceSummary'
 import {
   attemptsByIteration,
   latestNodeAttempt,
-  loopActiveIteration
+  loopActiveIteration,
+  provisioningRecordFor
 } from './use-workflow-run-snapshot'
 
 export type AttemptPanelProps = {
@@ -31,6 +36,13 @@ export type AttemptPanelProps = {
   nodeId: string
   /** The workflow feature's active runtime target (see `getActiveRuntimeTarget`); `null` is desktop. */
   runtimeEnvironmentId: string | null
+  settings: RuntimeWorkflowSettings
+}
+
+/** A cancelled attempt (including a Join settled `join_skipped`) isn't a failure (review note):
+ *  only `failed` gets the destructive treatment. */
+function attemptReasonClassName(state: WorkflowAttemptState): string {
+  return state === 'failed' ? 'text-destructive' : 'text-muted-foreground'
 }
 
 /** FR-032's exact vocabulary; every `WorkflowAttemptState` gets a case. */
@@ -129,7 +141,9 @@ function IterationRow({ attempt }: { attempt: NodeAttemptView }): React.JSX.Elem
         </pre>
       ) : null}
       {attempt.failureReason ? (
-        <p className="mt-1.5 text-[11px] text-destructive">{attempt.failureReason}</p>
+        <p className={cn('mt-1.5 text-[11px]', attemptReasonClassName(attempt.state))}>
+          {attempt.failureReason}
+        </p>
       ) : null}
     </li>
   )
@@ -156,7 +170,8 @@ export default function AttemptPanel({
   definition,
   snapshot,
   nodeId,
-  runtimeEnvironmentId
+  runtimeEnvironmentId,
+  settings
 }: AttemptPanelProps): React.JSX.Element | null {
   const node = definition.nodes.find((candidate) => candidate.id === nodeId)
   const attempt = latestNodeAttempt(snapshot.attempts, nodeId)
@@ -194,6 +209,11 @@ export default function AttemptPanel({
     )
   }
 
+  const pendingQuestions = snapshot.questions.filter(
+    (question) => question.attemptId === attempt.id && question.state === 'pending'
+  )
+  const provisioning = provisioningRecordFor(snapshot.events, attempt.id)
+
   const handleOpenTranscript = (): void => {
     if (!attempt.taskId) {
       return
@@ -228,6 +248,45 @@ export default function AttemptPanel({
         <AttemptStateBadge state={attempt.state} />
       </div>
 
+      {pendingQuestions.length > 0 ? (
+        <div className="space-y-2">
+          {pendingQuestions.map((question) => (
+            <QuestionCard key={question.id} question={question} settings={settings} />
+          ))}
+        </div>
+      ) : null}
+
+      {provisioning &&
+      (provisioning.installed.length > 0 || provisioning.promptFallback.length > 0) ? (
+        <InspectorField
+          label={translate(
+            'auto.components.workflows.run-view.AttemptPanel.provisioning',
+            'Provisioning'
+          )}
+        >
+          <div className="space-y-1.5 text-xs">
+            {provisioning.installed.length > 0 ? (
+              <p>
+                {translate(
+                  'auto.components.workflows.run-view.AttemptPanel.provisioningInstalled',
+                  'Installed: {{skills}}',
+                  { skills: provisioning.installed.join(', ') }
+                )}
+              </p>
+            ) : null}
+            {provisioning.promptFallback.length > 0 ? (
+              <p className="text-muted-foreground">
+                {translate(
+                  'auto.components.workflows.run-view.AttemptPanel.provisioningPromptFallback',
+                  'Included in the prompt instead (no workspace location): {{skills}}',
+                  { skills: provisioning.promptFallback.join(', ') }
+                )}
+              </p>
+            ) : null}
+          </div>
+        </InspectorField>
+      ) : null}
+
       {iterations.length > 1 ? (
         <InspectorField
           label={translate(
@@ -261,7 +320,9 @@ export default function AttemptPanel({
       </div>
 
       {attempt.failureReason ? (
-        <p className="text-xs text-destructive">{attempt.failureReason}</p>
+        <p className={cn('text-xs', attemptReasonClassName(attempt.state))}>
+          {attempt.failureReason}
+        </p>
       ) : null}
 
       {joinBranches ? (

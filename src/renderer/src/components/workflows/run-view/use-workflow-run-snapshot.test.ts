@@ -3,7 +3,10 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { emitWorkflowsChangedWindowEvent } from '@/lib/workflows-changed-window-event'
 import type { LoopNode, Node } from '../../../../../shared/workflows/workflow-definition-types'
-import type { NodeAttemptView } from '../../../../../shared/workflows/workflow-run-types'
+import type {
+  NodeAttemptView,
+  RunEventView
+} from '../../../../../shared/workflows/workflow-run-types'
 
 const { workflowRunShowMock } = vi.hoisted(() => ({ workflowRunShowMock: vi.fn() }))
 
@@ -18,6 +21,7 @@ import {
   nodeAttemptIterations,
   nodeAttemptStatuses,
   nodeAttemptWorkspaces,
+  provisioningRecordFor,
   useWorkflowRunSnapshot
 } from './use-workflow-run-snapshot'
 
@@ -376,5 +380,44 @@ describe('nodeAttemptIterations', () => {
 
   it('returns an empty map for a null snapshot', () => {
     expect(nodeAttemptIterations(null)).toEqual({})
+  })
+})
+
+describe('provisioningRecordFor', () => {
+  function skillsProvisionedEvent(patch: Partial<RunEventView> = {}): RunEventView {
+    return {
+      id: `event-${Math.random()}`,
+      runId: 'run-1',
+      attemptId: 'attempt-1',
+      kind: 'skills_provisioned',
+      payloadJson: { nodeId: 'implement', installed: ['speckit-plan'], promptFallback: [] },
+      createdAt: '2026-01-01T00:00:00.000Z',
+      ...patch
+    }
+  }
+
+  it('reads installed skills and prompt-fallback skills for the given attempt (US4 AS3)', () => {
+    const events = [
+      skillsProvisionedEvent({
+        payloadJson: { nodeId: 'implement', installed: ['speckit-plan'], promptFallback: ['docs'] }
+      })
+    ]
+
+    expect(provisioningRecordFor(events, 'attempt-1')).toEqual({
+      installed: ['speckit-plan'],
+      promptFallback: ['docs']
+    })
+  })
+
+  it('returns undefined when no event was recorded for this attempt', () => {
+    expect(
+      provisioningRecordFor([skillsProvisionedEvent({ attemptId: 'other' })], 'attempt-1')
+    ).toBeUndefined()
+  })
+
+  it('returns undefined for a malformed payload', () => {
+    expect(
+      provisioningRecordFor([skillsProvisionedEvent({ payloadJson: null })], 'attempt-1')
+    ).toBeUndefined()
   })
 })

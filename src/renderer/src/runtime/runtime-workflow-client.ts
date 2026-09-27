@@ -255,7 +255,10 @@ export function workflowRunEvents(
 
 export type WorkflowTrustDecision = {
   source: string
+  /** `local`, `ssh:<connectionId>`, or `wsl:<distro>` (data-model.md §3 `workflow_source_trust`). */
+  host: string
   decision: 'trusted' | 'refused'
+  decidedBy: string
   decidedAt: string
 }
 export type WorkflowTrustListResult = { decisions: WorkflowTrustDecision[] }
@@ -270,7 +273,7 @@ export function workflowTrustList(
 
 export function workflowTrustDecide(
   settings: RuntimeWorkflowSettings,
-  params: { source: string; decision?: 'trusted' | 'refused' }
+  params: { source: string; decision?: 'trusted' | 'refused'; host?: string }
 ): Promise<Record<string, never>> {
   return callWorkflowRpc(settings, 'workflow.trust.decide', params)
 }

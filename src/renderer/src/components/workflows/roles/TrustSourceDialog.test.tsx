@@ -94,6 +94,57 @@ describe('TrustSourceDialog (FR-018a)', () => {
     expect(onDecided).toHaveBeenCalledWith('refused')
   })
 
+  it('passes the given host through to the decision, and shows it when not local', async () => {
+    workflowTrustDecideMock.mockResolvedValue({})
+    render(
+      <TrustSourceDialog
+        open
+        settings={settings}
+        source="speckit"
+        skills={[]}
+        agents={[]}
+        host="ssh:devbox"
+        onOpenChange={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('ssh:devbox')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Trust' }))
+
+    await waitFor(() =>
+      expect(workflowTrustDecideMock).toHaveBeenCalledWith(settings, {
+        source: 'speckit',
+        decision: 'trusted',
+        host: 'ssh:devbox'
+      })
+    )
+  })
+
+  it('omits the host from the decision, and the host row, for a local (or unspecified) host', async () => {
+    workflowTrustDecideMock.mockResolvedValue({})
+    render(
+      <TrustSourceDialog
+        open
+        settings={settings}
+        source="speckit"
+        skills={[]}
+        agents={[]}
+        host="local"
+        onOpenChange={vi.fn()}
+      />
+    )
+
+    expect(screen.queryByText('local')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Trust' }))
+
+    await waitFor(() =>
+      expect(workflowTrustDecideMock).toHaveBeenCalledWith(settings, {
+        source: 'speckit',
+        decision: 'trusted'
+      })
+    )
+  })
+
   it('shows the RPC error inline and does not close on failure', async () => {
     workflowTrustDecideMock.mockRejectedValue(new Error('runtime_unavailable'))
     const onOpenChange = vi.fn()

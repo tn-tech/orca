@@ -39,6 +39,8 @@ vi.mock('sonner', () => ({ toast: { error: toastErrorMock } }))
 
 import AttemptPanel from './AttemptPanel'
 
+const settings = { activeRuntimeEnvironmentId: null }
+
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
@@ -150,7 +152,9 @@ function attempt(patch: Partial<NodeAttemptView> = {}): NodeAttemptView {
 
 function snapshot(
   attempts: NodeAttemptView[],
-  workflowSnapshot: Workflow = workflow()
+  workflowSnapshot: Workflow = workflow(),
+  events: WorkflowRunSnapshotView['events'] = [],
+  questions: WorkflowRunSnapshotView['questions'] = []
 ): WorkflowRunSnapshotView {
   return {
     id: 'run-1',
@@ -164,9 +168,9 @@ function snapshot(
     concurrencyLimit: 4,
     createdAt: '2026-01-01T00:00:00.000Z',
     attempts,
-    questions: [],
+    questions,
     messages: [],
-    events: []
+    events
   }
 }
 
@@ -178,6 +182,7 @@ describe('AttemptPanel', () => {
         snapshot={snapshot([])}
         nodeId="implement"
         runtimeEnvironmentId={null}
+        settings={settings}
       />
     )
 
@@ -198,6 +203,7 @@ describe('AttemptPanel', () => {
         ])}
         nodeId="implement"
         runtimeEnvironmentId={null}
+        settings={settings}
       />
     )
 
@@ -215,11 +221,119 @@ describe('AttemptPanel', () => {
         snapshot={snapshot([attempt({ state: 'failed', failureReason: 'agent crashed' })])}
         nodeId="implement"
         runtimeEnvironmentId={null}
+        settings={settings}
       />
     )
 
     expect(screen.getByText('Failed')).toBeInTheDocument()
     expect(screen.getByText('agent crashed')).toBeInTheDocument()
+    expect(screen.getByText('agent crashed')).toHaveClass('text-destructive')
+  })
+
+  it('does not label a cancelled attempt as a failure (review note)', () => {
+    render(
+      <AttemptPanel
+        definition={workflow()}
+        snapshot={snapshot([attempt({ state: 'cancelled', failureReason: 'stopped by user' })])}
+        nodeId="implement"
+        runtimeEnvironmentId={null}
+        settings={settings}
+      />
+    )
+
+    expect(screen.getByText('Cancelled')).toBeInTheDocument()
+    const reason = screen.getByText('stopped by user')
+    expect(reason).not.toHaveClass('text-destructive')
+  })
+
+  it('does not label a Join settled join_skipped as a failure (review note)', () => {
+    render(
+      <AttemptPanel
+        definition={workflowWithJoin()}
+        snapshot={snapshot(
+          [
+            attempt({
+              nodeId: 'join',
+              nodeType: 'join',
+              state: 'cancelled',
+              failureReason: 'join_skipped'
+            })
+          ],
+          workflowWithJoin()
+        )}
+        nodeId="join"
+        runtimeEnvironmentId={null}
+        settings={settings}
+      />
+    )
+
+    expect(screen.getByText('Cancelled')).toBeInTheDocument()
+    expect(screen.getByText('join_skipped')).not.toHaveClass('text-destructive')
+  })
+
+  it('shows installed skills and prompt-fallback skills from the recorded provisioning event (US4 AS3)', () => {
+    render(
+      <AttemptPanel
+        definition={workflow()}
+        snapshot={snapshot([attempt({ state: 'running' })], workflow(), [
+          {
+            id: 'event-1',
+            runId: 'run-1',
+            attemptId: 'attempt-1',
+            kind: 'skills_provisioned',
+            payloadJson: {
+              nodeId: 'implement',
+              installed: ['speckit-plan'],
+              promptFallback: ['legacy-skill']
+            },
+            createdAt: '2026-01-01T00:00:00.000Z'
+          }
+        ])}
+        nodeId="implement"
+        runtimeEnvironmentId={null}
+        settings={settings}
+      />
+    )
+
+    expect(screen.getByText('Provisioning')).toBeInTheDocument()
+    expect(screen.getByText('Installed: speckit-plan')).toBeInTheDocument()
+    expect(
+      screen.getByText('Included in the prompt instead (no workspace location): legacy-skill')
+    ).toBeInTheDocument()
+  })
+
+  it('surfaces a pending trust question for the current attempt via QuestionCard (FR-018a)', () => {
+    render(
+      <AttemptPanel
+        definition={workflow()}
+        snapshot={snapshot(
+          [attempt({ state: 'waiting' })],
+          workflow(),
+          [],
+          [
+            {
+              id: 'question-1',
+              runId: 'run-1',
+              attemptId: 'attempt-1',
+              kind: 'trust',
+              prompt: 'Trust plugin source "speckit" on host local?',
+              optionsJson: {
+                choices: [],
+                trust: { source: 'speckit', host: 'local', skills: ['speckit-plan'], agents: [] }
+              },
+              state: 'pending'
+            }
+          ]
+        )}
+        nodeId="implement"
+        runtimeEnvironmentId={null}
+        settings={settings}
+      />
+    )
+
+    expect(screen.getByText('Waiting')).toBeInTheDocument()
+    expect(screen.getByText('Trust required')).toBeInTheDocument()
+    expect(screen.getByText(/Trust plugin source/)).toBeInTheDocument()
   })
 
   it('lists artifacts and flags a missing one', () => {
@@ -236,6 +350,7 @@ describe('AttemptPanel', () => {
         ])}
         nodeId="implement"
         runtimeEnvironmentId={null}
+        settings={settings}
       />
     )
 
@@ -250,6 +365,7 @@ describe('AttemptPanel', () => {
         snapshot={snapshot([attempt()])}
         nodeId="implement"
         runtimeEnvironmentId="env-1"
+        settings={settings}
       />
     )
     expect(screen.getByRole('button', { name: 'Open transcript' })).toBeDisabled()
@@ -260,6 +376,7 @@ describe('AttemptPanel', () => {
         snapshot={snapshot([attempt({ taskId: 'task_abc' })])}
         nodeId="implement"
         runtimeEnvironmentId="env-1"
+        settings={settings}
       />
     )
     const button = screen.getByRole('button', { name: 'Open transcript' })
@@ -275,6 +392,7 @@ describe('AttemptPanel', () => {
         snapshot={snapshot([attempt({ workspaceWorktreeId: 'wt-1' })])}
         nodeId="implement"
         runtimeEnvironmentId={null}
+        settings={settings}
       />
     )
     expect(screen.getByRole('button', { name: 'Open workspace diff' })).toBeDisabled()
@@ -286,6 +404,7 @@ describe('AttemptPanel', () => {
         snapshot={snapshot([attempt({ workspaceWorktreeId: 'wt-1' })])}
         nodeId="implement"
         runtimeEnvironmentId={null}
+        settings={settings}
       />
     )
     const button = screen.getByRole('button', { name: 'Open workspace diff' })
@@ -301,6 +420,7 @@ describe('AttemptPanel', () => {
         snapshot={snapshot([attempt({ iteration: 2 })])}
         nodeId="implement"
         runtimeEnvironmentId={null}
+        settings={settings}
       />
     )
 
@@ -314,6 +434,7 @@ describe('AttemptPanel', () => {
         snapshot={snapshot([attempt({ iteration: 0 })])}
         nodeId="implement"
         runtimeEnvironmentId={null}
+        settings={settings}
       />
     )
 
@@ -341,6 +462,7 @@ describe('AttemptPanel', () => {
         ])}
         nodeId="implement"
         runtimeEnvironmentId={null}
+        settings={settings}
       />
     )
 
@@ -402,6 +524,7 @@ describe('AttemptPanel', () => {
           snapshot={snapshot(bodyAttempts(), workflowWithLoop())}
           nodeId="loop"
           runtimeEnvironmentId={null}
+          settings={settings}
         />
       )
 
@@ -416,6 +539,7 @@ describe('AttemptPanel', () => {
           snapshot={snapshot(bodyAttempts(), workflowWithLoop())}
           nodeId="loop"
           runtimeEnvironmentId={null}
+          settings={settings}
         />
       )
 
@@ -447,6 +571,7 @@ describe('AttemptPanel', () => {
           )}
           nodeId="join"
           runtimeEnvironmentId={null}
+          settings={settings}
         />
       )
 
@@ -476,6 +601,7 @@ describe('AttemptPanel', () => {
           )}
           nodeId="join"
           runtimeEnvironmentId={null}
+          settings={settings}
         />
       )
 
@@ -502,6 +628,7 @@ describe('AttemptPanel', () => {
           )}
           nodeId="router"
           runtimeEnvironmentId={null}
+          settings={settings}
         />
       )
 
@@ -529,6 +656,7 @@ describe('AttemptPanel', () => {
           )}
           nodeId="router"
           runtimeEnvironmentId={null}
+          settings={settings}
         />
       )
 

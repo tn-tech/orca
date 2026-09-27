@@ -1,5 +1,5 @@
-import React from 'react'
-import { Loader2 } from 'lucide-react'
+import React, { useState } from 'react'
+import { Loader2, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { translate } from '@/i18n/i18n'
 import { useAppStore } from '@/store'
@@ -8,6 +8,7 @@ import ValidationProblemsPanel from './editor/ValidationProblemsPanel'
 import WorkflowEditorProblemNotice from './editor/WorkflowEditorProblemNotice'
 import { hasBlockingWorkflowProblems } from './editor/workflow-validation-merge'
 import FileConflictDialog from './editor/FileConflictDialog'
+import TrustedSourcesDialog from './TrustedSourcesDialog'
 import WorkflowListPane from './WorkflowListPane'
 import AttemptPanel from './run-view/AttemptPanel'
 import RunCanvasOverlay from './run-view/RunCanvasOverlay'
@@ -22,6 +23,7 @@ export default function WorkflowsPage(): React.JSX.Element {
   const runtimeEnvironmentId = useAppStore(
     (s) => s.settings?.activeRuntimeEnvironmentId?.trim() || null
   )
+  const [trustedSourcesOpen, setTrustedSourcesOpen] = useState(false)
 
   const openName = session.openRef?.name
   // While a run exists, a selected node shows its attempt instead of its editable settings
@@ -38,6 +40,17 @@ export default function WorkflowsPage(): React.JSX.Element {
         <h1 className="truncate text-base font-semibold leading-8">
           {openName ?? translate('auto.components.workflows.WorkflowsPage.title', 'Workflows')}
         </h1>
+        {controller.settings?.experimentalWorkflows === true ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => setTrustedSourcesOpen(true)}
+          >
+            <ShieldCheck />
+            {translate('auto.components.workflows.WorkflowsPage.trustedSources', 'Trusted sources')}
+          </Button>
+        ) : null}
         {session.status === 'ready' ? (
           <Button
             type="button"
@@ -141,6 +154,7 @@ export default function WorkflowsPage(): React.JSX.Element {
                       snapshot={run.snapshot}
                       nodeId={controller.selectedNodeId}
                       runtimeEnvironmentId={runtimeEnvironmentId}
+                      settings={controller.settings}
                     />
                   ) : (
                     <NodeInspector
@@ -198,6 +212,11 @@ export default function WorkflowsPage(): React.JSX.Element {
         onReload={() => void session.reloadFromDisk()}
         onOverwrite={() => void session.overwriteOnDisk()}
         onCancel={session.dismissConflict}
+      />
+      <TrustedSourcesDialog
+        open={trustedSourcesOpen}
+        settings={controller.settings}
+        onOpenChange={setTrustedSourcesOpen}
       />
     </main>
   )

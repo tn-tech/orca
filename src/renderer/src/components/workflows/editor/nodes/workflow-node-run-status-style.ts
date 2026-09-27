@@ -18,9 +18,11 @@ export function workflowNodeStatusDotClassName(
     case 'completed':
       return 'bg-status-success'
     case 'failed':
-    case 'cancelled':
       return 'bg-destructive'
+    // Cancelled (including a Join settled `join_skipped`) is not a failure (review note) — same
+    // neutral treatment as `skipped`.
     case 'skipped':
+    case 'cancelled':
       return 'bg-muted-foreground'
     case 'pending':
     case undefined:

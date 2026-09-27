@@ -17187,7 +17187,8 @@
           "save": "Save",
           "placeholder": "Select a workflow, or create a new one.",
           "loading": "Loading…",
-          "saveBlocked": "Fix the problems below before saving."
+          "saveBlocked": "Fix the problems below before saving.",
+          "trustedSources": "Trusted sources"
         },
         "editor": {
           "AgentNodeArtifactsField": {
@@ -17369,7 +17370,10 @@
             "openTranscript": "Open transcript",
             "openWorkspaceDiff": "Open workspace diff",
             "iterationLabel": "Iteration {{n}}",
-            "iterations": "Iterations"
+            "iterations": "Iterations",
+            "provisioning": "Provisioning",
+            "provisioningInstalled": "Installed: {{skills}}",
+            "provisioningPromptFallback": "Included in the prompt instead (no workspace location): {{skills}}"
           },
           "RunToolbar": {
             "stateQueued": "Queued",
@@ -17395,6 +17399,11 @@
           "RouterChoiceSummary": {
             "choiceLabel": "Choice",
             "reasonLabel": "Reason"
+          },
+          "QuestionCard": {
+            "trustTitle": "Trust required",
+            "review": "Review",
+            "pendingTitle": "Waiting on you"
           }
         },
         "use-workflow-editor-session": {
@@ -17470,7 +17479,8 @@
             "agentsLabel": "Agents affected",
             "noAgents": "None yet.",
             "refuse": "Refuse",
-            "trust": "Trust"
+            "trust": "Trust",
+            "hostLabel": "Host"
           },
           "RolesPanel": {
             "newRoleErrorRequired": "Enter an id and a name.",
@@ -17489,6 +17499,15 @@
             "create": "Create",
             "importRoleIdTaken": "A role named \"{{id}}\" already exists. Open it and use Re-import instead."
           }
+        },
+        "TrustedSourcesDialog": {
+          "trusted": "Trusted {{when}}",
+          "refused": "Refused {{when}}",
+          "revoke": "Revoke",
+          "title": "Trusted skill sources",
+          "description": "One decision per plugin source and host (FR-018a). Revoking asks again the next time a run needs it there.",
+          "loading": "Loading…",
+          "empty": "No trust decisions yet."
         }
       }
     },
