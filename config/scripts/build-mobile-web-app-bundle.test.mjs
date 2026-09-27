@@ -453,7 +453,7 @@ describe('the Phase C budget', () => {
       join(projectDir, 'config', 'scripts', 'verify-mobile-web-app-bundle.mjs'),
       'utf8'
     )
-    // The bound reads like a per-route escape hatch and is not one: of the fourteen routes in the
+    // The bound reads like a per-route escape hatch and is not one: of the fifteen routes in the
     // tree, session breaks it outright at 3.32 MiB and five more spend most of it, so the hatch is
     // one route away from unusable rather than free. What keeps it survivable is that expo-router
     // wants a synchronous export off layout nodes only, so the note has to name the layout and the
@@ -500,7 +500,7 @@ describe('the Phase C budget', () => {
 
   it('bounds every prefix the sweep measured, and the spread it reports', () => {
     // An upper envelope of the measurement, not a fit: the count rises with the prefix, so the
-    // number above its top row is above all fifteen.
+    // number above its top row is above all sixteen.
     for (const [key, measured] of MOBILE_WEB_APP_BUNDLE_SCRIPT_SWEEP) {
       expect(
         mobileWebAppBundleMaxChunks(MOBILE_WEB_APP_BUNDLE_SCRIPT_SWEEP.length),
@@ -541,7 +541,7 @@ describe('the Phase C budget', () => {
     const CHUNKED_ALONG_THE_ENGINE = 172
     expect(WITH_ONE_ARTIFACT).toBeLessThanOrEqual(mobileWebAppBundleMaxChunks(ROUTES))
     expect(CHUNKED_ALONG_THE_ENGINE).toBeGreaterThan(mobileWebAppBundleMaxChunks(ROUTES))
-    // And the assets that came with it: 215 against the 113 this head's envelope allows, of the
+    // And the assets that came with it: 215 against the 118 this head's envelope allows, of the
     // 256 the shell will load.
     expect(mobileWebAppBundleMaxAssets(ROUTES, 42)).toBeLessThan(CHUNKED_ALONG_THE_ENGINE + 42 + 1)
   })
@@ -584,13 +584,13 @@ describe('the Phase C budget', () => {
   it('fails the build when the derived ceiling passes what the phone will accept', async () => {
     // The shell hands back null for a manifest over its own ceiling, so a derived ceiling above
     // that ships a green build no device can open. At the 42 images the tree carries, the envelope
-    // plus 42 plus the document crosses 256 at 31 routes, which Phase C reaches. The crossing came
+    // plus 42 plus the document crosses 256 at 32 routes, which Phase C reaches. The crossing came
     // in from 50 with the envelope: it grants the worst swept route to each one past the sweep,
     // where `4r + 16` granted four, so re-measuring a tree whose routes share more moves it out.
     expect(await readMobileWebBundleMaxAssets()).toBe(MOBILE_WEB_BUNDLE_MAX_ASSETS)
-    expect(assertAssetCeilingFitsShell(30, 42, MOBILE_WEB_BUNDLE_MAX_ASSETS)).toBe(248)
-    expect(() => assertAssetCeilingFitsShell(31, 42, MOBILE_WEB_BUNDLE_MAX_ASSETS)).toThrow(
-      /257 .*256/
+    expect(assertAssetCeilingFitsShell(31, 42, MOBILE_WEB_BUNDLE_MAX_ASSETS)).toBe(253)
+    expect(() => assertAssetCeilingFitsShell(32, 42, MOBILE_WEB_BUNDLE_MAX_ASSETS)).toThrow(
+      /262 .*256/
     )
   })
 })

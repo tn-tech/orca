@@ -50,7 +50,8 @@ export const MOBILE_WEB_APP_BUNDLE_MAX_TOTAL_BYTES = 9 * 1024 * 1024
  * A chunk is emitted per distinct set of importers, not per route, so a route's marginal cost is
  * what it fails to share rather than what it weighs. Re-measured on this head by building
  * `routes.slice(0, n)` for every n, which is what the fence below is derived from rather than
- * fitted to. The spread it shows is 1 to 9: `pr` and `web` add one script each, `review` adds nine.
+ * fitted to. The spread it shows is 1 to 9: `pr` and `web` add one script each, `review` and
+ * `session` nine, `workflows` four.
  *
  * This table is the fence's only input, so a route added to the tree stales it and the pins beside
  * the fence fail until it is re-measured. That is the point: the bound is re-derived, never bumped.
@@ -66,11 +67,12 @@ export const MOBILE_WEB_APP_BUNDLE_SCRIPT_SWEEP = [
   ['./h/[hostId]/index.tsx', 33],
   ['./h/[hostId]/pr/[worktreeId].tsx', 34],
   ['./h/[hostId]/review/[worktreeId].tsx', 43],
-  ['./h/[hostId]/session/[worktreeId].tsx', 51],
-  ['./h/[hostId]/source-control/[worktreeId].tsx', 56],
-  ['./h/[hostId]/tasks.tsx', 63],
-  ['./h/[hostId]/web.tsx', 64],
-  ['./h/_layout.tsx', 66]
+  ['./h/[hostId]/session/[worktreeId].tsx', 52],
+  ['./h/[hostId]/source-control/[worktreeId].tsx', 57],
+  ['./h/[hostId]/tasks.tsx', 64],
+  ['./h/[hostId]/web.tsx', 65],
+  ['./h/[hostId]/workflows.tsx', 69],
+  ['./h/_layout.tsx', 71]
 ]
 
 const sweptScripts = MOBILE_WEB_APP_BUNDLE_SCRIPT_SWEEP.map(([, scripts]) => scripts)
