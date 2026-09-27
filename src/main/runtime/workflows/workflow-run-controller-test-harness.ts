@@ -219,6 +219,20 @@ export function createControllerHarness(workspaceRoot: string) {
     })
   }
 
+  /** What the worker's CLI does at a checkpoint: `orchestration check`, which claims a delivery. */
+  function checkMail(handle: string): Promise<RpcResponse> {
+    const capability = /--dispatch-capability (\S+)/.exec(prompts.get(handle) ?? '')?.[1]
+    requestSequence += 1
+    return dispatcher.dispatch({
+      id: `check_${requestSequence}`,
+      authToken: 'test-token',
+      method: 'orchestration.check',
+      params: { terminal: handle },
+      orchestrationContractVersion: ORCHESTRATION_CONTRACT_VERSION,
+      ...(capability ? { orchestrationCapability: capability } : {})
+    })
+  }
+
   return {
     db,
     runtime,
@@ -230,7 +244,8 @@ export function createControllerHarness(workspaceRoot: string) {
     createController,
     writeResult,
     sendWorkerDone,
-    askQuestion
+    askQuestion,
+    checkMail
   }
 }
 

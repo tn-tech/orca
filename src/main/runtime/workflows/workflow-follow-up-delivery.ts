@@ -5,12 +5,18 @@
 // Queued mode goes through `orchestration.send` to `dispatch:<id>` under a request id derived from
 // the message, so a send replayed after a crash returns the first receipt instead of a second
 // mail. The mail's id is recorded in a `follow_up_sent` event and the row stays `queued` until the
-// agent's next checkpoint reads it (`orchestration check` marks it read): only then `delivered`.
+// agent's next checkpoint receives it: only then `delivered`.
 // "Interrupt now" writes into the worker's session (workflow-follow-up-interrupt.ts) and is
 // `delivered` once the host accepted it. Anything unconfirmed (an unreachable SSH host, an
 // unsettled send) stays queued and is retried with backoff; a message whose attempt ended first
 // fails. Terminal interrupts are at-least-once: a crash after the paste but before the row is
 // updated pastes it again on the next pass.
+//
+// "Received" (delivered) means the agent's checkpoint got the mail: a worker `check` claimed it in
+// a mailbox delivery, or the delivery was acknowledged (read). When the attempt or run ends, a
+// final receipt check settles sent mail as delivered or failed `not_received`. Failure reasons on
+// `follow_up_undeliverable`: `not_received`, `not_submitted`, `agent_session_send_rejected`,
+// `attempt_<state>`, `attempt_missing`, `run_ended`.
 import type {
   NodeAttemptView,
   RunMessageView,
@@ -165,7 +171,7 @@ async function sendQueued(
     { messageId: message.id, orchestrationMessageId: mailId },
     { attemptId: message.attemptId, reason: 'message' }
   )
-  return { kind: 'retry', why: 'unread' }
+  return { kind: 'pending' }
 }
 
 function settleUndeliverable(
@@ -183,10 +189,13 @@ function settleUndeliverable(
   }
 }
 
-function markDelivered(ctx: FollowUpDeliveryContext, message: RunMessageView): void {
-  ctx.backoff.clear(message.id)
-  if (ctx.db.deliverWorkflowMessage(message.id)?.state === 'delivered') {
-    ctx.recorder.event(
+function markDelivered(
+  db: OrchestrationDb,
+  recorder: WorkflowRunRecorder,
+  message: RunMessageView
+): void {
+  if (db.deliverWorkflowMessage(message.id)?.state === 'delivered') {
+    recorder.event(
       'follow_up_delivered',
       { messageId: message.id, mode: message.mode, sender: message.sender },
       { attemptId: message.attemptId, reason: 'message' }
@@ -216,6 +225,40 @@ async function attemptDelivery(
   }
 }
 
+/** The agent received the mail at a checkpoint: a `check` claimed it, or it was acknowledged. */
+function mailReceived(
+  db: OrchestrationDb,
+  dispatchId: string | undefined,
+  mailId: string
+): boolean {
+  return (
+    db.getMessageById(mailId)?.read === 1 ||
+    (dispatchId !== undefined &&
+      db.wasMessageClaimedByMailboxDelivery(`dispatch:${dispatchId}`, mailId))
+  )
+}
+
+/**
+ * The attempt or run ended, so nothing more can be sent: a final receipt check settles sent mail
+ * as delivered or `not_received`; a message never sent fails with `unsentReason`.
+ */
+function settleAtEnd(
+  db: OrchestrationDb,
+  recorder: WorkflowRunRecorder,
+  message: RunMessageView,
+  attempt: NodeAttemptView | undefined,
+  mailId: string | undefined,
+  unsentReason: string
+): void {
+  if (mailId === undefined) {
+    settleUndeliverable(db, recorder, message, unsentReason)
+  } else if (mailReceived(db, attempt?.dispatchId, mailId)) {
+    markDelivered(db, recorder, message)
+  } else {
+    settleUndeliverable(db, recorder, message, 'not_received')
+  }
+}
+
 /** Works every due queued follow-up of the run; only the run's controller calls it. */
 export async function deliverFollowUps(
   ctx: FollowUpDeliveryContext,
@@ -229,19 +272,21 @@ export async function deliverFollowUps(
   const failures = lastFailures(db, recorder.runId)
   for (const message of pending) {
     const attempt = attempts.get(message.attemptId)
+    const mailId = sent.get(message.id)
     if (!attempt || ENDED_ATTEMPT_STATES.has(attempt.state)) {
-      settleUndeliverable(db, recorder, message, `attempt_${attempt?.state ?? 'missing'}`)
+      const unsent = `attempt_${attempt?.state ?? 'missing'}`
+      settleAtEnd(db, recorder, message, attempt, mailId, unsent)
       continue
     }
     const { dispatchId } = attempt
     if (!dispatchId || !backoff.isDue(message.id, now)) {
       continue
     }
-    const mailId = sent.get(message.id)
     if (mailId !== undefined) {
-      // Sent already: never again. Delivered once the agent's checkpoint read it.
-      if (db.getMessageById(mailId)?.read === 1) {
-        markDelivered(ctx, message)
+      // Sent already: never again. Delivered once a checkpoint received it; else poll again.
+      if (mailReceived(db, dispatchId, mailId)) {
+        backoff.clear(message.id)
+        markDelivered(db, recorder, message)
       } else {
         backoff.recordFailure(message.id, now)
       }
@@ -249,13 +294,14 @@ export async function deliverFollowUps(
     }
     const outcome = await attemptDelivery(ctx, dispatchId, message)
     if (outcome.kind === 'delivered') {
-      markDelivered(ctx, message)
+      backoff.clear(message.id)
+      markDelivered(db, recorder, message)
     } else if (outcome.kind === 'rejected') {
       backoff.clear(message.id)
-      settleUndeliverable(db, recorder, message, 'agent_session_send_rejected')
+      settleUndeliverable(db, recorder, message, outcome.reason)
     } else {
       backoff.recordFailure(message.id, now)
-      if (outcome.why !== 'unread' && failures.get(message.id) !== outcome.why) {
+      if (outcome.kind === 'retry' && failures.get(message.id) !== outcome.why) {
         recorder.event(
           FAILED_EVENT,
           { messageId: message.id, mode: message.mode, error: outcome.why },
@@ -266,9 +312,12 @@ export async function deliverFollowUps(
   }
 }
 
-/** A finished run delivers nothing more; its still-queued follow-ups can never arrive. */
+/** A finished run sends nothing more; each still-queued follow-up gets its final receipt check. */
 export function failUndeliveredFollowUps(db: OrchestrationDb, recorder: WorkflowRunRecorder): void {
+  const attempts = new Map(db.listWorkflowAttempts(recorder.runId).map((a) => [a.id, a]))
+  const sent = sentMail(db, recorder.runId)
   for (const message of db.listPendingWorkflowMessages(recorder.runId)) {
-    settleUndeliverable(db, recorder, message, 'run_ended')
+    const attempt = attempts.get(message.attemptId)
+    settleAtEnd(db, recorder, message, attempt, sent.get(message.id), 'run_ended')
   }
 }

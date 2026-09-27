@@ -16,6 +16,7 @@ import {
   resolveFollowUpWorker,
   type FollowUpDeliveryContext
 } from './workflow-follow-up-delivery'
+import type { TerminalPromptProgress } from './workflow-follow-up-interrupt'
 import {
   createWorkflowOrchestrationClient,
   createWorkflowWorkerInputClient,
@@ -45,7 +46,11 @@ export type WorkflowRunControllerRuntime = WorkflowRunChangeNotifier & {
     options?: { signal?: AbortSignal; exclusive?: boolean }
   ): Promise<MessageWaitResult>
   /** Bracketed paste of sanitised text, then Enter once it settled: "interrupt now" follow-ups. */
-  sendTerminalAgentPrompt(handle: string, prompt: string): Promise<{ accepted: boolean }>
+  sendTerminalAgentPrompt(
+    handle: string,
+    prompt: string,
+    progress: TerminalPromptProgress
+  ): Promise<{ accepted: boolean }>
 }
 
 export type WorkflowRunControllerDeps = {
@@ -159,8 +164,8 @@ export class WorkflowRunController {
         recorder: this.recorder,
         client,
         workerInput: createWorkflowWorkerInputClient(engine),
-        sendTerminalPrompt: (handle, prompt) =>
-          this.deps.runtime.sendTerminalAgentPrompt(handle, prompt),
+        sendTerminalPrompt: (handle, prompt, progress) =>
+          this.deps.runtime.sendTerminalAgentPrompt(handle, prompt, progress),
         resolveWorker: (dispatchId) => resolveFollowUpWorker(db, dispatchId),
         backoff: this.followUpBackoff
       }

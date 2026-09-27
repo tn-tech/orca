@@ -17,15 +17,24 @@ export type FollowUpWorker =
   | { kind: 'terminal'; handle: string }
   | { kind: 'structured'; sessionId: string; runtimeFence: number | null }
 
+/** Which bytes of a terminal prompt reached the PTY, reported as they are written. */
+export type TerminalPromptProgress = { onPasteWritten(): void; onSubmitWritten(): void }
+
 export type FollowUpInterruptPorts = {
   workerInput: WorkflowWorkerInputClient
-  sendTerminalPrompt(handle: string, prompt: string): Promise<{ accepted: boolean }>
+  sendTerminalPrompt(
+    handle: string,
+    prompt: string,
+    progress: TerminalPromptProgress
+  ): Promise<{ accepted: boolean }>
 }
 
+/** `pending`: in flight, not a failure. `rejected`: can never arrive, with the reason. */
 export type FollowUpOutcome =
   | { kind: 'delivered' }
+  | { kind: 'pending' }
   | { kind: 'retry'; why: string }
-  | { kind: 'rejected' }
+  | { kind: 'rejected'; reason: string }
 
 /** Terminal or structured, from the handle the dispatch was started with (as workerStop does). */
 export function resolveFollowUpWorker(
@@ -100,9 +109,49 @@ async function sendStructuredTurn(
   if (state === 'accepted') {
     return { kind: 'delivered' }
   }
+  if (state === 'pending') {
+    return { kind: 'pending' }
+  }
   return state === 'rejected'
-    ? { kind: 'rejected' }
+    ? { kind: 'rejected', reason: 'agent_session_send_rejected' }
     : { kind: 'retry', why: `agent_session_send_${String(state)}` }
+}
+
+/**
+ * Once bytes reached the PTY the prompt is never pasted again: paste and Enter written is
+ * delivered even if the agent's reaction went unobserved (stalled/blocked); a paste held back
+ * before its Enter sits in the composer, so it fails rather than duplicating. Only a prompt
+ * refused before any write is retried.
+ */
+async function sendTerminalPrompt(
+  ports: FollowUpInterruptPorts,
+  handle: string,
+  message: RunMessageView
+): Promise<FollowUpOutcome> {
+  const written = { paste: false, submit: false }
+  try {
+    const { accepted } = await ports.sendTerminalPrompt(handle, message.text, {
+      onPasteWritten: () => {
+        written.paste = true
+      },
+      onSubmitWritten: () => {
+        written.submit = true
+      }
+    })
+    if (accepted) {
+      return { kind: 'delivered' }
+    }
+  } catch (error) {
+    if (!written.paste && !written.submit) {
+      throw error
+    }
+  }
+  if (written.submit) {
+    return { kind: 'delivered' }
+  }
+  return written.paste
+    ? { kind: 'rejected', reason: 'not_submitted' }
+    : { kind: 'retry', why: 'terminal_input_not_accepted' }
 }
 
 export async function sendInterrupt(
@@ -113,6 +162,5 @@ export async function sendInterrupt(
   if (worker.kind === 'structured') {
     return sendStructuredTurn(ports, worker, message)
   }
-  const { accepted } = await ports.sendTerminalPrompt(worker.handle, message.text)
-  return accepted ? { kind: 'delivered' } : { kind: 'retry', why: 'terminal_input_not_accepted' }
+  return sendTerminalPrompt(ports, worker.handle, message)
 }

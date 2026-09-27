@@ -232,11 +232,8 @@ describe('structured interrupt follow-up through the real agentSession.send', ()
 
     const turns = live().calls.filter((call) => call.method === 'turn/start')
     expect(turns).toHaveLength(1)
-    expect(db.listWorkflowEventsOfKind(run.id, 'follow_up_delivery_failed')).toEqual([
-      expect.objectContaining({
-        payloadJson: expect.objectContaining({ error: 'agent_session_send_pending' })
-      })
-    ])
+    // A pending send is in flight, not failing.
+    expect(db.listWorkflowEventsOfKind(run.id, 'follow_up_delivery_failed')).toEqual([])
     const clientMessageId = turns[0]?.params?.clientUserMessageId
     live().handlers.onNotification?.('turn/started', { turn: { id: TURN } })
     live().handlers.onNotification?.('item/completed', {

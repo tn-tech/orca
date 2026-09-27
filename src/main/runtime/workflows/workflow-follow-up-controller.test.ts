@@ -68,8 +68,12 @@ describe('follow-up delivery through the run controller', () => {
     return followUps
   }
 
-  it('shows a queued follow-up delivered only once the agent read it from its mailbox', async () => {
-    const { run, controller, finished, attempt, dispatchId } = await running()
+  function sent(runId: string): boolean {
+    return h.db.listWorkflowEventsOfKind(runId, 'follow_up_sent').length > 0
+  }
+
+  it('shows a queued follow-up delivered once a worker check received it, even if it then reports done', async () => {
+    const { run, finished, attempt, dispatchId, handle } = await running()
 
     const message = queueFollowUp(h.db, h.runtime, {
       runId: run.id,
@@ -78,18 +82,42 @@ describe('follow-up delivery through the run controller', () => {
       mode: 'queued',
       sender: 'mobile_7'
     })
-    await waitUntil(() => h.db.getAllMessages(`dispatch:${dispatchId}`).length === 1)
-    const [mail] = h.db.getAllMessages(`dispatch:${dispatchId}`)
-    expect(mail).toMatchObject({ body: 'Also update the changelog.', type: 'status', read: 0 })
+    await waitUntil(() => sent(run.id))
+    expect(h.db.getAllMessages(`dispatch:${dispatchId}`)).toEqual([
+      expect.objectContaining({ body: 'Also update the changelog.', type: 'status', read: 0 })
+    ])
     await vi.advanceTimersByTimeAsync(5_000)
     expect(state(run.id, message.id)).toBe('queued')
 
-    // What the agent's `orchestration check` does at its next checkpoint.
-    h.db.markAsRead([mail!.id])
+    // The agent's next checkpoint claims the mail (no --ack), then it finishes.
+    const checked = await h.checkMail(handle)
+    expect(JSON.stringify(checked)).toContain('Also update the changelog.')
+    await d.report(run.id, 'implement')
     await waitUntil(() => state(run.id, message.id) === 'delivered')
 
-    expect(h.db.getAllMessages(`dispatch:${dispatchId}`)).toHaveLength(1)
-    controller.stop()
+    await d.report(run.id, 'review', { verdict: 'ok' })
+    await finished
+    expect(state(run.id, message.id)).toBe('delivered')
+  })
+
+  it('fails a sent follow-up as not_received when the worker finishes without checking', async () => {
+    const { run, finished, attempt } = await running()
+    const message = queueFollowUp(h.db, h.runtime, {
+      runId: run.id,
+      attemptId: attempt.id,
+      text: 'Also update the changelog.',
+      mode: 'queued',
+      sender: 'user'
+    })
+    await waitUntil(() => sent(run.id))
+
+    await d.report(run.id, 'implement')
+    await waitUntil(() => state(run.id, message.id) === 'failed')
+
+    expect(h.db.listWorkflowEventsOfKind(run.id, 'follow_up_undeliverable')).toEqual([
+      expect.objectContaining({ payloadJson: expect.objectContaining({ reason: 'not_received' }) })
+    ])
+    await d.report(run.id, 'review', { verdict: 'ok' })
     await finished
   })
 

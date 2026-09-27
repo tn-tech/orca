@@ -318,7 +318,8 @@ describe('workflow follow-up delivery', () => {
 
       expect(sendTerminalPrompt).toHaveBeenCalledWith(
         'term_worker_1',
-        'Stop and use postgres instead.'
+        'Stop and use postgres instead.',
+        expect.objectContaining({ onPasteWritten: expect.any(Function) })
       )
       expect(orchestrationCall).not.toHaveBeenCalled()
       expect(workerInputCall).not.toHaveBeenCalled()
@@ -343,6 +344,51 @@ describe('workflow follow-up delivery', () => {
       expect(events('follow_up_delivery_failed')[0]?.payloadJson).toMatchObject({
         error: 'terminal_not_writable'
       })
+    })
+
+    it('counts a prompt whose paste and Enter were written as delivered, even if unobserved', async () => {
+      const queued = queue('interrupt')
+      sendTerminalPrompt.mockImplementationOnce(async (_handle, _prompt, progress) => {
+        progress.onPasteWritten()
+        progress.onSubmitWritten()
+        throw new Error('agent_prompt_stalled')
+      })
+
+      await deliverFollowUps(ctx(), NOW)
+      await deliverFollowUps(ctx(), LATER)
+
+      expect(sendTerminalPrompt).toHaveBeenCalledTimes(1)
+      expect(message(queued.id)?.state).toBe('delivered')
+      expect(events('follow_up_delivery_failed')).toEqual([])
+    })
+
+    it('fails, without pasting again, a prompt left in the composer without its Enter', async () => {
+      const queued = queue('interrupt')
+      sendTerminalPrompt.mockImplementationOnce(async (_handle, _prompt, progress) => {
+        progress.onPasteWritten()
+        throw new Error('agent_prompt_blocked')
+      })
+
+      await deliverFollowUps(ctx(), NOW)
+      await deliverFollowUps(ctx(), LATER)
+
+      expect(sendTerminalPrompt).toHaveBeenCalledTimes(1)
+      expect(message(queued.id)?.state).toBe('failed')
+      expect(events('follow_up_undeliverable')[0]?.payloadJson).toMatchObject({
+        reason: 'not_submitted'
+      })
+    })
+
+    it('retries a prompt refused before anything was written', async () => {
+      const queued = queue('interrupt')
+      sendTerminalPrompt.mockRejectedValueOnce(new Error('agent_prompt_blocked'))
+
+      await deliverFollowUps(ctx(), NOW)
+      expect(message(queued.id)?.state).toBe('queued')
+      await deliverFollowUps(ctx(), LATER)
+
+      expect(sendTerminalPrompt).toHaveBeenCalledTimes(2)
+      expect(message(queued.id)?.state).toBe('delivered')
     })
 
     it('sends a user turn to a structured worker with agentSession.send', async () => {
@@ -391,6 +437,7 @@ describe('workflow follow-up delivery', () => {
 
       await deliverFollowUps(ctx(), NOW)
       expect(message(queued.id)?.state).toBe('queued')
+      expect(events('follow_up_delivery_failed')).toEqual([])
       await deliverFollowUps(ctx(), LATER)
 
       expect(message(queued.id)?.state).toBe('delivered')
@@ -435,13 +482,59 @@ describe('workflow follow-up delivery', () => {
     })
   })
 
-  it('fails every still-queued message when the run ends', () => {
-    const queued = queue('queued')
-    const interrupt = queue('interrupt')
+  describe('when the attempt or run ends', () => {
+    function reasons(): unknown[] {
+      return events('follow_up_undeliverable').map((event) =>
+        Reflect.get(Object(event.payloadJson), 'reason')
+      )
+    }
 
-    failUndeliveredFollowUps(db, recorder)
+    it('delivers a sent follow-up the agent had already read before its attempt ended', async () => {
+      const queued = queue('queued')
+      await deliverFollowUps(ctx(), NOW)
+      db.markAsRead([mailId])
+      recorder.transitionAttempt(attemptId, 'completed')
 
-    expect(message(queued.id)?.state).toBe('failed')
-    expect(message(interrupt.id)?.state).toBe('failed')
+      await deliverFollowUps(ctx(), NOW + 1)
+
+      expect(message(queued.id)?.state).toBe('delivered')
+    })
+
+    it('fails a sent follow-up the agent never received as not_received', async () => {
+      const queued = queue('queued')
+      await deliverFollowUps(ctx(), NOW)
+      recorder.transitionAttempt(attemptId, 'completed')
+
+      await deliverFollowUps(ctx(), NOW + 1)
+
+      expect(message(queued.id)?.state).toBe('failed')
+      expect(reasons()).toEqual(['not_received'])
+    })
+
+    it('settles every still-queued message at run end by its final receipt check', async () => {
+      const secondMail = db.insertMessage({
+        from: 'workflow-engine',
+        to: 'dispatch:dispatch_1',
+        subject: 'Follow-up',
+        body: 'second',
+        type: 'status'
+      }).id
+      orchestrationCall.mockImplementation(async (_method, params) => ({
+        message: { id: params.body === 'second' ? secondMail : mailId }
+      }))
+      const read = queue('queued')
+      const unread = queue('queued', 'second')
+      await deliverFollowUps(ctx(), NOW)
+      worker = undefined
+      const neverSent = queue('interrupt')
+      db.markAsRead([mailId])
+
+      failUndeliveredFollowUps(db, recorder)
+
+      expect(message(read.id)?.state).toBe('delivered')
+      expect(message(unread.id)?.state).toBe('failed')
+      expect(message(neverSent.id)?.state).toBe('failed')
+      expect(reasons().toSorted()).toEqual(['not_received', 'run_ended'])
+    })
   })
 })

@@ -208,4 +208,8 @@ export type RuntimeAgentPromptWriteOptions = RuntimeTerminalWriteOptions & {
   observationTimeoutMs?: number
   requestId?: string
   onInputAccepted?: (send: RuntimeTerminalSend) => void
+  /** Called right after the bracketed paste reached the PTY. */
+  onPasteWritten?: () => void
+  /** Called right after the submitting Enter reached the PTY (with the paste when joined). */
+  onSubmitWritten?: () => void
 }

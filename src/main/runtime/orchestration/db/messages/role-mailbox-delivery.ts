@@ -195,6 +195,23 @@ export function fenceUnacknowledgedMailboxDeliveries(
     .run(mailboxHandle)
 }
 
+/** Whether a consumer's `check` ever claimed this message in a delivery on `mailboxHandle`, in any
+ *  status: the mail reached the agent even if it never acknowledged the batch. */
+export function wasMessageClaimedByMailboxDelivery(
+  this: OrchestrationDb,
+  mailboxHandle: string,
+  messageId: string
+): boolean {
+  return Boolean(
+    this.db
+      .prepare(
+        `SELECT 1 FROM deliveries, json_each(deliveries.message_ids)
+         WHERE deliveries.mailbox_handle = ? AND json_each.value = ? LIMIT 1`
+      )
+      .get(mailboxHandle, messageId)
+  )
+}
+
 export type RoleMailboxDeliveryMethods = {
   getDeliveryRaw: typeof getDeliveryRaw
   getDeliveryMessages: typeof getDeliveryMessages
@@ -202,6 +219,7 @@ export type RoleMailboxDeliveryMethods = {
   acknowledgeMailboxDelivery: typeof acknowledgeMailboxDelivery
   hasOutstandingMailboxDelivery: typeof hasOutstandingMailboxDelivery
   fenceUnacknowledgedMailboxDeliveries: typeof fenceUnacknowledgedMailboxDeliveries
+  wasMessageClaimedByMailboxDelivery: typeof wasMessageClaimedByMailboxDelivery
 }
 
 export function attachRoleMailboxDelivery(ctor: { prototype: object }): void {
@@ -211,6 +229,7 @@ export function attachRoleMailboxDelivery(ctor: { prototype: object }): void {
     getOrCreateMailboxDelivery,
     acknowledgeMailboxDelivery,
     hasOutstandingMailboxDelivery,
-    fenceUnacknowledgedMailboxDeliveries
+    fenceUnacknowledgedMailboxDeliveries,
+    wasMessageClaimedByMailboxDelivery
   })
 }
