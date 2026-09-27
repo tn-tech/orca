@@ -28,6 +28,15 @@ export class AgentAnswerDeliveryBackoff {
     this.retries.delete(questionId)
   }
 
+  /** Drops every question no longer awaiting delivery, so a stale retry never re-arms a wake. */
+  retainOnly(questionIds: ReadonlySet<string>): void {
+    for (const questionId of this.retries.keys()) {
+      if (!questionIds.has(questionId)) {
+        this.retries.delete(questionId)
+      }
+    }
+  }
+
   nextRetryAt(): number | undefined {
     const times = [...this.retries.values()].map((retry) => retry.nextAt)
     return times.length > 0 ? Math.min(...times) : undefined
@@ -68,12 +77,20 @@ export async function deliverAgentAnswers(
   now: number
 ): Promise<boolean> {
   let changed = false
-  for (const { question, attempt } of latestAgentQuestions(ctx)) {
+  const answered = latestAgentQuestions(ctx).filter(
+    ({ question }) =>
+      question.state === 'answered' && question.answer !== undefined && question.questionMessageId
+  )
+  const pending = answered.filter(
+    ({ question }) => ctx.db.getQuestion(question.questionMessageId ?? '')?.status === 'pending'
+  )
+  backoff.retainOnly(new Set(pending.map(({ question }) => question.id)))
+  for (const { question, attempt } of answered) {
     const messageId = question.questionMessageId
-    if (question.state !== 'answered' || question.answer === undefined || !messageId) {
+    if (question.answer === undefined || !messageId) {
       continue
     }
-    if (ctx.db.getQuestion(messageId)?.status === 'pending') {
+    if (pending.some((entry) => entry.question.id === question.id)) {
       if (!backoff.isDue(question.id, now)) {
         continue
       }

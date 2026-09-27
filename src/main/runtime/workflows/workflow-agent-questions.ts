@@ -105,7 +105,7 @@ export function raiseAgentQuestion(
           reason: 'ask_wait_ended'
         }
       )
-      if (attempt.state === 'waiting') {
+      if (attempt.state === 'waiting' || attempt.state === 'unverifiable') {
         recorder.transitionAttempt(attempt.id, 'running', { reason: 'ask_wait_ended' })
       }
       question = undefined
@@ -204,8 +204,13 @@ export function answerAgentQuestion(
     })
   }
   const answered = db.answerWorkflowQuestion(questionId, answer, answeredBy)
-  if (answered?.state !== 'answered') {
-    throw notPending(`Agent question ${questionId} could not be answered.`, { runId, questionId })
+  // Why compare: a racing answer that won the write leaves the row answered, but not by us.
+  if (
+    answered?.state !== 'answered' ||
+    answered.answeredBy !== answeredBy ||
+    answered.answer !== answer
+  ) {
+    throw notPending(`Agent question ${questionId} was already answered.`, { runId, questionId })
   }
   new WorkflowRunRecorder(db, notifier, runId).event(
     'agent_question_answered',

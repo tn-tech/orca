@@ -362,6 +362,8 @@ describe('agent questions during a run', () => {
     await d.reached(run.id, 'work', 'running')
     first.stop()
     await firstDone
+    // Lost contact meanwhile; the ask itself proves the worker is alive.
+    h.db.transitionWorkflowAttempt(d.attempt(run.id, 'work')?.id ?? '', 'unverifiable')
     void h.askQuestion({ handle: workerHandle(run.id, 'work'), question: 'Still there?' })
     await waitUntil(() => h.db.getInbox(10).some((message) => message.type === 'question'))
     vi.setSystemTime(Date.now() + ORCHESTRATION_ASK_DEFAULT_TIMEOUT_MS)
@@ -410,6 +412,67 @@ describe('agent questions during a run', () => {
     expect(events(run.id, 'agent_question_delivered')).toHaveLength(1)
     await d.report(run.id, 'work')
     await expect(finished).resolves.toBe('completed')
+  })
+
+  it('stops retrying a refused delivery once its attempt has ended', async () => {
+    const replies: string[] = []
+    const dispatch = h.dispatcher.dispatchAsWorkflowEngine.bind(h.dispatcher)
+    vi.spyOn(h.dispatcher, 'dispatchAsWorkflowEngine').mockImplementation(
+      async (request, ...rest) => {
+        if (request.method !== 'orchestration.reply') {
+          return dispatch(request, ...rest)
+        }
+        replies.push(request.id)
+        return {
+          id: request.id,
+          ok: false,
+          error: { code: 'legacy_read_only', message: 'refused' },
+          _meta: { runtimeId: 'test' }
+        }
+      }
+    )
+    const { run, controller, finished } = start()
+    await ask(run.id)
+    answer(run.id)
+    await waitUntil(() => events(run.id, 'agent_question_delivery_failed').length > 0)
+    // The worker finishes on its own, ending the attempt the answer was for.
+    const attempt = d.attempt(run.id, 'work')
+    await h.writeResult(attempt?.resultPath ?? '', { summary: 'decided alone' })
+    await h.sendWorkerDone({
+      handle: workerHandle(run.id, 'work'),
+      taskId: attempt?.taskId ?? '',
+      dispatchId: attempt?.dispatchId ?? '',
+      reportPath: attempt?.resultPath ?? ''
+    })
+    await d.reached(run.id, 'work', 'completed')
+
+    const passes = vi.spyOn(h.db, 'getOrCreateRunDelivery')
+    const repliesBefore = replies.length
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(replies.length).toBe(repliesBefore)
+    expect(passes.mock.calls.length).toBeLessThan(5)
+    controller.stop()
+    await finished
+  })
+
+  it('tells a racing second answerer that the question was already answered', async () => {
+    const { run, controller, finished } = start()
+    await ask(run.id)
+    const questionId = agentQuestion(run.id)?.id ?? ''
+    const write = h.db.answerWorkflowQuestion.bind(h.db)
+    // Another client's answer lands between this call's read and its write.
+    vi.spyOn(h.db, 'answerWorkflowQuestion').mockImplementationOnce((id, text, by) => {
+      write(id, 'sqlite', 'user_2')
+      return write(id, text, by)
+    })
+    expect(() => answer(run.id, 'postgres', 'user_1')).toThrow(
+      expect.objectContaining({ code: 'workflow_question_not_pending' })
+    )
+    expect(agentQuestion(run.id)).toMatchObject({ answer: 'sqlite', answeredBy: 'user_2' })
+    expect(events(run.id, 'agent_question_answered')).toHaveLength(0)
+    expect(questionId).not.toBe('')
+    controller.stop()
+    await finished
   })
 
   it('closes the questions of an attempt a failed Join cancels', async () => {
