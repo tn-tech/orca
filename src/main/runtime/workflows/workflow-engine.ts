@@ -5,13 +5,13 @@ import type { Repo } from '../../../shared/repo-types'
 import type { GraphValidationContext } from '../../../shared/workflows/workflow-graph-validation'
 import { validateWorkflowGraph } from '../../../shared/workflows/workflow-graph-validation'
 import type { Workflow } from '../../../shared/workflows/workflow-definition-types'
-import type { WorkflowProblem } from '../../../shared/workflows/workflow-problem'
 import type { RunSnapshot, WorkflowRunSource } from '../../../shared/workflows/workflow-run-types'
 import { getRepoMainWorktreeId } from '../../../shared/worktree/id'
 import { onSshFilesystemProviderRegistered } from '../../providers/ssh-filesystem-dispatch'
 import type { OrchestrationDb } from '../orchestration/db'
 import { generateId } from '../orchestration/db/generated-id'
 import { resolveConcurrencyLimit } from './workflow-concurrency'
+import { WorkflowGraphValidationError } from './workflow-graph-validation-error'
 import type { WorkflowRunWorkspaceAccess } from './workflow-run-node-launch'
 import type { WorkflowOrchestrationDispatcher } from './workflow-orchestration-client'
 import { WorkflowRunController, type WorkflowRunControllerRuntime } from './workflow-run-controller'
@@ -33,14 +33,6 @@ const DEFAULT_HOST_UNREACHABLE_RETRY_DELAY_MS = 15_000
 // Why bounded: an unbounded stop() risks the host process never exiting if a controller's current
 // tick never settles; a run left mid-flight is simply rehydrated on the next boot.
 const DEFAULT_SHUTDOWN_DEADLINE_MS = 5_000
-
-/** Thrown by `startRun` when graph validation reports any error-severity problem. */
-export class WorkflowGraphValidationError extends Error {
-  constructor(readonly problems: WorkflowProblem[]) {
-    super('workflow_graph_invalid')
-    this.name = 'WorkflowGraphValidationError'
-  }
-}
 
 /** Turns a run's persisted `worktreeId` back into a path; the minimal slice `worktree.show` needs. */
 export type WorkflowEngineWorktreeLookup = {
@@ -72,7 +64,7 @@ export type WorkflowEngineDeps = {
 export type WorkflowStartRunInput = {
   workflow: Workflow
   workflowSource: WorkflowRunSource
-  /** Content hash of the workflow file's raw text — the file store's `revision` (data-model.md §3). */
+  /** The file store's content-hash `revision` (data-model.md §3), or a non-file run's marker. */
   workflowVersion: string
   objective: string
   repo: Repo
@@ -84,6 +76,8 @@ export type WorkflowStartRunInput = {
   skipSetup?: boolean
   validation: Pick<GraphValidationContext, 'agentSupportsModel' | 'isKnownAgent'>
 }
+
+export { WorkflowGraphValidationError }
 
 type ActiveRun = { controller: WorkflowRunController; done: Promise<void> }
 type PendingRetry = { timer: ReturnType<typeof setTimeout>; unsubscribe: () => void }
@@ -165,6 +159,11 @@ export class WorkflowEngine {
   /** The DB is the source of truth for run state; the registry only tracks live controllers. */
   getSnapshot(workflowRunId: string): RunSnapshot | undefined {
     return this.deps.db.getWorkflowRun(workflowRunId)
+  }
+
+  /** Settles once this run has no live controller, e.g. after an out-of-band cancel woke it. */
+  whenControllerSettled(workflowRunId: string): Promise<void> {
+    return this.active.get(workflowRunId)?.done ?? Promise.resolve()
   }
 
   /** Restarts a controller for every run a prior process left non-terminal (FR-039). */

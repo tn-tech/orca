@@ -67,7 +67,13 @@ class OrcaRuntimeService extends OrcaRuntimeWithResolveWaiter {
         dispatcher,
         getRepo: (repoId) => this.store?.getRepo(repoId)
       })
-      this.workflowDraftTeardown = { db, runtime: this, dispatcher }
+      const engine = this.workflowEngine
+      this.workflowDraftTeardown = {
+        db,
+        runtime: this,
+        dispatcher,
+        whenControllerSettled: (runId) => engine.whenControllerSettled(runId)
+      }
       // Before rehydrate: its synchronous part cancels orphaned planner runs so none relaunches.
       void sweepDraftRunsAtBoot(this.workflowDraftTeardown).catch((error: unknown) => {
         console.warn('[workflow-draft] boot sweep failed:', error)

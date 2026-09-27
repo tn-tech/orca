@@ -67,6 +67,9 @@ function receiptField(receipt: unknown, key: string): JsonValue {
   return typeof value === 'string' ? value : null
 }
 
+/** All a worker stop needs from a launch context; the draft teardown builds one without a controller. */
+export type WorkerStopContext = Pick<WorkflowNodeLaunchContext, 'recorder' | 'client'>
+
 /** Why a worker is being stopped: events are `<eventPrefix>_failed|_unconfirmed`. */
 export type WorkerStopCause = {
   eventPrefix: string
@@ -79,7 +82,7 @@ export type WorkerStopCause = {
  * Anything else is recorded as `<eventPrefix>_failed|_unconfirmed`, never as an exit.
  */
 export async function requestWorkerStop(
-  ctx: WorkflowNodeLaunchContext,
+  ctx: WorkerStopContext,
   attempt: NodeAttemptView,
   cause: WorkerStopCause
 ): Promise<boolean> {
@@ -115,7 +118,7 @@ export async function requestWorkerStop(
 
 /** Cancels the attempt once its worker is proven stopped; otherwise leaves it as is. */
 export async function stopWorkerAttempt(
-  ctx: WorkflowNodeLaunchContext,
+  ctx: WorkerStopContext,
   attempt: NodeAttemptView,
   cause: WorkerStopCause
 ): Promise<void> {

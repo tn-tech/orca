@@ -16,7 +16,7 @@ import {
   buildDraftPlannerWorkflow,
   DRAFT_DEADLINE_MS,
   DRAFT_PLANNER_NODE_ID,
-  DRAFT_PLANNER_WORKFLOW_NAME
+  DRAFT_PLANNER_RUN_VERSION
 } from './workflow-draft-planner'
 import { plannerRawDraft } from './workflow-draft-result'
 import type { DraftRunTeardownReason } from './workflow-draft-teardown'
@@ -115,7 +115,7 @@ async function startPlannerRun(deps: WorkflowDraftDeps, input: WorkflowDraftInpu
     return await deps.engine.startRun({
       workflow: buildDraftPlannerWorkflow(input.repo, input.plannerAgent),
       workflowSource: 'project',
-      workflowVersion: DRAFT_PLANNER_WORKFLOW_NAME,
+      workflowVersion: DRAFT_PLANNER_RUN_VERSION,
       objective: input.objective,
       repo: input.repo,
       ...(input.startedByClient ? { startedByClient: input.startedByClient } : {}),

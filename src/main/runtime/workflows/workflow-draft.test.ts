@@ -4,15 +4,19 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 import type { Repo } from '../../../shared/repo-types'
 import type { RpcDispatcher } from '../rpc/dispatcher'
-import { listWorkflows, writeWorkflow } from './workflow-file-store'
-import { tearDownDraftRun } from './workflow-draft-teardown'
+import { listWorkflows } from './workflow-file-store'
+import { sweepDraftRunsAtBoot, tearDownDraftRun } from './workflow-draft-teardown'
+import { confirmWorkerStops, holdNextWorkerTerminal } from './workflow-draft-test-fixtures'
+import { TUI_AGENT_AUTO_PICK_ORDER } from '../../../shared/tui-agent-selection'
 import { storeFor } from './workflow-placement-test-fixtures'
 import { WorkflowEngine } from './workflow-engine'
 import { draftWorkflow, type WorkflowDraftResult } from './workflow-draft'
 import {
   DRAFT_DEADLINE_MS,
   DRAFT_PLANNER_NODE_ID,
+  DRAFT_PLANNER_RUN_VERSION,
   DRAFT_PLANNER_WORKFLOW_NAME,
+  isDraftPlannerRun,
   workflowDefinitionResultContract,
   resolveWorkflowPlannerAgent
 } from './workflow-draft-planner'
@@ -132,7 +136,12 @@ describe('draftWorkflow', () => {
           db: h.db,
           tearDown: (runId, reason) =>
             tearDownDraftRun(
-              { db: h.db, runtime: h.runtime, dispatcher: h.dispatcher },
+              {
+                db: h.db,
+                runtime: h.runtime,
+                dispatcher: h.dispatcher,
+                whenControllerSettled: (id) => engine.whenControllerSettled(id)
+              },
               runId,
               reason
             ),
@@ -339,15 +348,15 @@ describe('draftWorkflow', () => {
     return run
   }
 
-  it('records the planner run under a name no project workflow can take', async () => {
+  it('marks the planner run with a version no workflow file can produce', async () => {
     const tracked = startDraft()
     await stubAgentReports(draftedDefinition())
     const result = await settled(tracked)
 
-    expect(h.db.getWorkflowRun(result.runId)?.workflowName).toBe(DRAFT_PLANNER_WORKFLOW_NAME)
-    await expect(
-      writeWorkflow(repo, 'project', DRAFT_PLANNER_WORKFLOW_NAME, 'version: 1', null)
-    ).rejects.toThrow('workflow_name_invalid')
+    const run = h.db.getWorkflowRun(result.runId)
+    expect(run?.workflowVersion).toBe(DRAFT_PLANNER_RUN_VERSION)
+    expect(run && isDraftPlannerRun(run)).toBe(true)
+    expect(run?.workflowName).toBe(DRAFT_PLANNER_WORKFLOW_NAME)
   })
 
   it('runs a git repo draft in a setup-free run workspace, then releases its worker and removes it', async () => {
@@ -396,8 +405,13 @@ describe('draftWorkflow', () => {
     expect(h.db.listWorkflowRuns().runs).toHaveLength(0)
   })
 
+  function tornDown(runId: string): boolean {
+    return h.db.listWorkflowEventsOfKind(runId, 'draft_run_torn_down').length > 0
+  }
+
   it('gives up before the planner question window closes, stopping the planner and removing its workspace', async () => {
     expect(DRAFT_DEADLINE_MS).toBeLessThan(600_000 + 300_000)
+    confirmWorkerStops(h)
     const tracked = startDraft({ timeoutMs: 2_000 })
     await waitUntil(() => plannerAttempt()?.state === 'running')
     const result = await settled(tracked)
@@ -412,9 +426,11 @@ describe('draftWorkflow', () => {
       expect.arrayContaining(['orchestration.workerStop', 'orchestration.workerRelease'])
     )
     expect(removeManagedWorktree).toHaveBeenCalledWith(`id:${RUN_WORKTREE_ID}`)
+    expect(tornDown(result.runId)).toBe(true)
   })
 
-  it('stops the planner and removes its workspace when the caller aborts', async () => {
+  it('cancels the planner and removes its workspace once an abort proves the worker stopped', async () => {
+    confirmWorkerStops(h)
     const abort = new AbortController()
     const tracked = startDraft({ signal: abort.signal })
     await waitUntil(() => plannerAttempt()?.state === 'running')
@@ -424,8 +440,52 @@ describe('draftWorkflow', () => {
     expect(tracked.error instanceof Error && tracked.error.message).toBe('request_aborted')
     expect(onlyRun().state).toBe('cancelled')
     expect(plannerAttempt()?.state).toBe('cancelled')
-    expect(workerMethods()).toContain('orchestration.workerStop')
+    expect(workerMethods()).toContain('orchestration.workerRelease')
     expect(removeManagedWorktree).toHaveBeenCalledWith(`id:${RUN_WORKTREE_ID}`)
+    expect(tornDown(onlyRun().id)).toBe(true)
+  })
+
+  it('leaves an unconfirmed stop retryable: attempt kept, workspace kept, run not torn down', async () => {
+    const abort = new AbortController()
+    const tracked = startDraft({ signal: abort.signal })
+    await waitUntil(() => plannerAttempt()?.state === 'running')
+    abort.abort()
+    await waitUntil(() => tracked.done)
+
+    const runId = onlyRun().id
+    expect(onlyRun().state).toBe('cancelled')
+    expect(plannerAttempt()?.state).toBe('running')
+    expect(h.db.listWorkflowEventsOfKind(runId, 'draft_worker_stop_unconfirmed')).toHaveLength(1)
+    expect(removeManagedWorktree).not.toHaveBeenCalled()
+    expect(tornDown(runId)).toBe(false)
+
+    const stopsBefore = workerMethods().filter((m) => m === 'orchestration.workerStop').length
+    await sweepDraftRunsAtBoot({ db: h.db, runtime: h.runtime, dispatcher: h.dispatcher })
+    expect(workerMethods().filter((m) => m === 'orchestration.workerStop').length).toBe(
+      stopsBefore + 1
+    )
+  })
+
+  it('stops a worker that was still starting when the caller aborted', async () => {
+    const hold = holdNextWorkerTerminal(h)
+    const abort = new AbortController()
+    const tracked = startDraft({ signal: abort.signal })
+    await waitUntil(() => hold.held())
+    expect(plannerAttempt()?.state).toBe('provisioning')
+    abort.abort()
+    await vi.advanceTimersByTimeAsync(1_000)
+    hold.release()
+    await waitUntil(() => tracked.done)
+
+    const dispatchId = plannerAttempt()?.dispatchId
+    expect(dispatchId).toBeDefined()
+    expect(
+      workerCalls.mock.calls.some(
+        ([request]) =>
+          request.method === 'orchestration.workerStop' &&
+          Reflect.get(Object(request.params), 'dispatch') === dispatchId
+      )
+    ).toBe(true)
   })
 })
 
@@ -436,6 +496,12 @@ describe('resolveWorkflowPlannerAgent', () => {
     expect(resolveWorkflowPlannerAgent({ defaultTuiAgent: 'blank' })).toBe('claude')
     expect(resolveWorkflowPlannerAgent({ defaultTuiAgent: null })).toBe('claude')
     expect(resolveWorkflowPlannerAgent(undefined)).toBe('claude')
+  })
+
+  it('refuses to plan when every agent is disabled', () => {
+    expect(() =>
+      resolveWorkflowPlannerAgent({ disabledTuiAgents: [...TUI_AGENT_AUTO_PICK_ORDER] })
+    ).toThrow(/every agent is disabled/i)
   })
 
   it('never picks a disabled agent', () => {

@@ -3,7 +3,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Repo } from '../../../shared/repo-types'
-import { buildDraftPlannerWorkflow, DRAFT_PLANNER_WORKFLOW_NAME } from './workflow-draft-planner'
+import {
+  buildDraftPlannerWorkflow,
+  DRAFT_PLANNER_RUN_VERSION,
+  DRAFT_PLANNER_WORKFLOW_NAME
+} from './workflow-draft-planner'
+import { confirmWorkerStops } from './workflow-draft-test-fixtures'
 import { sweepDraftRunsAtBoot, type DraftRunTeardownDeps } from './workflow-draft-teardown'
 import { WorkflowEngine } from './workflow-engine'
 import {
@@ -25,6 +30,7 @@ describe('sweepDraftRunsAtBoot', () => {
     h = createControllerHarness(workspaceRoot)
     repo = { id: 'repo', path: workspaceRoot, displayName: 'Repo', badgeColor: '#000', addedAt: 0 }
     removeManagedWorktree = vi.fn(async () => ({}))
+    confirmWorkerStops(h)
     Object.assign(h.runtime, {
       createManagedWorktree: vi.fn(async () => ({
         worktree: { id: RUN_WORKTREE_ID, path: workspaceRoot, branch: 'wf-branch' }
@@ -67,7 +73,7 @@ describe('sweepDraftRunsAtBoot', () => {
     const run = await first.startRun({
       workflow: buildDraftPlannerWorkflow(repo, 'claude'),
       workflowSource: 'project',
-      workflowVersion: DRAFT_PLANNER_WORKFLOW_NAME,
+      workflowVersion: DRAFT_PLANNER_RUN_VERSION,
       objective: 'draft something',
       repo,
       validation: { agentSupportsModel: () => true }
@@ -110,6 +116,24 @@ describe('sweepDraftRunsAtBoot', () => {
     await sweepDraftRunsAtBoot(deps())
 
     expect(h.db.getWorkflowRun(run.id)?.state).not.toBe('cancelled')
+    expect(removeManagedWorktree).not.toHaveBeenCalled()
+  })
+
+  it('never touches a user workflow whose own definition takes the planner name', async () => {
+    const engine = createEngine()
+    const run = await engine.startRun({
+      workflow: { ...TWO_NODE_WORKFLOW, name: DRAFT_PLANNER_WORKFLOW_NAME },
+      workflowSource: 'project',
+      workflowVersion: 'a'.repeat(64),
+      objective: 'user workflow',
+      repo,
+      validation: { agentSupportsModel: () => true }
+    })
+    expect(h.db.getWorkflowRun(run.id)?.workflowName).toBe(DRAFT_PLANNER_WORKFLOW_NAME)
+    await sweepDraftRunsAtBoot(deps())
+
+    expect(h.db.getWorkflowRun(run.id)?.state).not.toBe('cancelled')
+    expect(h.db.listWorkflowEventsOfKind(run.id, 'draft_run_torn_down')).toHaveLength(0)
     expect(removeManagedWorktree).not.toHaveBeenCalled()
   })
 

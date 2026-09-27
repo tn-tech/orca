@@ -10,11 +10,16 @@ import { isTuiAgentEnabled, TUI_AGENT_AUTO_PICK_ORDER } from '../../../shared/tu
 import { WorkflowFileSchema } from '../../../shared/workflows/workflow-definition-schema'
 import type { ResultContract, Workflow } from '../../../shared/workflows/workflow-definition-types'
 import { ResultContractSchema } from '../../../shared/workflows/workflow-node-schemas'
+import { OrchestrationError } from '../orchestration/orchestration-error'
 
 export const DRAFT_PLANNER_NODE_ID = 'plan'
-/** Contains `/`, which the workflow file store refuses: no project workflow can share this name,
- *  so a planner run can never be listed or started as one. */
+/** Display name only: a user's definition may carry any `name`, so it identifies nothing. */
 export const DRAFT_PLANNER_WORKFLOW_NAME = 'orca/workflow-draft'
+/**
+ * What marks a planner run. Every other run records its file's sha256 `revision` as its version,
+ * so no user workflow can produce this value; only `workflow.draft` ever sets it.
+ */
+export const DRAFT_PLANNER_RUN_VERSION = 'orca:draft-planner'
 const DRAFT_PLANNER_ROLE_ID = 'planner'
 const DRAFT_PLANNER_QUESTION = { timeoutMs: 600_000, escalationGraceMs: 300_000 }
 /** Strictly inside the planner's question window: the draft request gives up (and tears the
@@ -22,8 +27,8 @@ const DRAFT_PLANNER_QUESTION = { timeoutMs: 600_000, escalationGraceMs: 300_000 
 export const DRAFT_DEADLINE_MS =
   DRAFT_PLANNER_QUESTION.timeoutMs + DRAFT_PLANNER_QUESTION.escalationGraceMs - 60_000
 
-export function isDraftPlannerRun(run: { workflowName: string }): boolean {
-  return run.workflowName === DRAFT_PLANNER_WORKFLOW_NAME
+export function isDraftPlannerRun(run: { workflowVersion: string }): boolean {
+  return run.workflowVersion === DRAFT_PLANNER_RUN_VERSION
 }
 
 /** The planner setting, then the default agent, then the app's auto-pick order; disabled agents never plan. */
@@ -36,11 +41,17 @@ export function resolveWorkflowPlannerAgent(
 ): string {
   const defaultAgent = settings?.defaultTuiAgent === 'blank' ? null : settings?.defaultTuiAgent
   const candidates = [settings?.workflowPlannerAgent, defaultAgent, ...TUI_AGENT_AUTO_PICK_ORDER]
-  return (
-    candidates.find(
-      (agent): agent is TuiAgent => !!agent && isTuiAgentEnabled(agent, settings?.disabledTuiAgents)
-    ) ?? 'claude'
+  const agent = candidates.find(
+    (candidate): candidate is TuiAgent =>
+      !!candidate && isTuiAgentEnabled(candidate, settings?.disabledTuiAgents)
   )
+  if (!agent) {
+    throw new OrchestrationError(
+      'agent_unconfigured',
+      'Every agent is disabled; enable one in Settings to draft a workflow.'
+    )
+  }
+  return agent
 }
 
 let cachedResultContract: ResultContract | undefined

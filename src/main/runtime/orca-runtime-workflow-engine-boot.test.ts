@@ -8,7 +8,10 @@ import type { Workflow } from '../../shared/workflows/workflow-definition-types'
 import { OrchestrationDb } from './orchestration/db'
 import { OrcaRuntimeService } from './orca-runtime'
 import type { RuntimeStore } from './runtime-store-contract'
-import { DRAFT_PLANNER_WORKFLOW_NAME } from './workflows/workflow-draft-planner'
+import {
+  DRAFT_PLANNER_RUN_VERSION,
+  DRAFT_PLANNER_WORKFLOW_NAME
+} from './workflows/workflow-draft-planner'
 import { WorkflowEngine } from './workflows/workflow-engine'
 
 const REPO: Repo = {
@@ -142,7 +145,7 @@ describe('OrcaRuntimeService workflow draft boot sweep', () => {
       workflowName: DRAFT_PLANNER_WORKFLOW_NAME,
       workflowSource: 'project',
       workflowSnapshot: { ...TRIVIAL_WORKFLOW, name: DRAFT_PLANNER_WORKFLOW_NAME },
-      workflowVersion: DRAFT_PLANNER_WORKFLOW_NAME,
+      workflowVersion: DRAFT_PLANNER_RUN_VERSION,
       objective: 'orphaned draft',
       repoId: REPO.id,
       worktreeId: REPO.id

@@ -1,6 +1,7 @@
 // Planner runs (`workflow.draft`) are throwaway: once the draft is returned, abandoned (timeout,
 // abort) or orphaned by a restart, the run is cancelled if still active, its worker stopped and its
-// terminal released, and its run worktree removed. Nothing else ever cleans a run workspace up.
+// terminal released, and its run worktree removed. Planner runs are keyed on their version marker
+// (isDraftPlannerRun), never their name, which a user's definition can also carry.
 import { ACTIVE_ATTEMPT_STATES } from '../../../shared/workflows/workflow-node-states'
 import type { RunSnapshot } from '../../../shared/workflows/workflow-run-types'
 import type { OrchestrationDb } from '../orchestration/db'
@@ -11,6 +12,7 @@ import {
   type WorkflowOrchestrationClient,
   type WorkflowOrchestrationDispatcher
 } from './workflow-orchestration-client'
+import { stopWorkerAttempt } from './workflow-join-branch-stop'
 import { WorkflowRunRecorder, type WorkflowRunChangeNotifier } from './workflow-run-recorder'
 import { wakeWorkflowRun } from './workflow-run-wake'
 
@@ -24,6 +26,8 @@ export type DraftRunTeardownDeps = {
   runtime: WorkflowRunChangeNotifier & WorkflowEngineWorktreeCleanup
   /** The engine's own dispatcher: worker stop/release run under the run's engine principal. */
   dispatcher: WorkflowOrchestrationDispatcher
+  /** `WorkflowEngine.whenControllerSettled`; absent where no controller can be live (boot). */
+  whenControllerSettled?: (runId: string) => Promise<void>
 }
 
 function isTornDown(db: OrchestrationDb, runId: string): boolean {
@@ -43,59 +47,65 @@ function cancelIfActive(
   }
 }
 
-async function callQuietly(
+/** `false` when the release was refused or failed: the terminal may still be open. */
+async function releaseWorker(
   client: WorkflowOrchestrationClient,
   recorder: WorkflowRunRecorder,
-  method: 'orchestration.workerStop' | 'orchestration.workerRelease',
   dispatchId: string
-): Promise<unknown> {
+): Promise<boolean> {
   try {
-    return await client.call(method, { dispatch: dispatchId })
+    await client.call('orchestration.workerRelease', { dispatch: dispatchId })
+    return true
   } catch (error) {
-    recorder.event('draft_worker_cleanup_failed', {
-      method,
+    recorder.event('draft_worker_release_failed', {
       dispatchId,
       message: error instanceof Error ? error.message : String(error)
     })
-    return undefined
+    return false
   }
 }
 
-function receiptState(receipt: unknown): unknown {
-  return typeof receipt === 'object' && receipt !== null ? Reflect.get(receipt, 'state') : undefined
-}
+const STOP_CAUSE = { eventPrefix: 'draft_worker_stop', reason: 'draft_run_abandoned', subject: {} }
 
-/** Stops a still-active planner worker, then releases (closes) its terminal either way. */
+/**
+ * Stops each still-active planner worker with the Join-branch rule (`stopWorkerAttempt`): the
+ * attempt is cancelled only on a proven `stopped`. Then releases (closes) each worker terminal.
+ * `false` while any worker may still be alive, so the run stays eligible for the boot sweep.
+ */
 async function stopAndReleaseWorkers(
   deps: DraftRunTeardownDeps,
   recorder: WorkflowRunRecorder
-): Promise<void> {
+): Promise<boolean> {
   const client = createWorkflowOrchestrationClient({
     dispatcher: deps.dispatcher,
     principal: { kind: 'workflow-engine', workflowRunId: recorder.runId }
   })
+  let clean = true
   for (const attempt of deps.db.listWorkflowAttempts(recorder.runId)) {
-    if (attempt.dispatchId && ACTIVE_ATTEMPT_STATES.has(attempt.state)) {
-      const receipt = await callQuietly(
-        client,
-        recorder,
-        'orchestration.workerStop',
-        attempt.dispatchId
-      )
-      recorder.transitionAttempt(attempt.id, 'cancelled', {
-        reason: 'draft_run_abandoned',
-        stopConfirmed: receiptState(receipt) === 'stopped'
-      })
-    } else if (ACTIVE_ATTEMPT_STATES.has(attempt.state)) {
-      recorder.transitionAttempt(attempt.id, 'cancelled', { reason: 'draft_run_abandoned' })
+    if (ACTIVE_ATTEMPT_STATES.has(attempt.state)) {
+      if (!attempt.dispatchId) {
+        // Its controller has settled, so no worker-start is still in flight for it.
+        recorder.transitionAttempt(attempt.id, 'cancelled', { reason: STOP_CAUSE.reason })
+        continue
+      }
+      await stopWorkerAttempt({ recorder, client }, attempt, STOP_CAUSE)
+      const after = deps.db.listWorkflowAttempts(recorder.runId).find((a) => a.id === attempt.id)
+      if (after && ACTIVE_ATTEMPT_STATES.has(after.state)) {
+        clean = false
+        continue
+      }
     }
-    if (attempt.dispatchId) {
-      await callQuietly(client, recorder, 'orchestration.workerRelease', attempt.dispatchId)
+    if (attempt.dispatchId && !(await releaseWorker(client, recorder, attempt.dispatchId))) {
+      clean = false
     }
   }
+  return clean
 }
 
-/** Idempotent; a failed worktree removal is recorded and retried by the next boot sweep. */
+/**
+ * Idempotent. Anything left undone (an unconfirmed stop, a refused release, a failed worktree
+ * removal) is recorded and leaves the run un-torn-down, so the next boot sweep retries it.
+ */
 export async function tearDownDraftRun(
   deps: DraftRunTeardownDeps,
   runId: string,
@@ -107,7 +117,11 @@ export async function tearDownDraftRun(
   }
   const recorder = new WorkflowRunRecorder(deps.db, deps.runtime, runId)
   cancelIfActive(deps.db, recorder, reason)
-  await stopAndReleaseWorkers(deps, recorder)
+  // A worker-start still in flight records its dispatch only when the controller's tick returns.
+  await deps.whenControllerSettled?.(runId)
+  if (!(await stopAndReleaseWorkers(deps, recorder))) {
+    return
+  }
   // In-place planner runs used the repo's own checkout: there is nothing of theirs to remove.
   if (run.workflowSnapshot.workspacePolicy === 'run-workspace' && run.worktreeId) {
     try {
@@ -130,7 +144,7 @@ function listDraftRunIds(db: OrchestrationDb): string[] {
       name: DRAFT_PLANNER_WORKFLOW_NAME,
       ...(cursor ? { cursor } : {})
     })
-    ids.push(...page.runs.map((run) => run.id))
+    ids.push(...page.runs.filter(isDraftPlannerRun).map((run) => run.id))
     cursor = page.nextCursor ?? undefined
   } while (cursor)
   return ids
