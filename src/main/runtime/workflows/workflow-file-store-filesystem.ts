@@ -10,7 +10,8 @@ import type { IFilesystemProvider } from '../../providers/types'
 
 /** Minimal filesystem surface the workflow file store needs, local or SSH. */
 export type WorkflowFilesystem = {
-  readDir(dirPath: string): Promise<{ name: string; isDirectory: boolean }[]>
+  /** A symlinked entry reports `isSymlink`; whether `isDirectory` follows it differs by host. */
+  readDir(dirPath: string): Promise<{ name: string; isDirectory: boolean; isSymlink: boolean }[]>
   readFile(filePath: string): Promise<string>
   writeFile(filePath: string, content: string): Promise<void>
   deletePath(filePath: string): Promise<void>
@@ -20,7 +21,11 @@ export type WorkflowFilesystem = {
 export const localWorkflowFilesystem: WorkflowFilesystem = {
   async readDir(dirPath) {
     const dirents = await readdir(dirPath, { withFileTypes: true })
-    return dirents.map((entry) => ({ name: entry.name, isDirectory: entry.isDirectory() }))
+    return dirents.map((entry) => ({
+      name: entry.name,
+      isDirectory: entry.isDirectory(),
+      isSymlink: entry.isSymbolicLink()
+    }))
   },
   async readFile(filePath) {
     return readFile(filePath, 'utf-8')
@@ -40,7 +45,11 @@ function sshWorkflowFilesystem(fsProvider: IFilesystemProvider): WorkflowFilesys
   return {
     async readDir(dirPath) {
       const entries = await fsProvider.readDir(dirPath)
-      return entries.map((entry) => ({ name: entry.name, isDirectory: entry.isDirectory }))
+      return entries.map((entry) => ({
+        name: entry.name,
+        isDirectory: entry.isDirectory,
+        isSymlink: entry.isSymlink
+      }))
     },
     async readFile(filePath) {
       const result = await fsProvider.readFile(filePath)

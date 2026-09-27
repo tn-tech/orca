@@ -6,6 +6,7 @@ import type { ResultContract } from '../../../shared/workflows/workflow-definiti
 import type { WorkflowAttemptArtifact } from '../../../shared/workflows/workflow-run-types'
 import type { WorkerReportOutcome } from '../orchestration/types'
 import { joinWorktreeRelativePath, normalizeRuntimeRelativePath } from '../runtime-relative-paths'
+import { findArtifactGlobMatches, isArtifactGlob } from './workflow-artifact-glob'
 import type { ResultSchemaValidation } from './workflow-result-schema'
 import { createResultSchemaValidator } from './workflow-result-schema'
 import type { WorkflowFilesystem } from './workflow-file-store-filesystem'
@@ -133,23 +134,52 @@ function mergeArtifactSpecs(
   return [...merged.values()]
 }
 
+type ResolvedArtifacts = { artifacts: WorkflowAttemptArtifact[]; missingRequired: boolean }
+
+/**
+ * A glob records every concrete match; nothing present records the spec path as absent. The
+ * literal path is checked too, since names like `app/[id]/page.tsx` contain glob syntax.
+ */
+async function resolveArtifactSpec(
+  fs: WorkflowFilesystem,
+  workspaceRoot: string,
+  spec: ArtifactSpec
+): Promise<WorkflowAttemptArtifact[]> {
+  const found: WorkflowAttemptArtifact[] = []
+  try {
+    const normalized = normalizeRuntimeRelativePath(spec.path)
+    if (await pathExists(fs, joinWorktreeRelativePath(workspaceRoot, normalized))) {
+      found.push({ path: spec.path, exists: true })
+    }
+    if (isArtifactGlob(spec.path)) {
+      const matches = await findArtifactGlobMatches(fs, workspaceRoot, spec.path)
+      found.push(...matches.map((path) => ({ path, exists: true })))
+    }
+  } catch {
+    // Escapes the run workspace (absolute or `..`); never counts as present.
+  }
+  return found.length > 0 ? found : [{ path: spec.path, exists: false }]
+}
+
 async function resolveArtifacts(
   fs: WorkflowFilesystem,
   workspaceRoot: string,
   specs: readonly ArtifactSpec[]
-): Promise<WorkflowAttemptArtifact[]> {
-  const artifacts: WorkflowAttemptArtifact[] = []
+): Promise<ResolvedArtifacts> {
+  const byPath = new Map<string, WorkflowAttemptArtifact>()
+  let missingRequired = false
   for (const spec of specs) {
-    let exists = false
-    try {
-      const normalized = normalizeRuntimeRelativePath(spec.path)
-      exists = await pathExists(fs, joinWorktreeRelativePath(workspaceRoot, normalized))
-    } catch {
-      exists = false // Escapes the run workspace (absolute or `..`); never counts as present.
+    const resolved = await resolveArtifactSpec(fs, workspaceRoot, spec)
+    missingRequired ||= spec.required && !resolved.some((artifact) => artifact.exists)
+    for (const artifact of resolved) {
+      // Why: a glob and a literal (or two globs) can name the same file; list it once, present.
+      byPath.set(artifact.path, {
+        path: artifact.path,
+        exists: artifact.exists || !!byPath.get(artifact.path)?.exists
+      })
     }
-    artifacts.push({ path: spec.path, exists })
   }
-  return artifacts
+  return { artifacts: [...byPath.values()], missingRequired }
 }
 
 export async function captureNodeResult(args: CaptureResultArgs): Promise<CaptureResultOutcome> {
@@ -181,9 +211,7 @@ export async function captureNodeResult(args: CaptureResultArgs): Promise<Captur
   const result = validation.value as JsonValue
 
   const specs = mergeArtifactSpecs(args.declaredArtifacts, extraArtifactPaths(parsed))
-  const artifacts = await resolveArtifacts(fs, workspaceRoot, specs)
-  const existsByPath = new Map(artifacts.map((artifact) => [artifact.path, artifact.exists]))
-  const missingRequired = specs.some((spec) => spec.required && !existsByPath.get(spec.path))
+  const { artifacts, missingRequired } = await resolveArtifacts(fs, workspaceRoot, specs)
   if (missingRequired) {
     return { ok: false, failureReason: 'artifact_missing', result, artifacts }
   }
