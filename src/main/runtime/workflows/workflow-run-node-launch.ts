@@ -13,6 +13,7 @@ import { resolveNodeLaunch } from './workflow-node-dispatch'
 import { dispatchBriefAttempt, nodeSkills } from './workflow-brief-attempt-dispatch'
 import type { WorkflowOrchestrationClient } from './workflow-orchestration-client'
 import type { WorkflowRunRecorder } from './workflow-run-recorder'
+import { loadRunFallbackSkillTexts } from './workflow-skill-fallback-text'
 import { answeredTrustWaits, leaveRunWaitIfClear } from './workflow-trust-wait'
 
 /** Where a run's node attempts write and read their files, on the run's execution host. */
@@ -118,6 +119,11 @@ async function launchBriefNode(
   let taskId: string
   try {
     const launch = resolveNodeLaunch(node, ctx.definition.roles)
+    const skills = nodeSkills(node, ctx.definition.roles)
+    const fallbackSkillTexts = await loadRunFallbackSkillTexts(ctx.workspace, {
+      agent: launch.agent,
+      skills
+    })
     const brief = await writeBrief({
       fs: ctx.workspace.fs,
       workspaceRoot: ctx.workspace.workspaceRoot,
@@ -128,7 +134,9 @@ async function launchBriefNode(
       iteration: attempt.iteration,
       node,
       systemPrompt: launch.systemPrompt,
-      skills: nodeSkills(node, ctx.definition.roles),
+      skills,
+      agent: launch.agent,
+      fallbackSkillTexts,
       briefInputs: {
         objective: ctx.objective,
         upstream: upstreamInputs(attempts),

@@ -97,6 +97,6 @@ function sshRoleFetchHost(connectionId: string): RoleFetchHost {
 }
 
 /** The repo's execution host: SSH repos fetch on the remote and never fall back to local. */
-export function getRoleFetchHost(repo: Repo): RoleFetchHost {
+export function getRoleFetchHost(repo: Pick<Repo, 'connectionId'>): RoleFetchHost {
   return repo.connectionId ? sshRoleFetchHost(repo.connectionId) : localRoleFetchHost
 }

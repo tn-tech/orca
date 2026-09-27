@@ -6,7 +6,6 @@ import type {
   ResultContract,
   RouterNode
 } from '../../../shared/workflows/workflow-definition-types'
-import type { JsonValue } from '../../../shared/workflows/workflow-condition-schema'
 import type { SkillReference } from '../../../shared/workflows/workflow-skill-reference-schema'
 import type { WorkflowProblem } from '../../../shared/workflows/workflow-problem'
 import {
@@ -18,6 +17,8 @@ import { ensureOrcaDirIgnored } from '../../issue-command-file'
 import { joinWorktreeRelativePath } from '../runtime-relative-paths'
 import { ensureRemoteOrcaDirIgnored } from '../runtime-repository-issue-command'
 import type { WorkflowFilesystem } from './workflow-file-store-filesystem'
+import { inputsSection } from './workflow-brief-inputs-section'
+import { skillsSection, type SkillsSectionArgs } from './workflow-brief-skills'
 import { routerChoiceLines, routerResultContract } from './workflow-router'
 
 /** A brief-eligible node: the three role-dispatching node types (agent-brief.md). */
@@ -62,56 +63,6 @@ export function artifactsFor(node: BriefNode): { path: string; required: boolean
   return node.type === 'agent' ? node.artifacts : []
 }
 
-function skillsSection(skills: readonly SkillReference[]): string {
-  if (skills.length === 0) {
-    return 'No skills configured for this role.'
-  }
-  return skills.map((skill) => `- **${skill.name}** — invoke with \`/${skill.name}\``).join('\n')
-}
-
-type ResultRows = Record<string, { result: JsonValue; artifacts?: string[] }>
-
-function resultTable(rows: ResultRows, emptyText: string): string {
-  const entries = Object.entries(rows)
-  if (entries.length === 0) {
-    return emptyText
-  }
-  return [
-    '| Node | Result | Artifacts |',
-    '| --- | --- | --- |',
-    ...entries.map(
-      ([nodeId, { result, artifacts = [] }]) =>
-        `| ${nodeId} | \`${JSON.stringify(result)}\` | ${artifacts.map((path) => `\`${path}\``).join(', ') || '—'} |`
-    )
-  ].join('\n')
-}
-
-/** Loop body nodes also see their iteration and the previous iteration's results (FR-028). */
-function loopSection(inputs: BriefReferenceInputs, iteration: number | undefined): string[] {
-  if (inputs.loopPrevious === undefined) {
-    return []
-  }
-  return [
-    `Loop iteration ${iteration ?? 0} (0-based). Previous iteration results (\`loop.previous\`):`,
-    '',
-    resultTable(inputs.loopPrevious, 'No previous iteration.'),
-    ''
-  ]
-}
-
-function inputsSection(
-  inputs: BriefReferenceInputs,
-  iteration: number | undefined,
-  inputsJsonPath: string
-): string {
-  return [
-    resultTable(inputs.upstream, 'No upstream node results.'),
-    '',
-    ...loopSection(inputs, iteration),
-    `Full structured data (including \`loop.previous\` and \`join.branches\` where applicable) is in \`${inputsJsonPath}\`.`
-  ].join('\n')
-}
-
 function artifactsSection(artifacts: readonly { path: string; required: boolean }[]): string {
   if (artifacts.length === 0) {
     return 'No required artifacts.'
@@ -128,6 +79,9 @@ export type BuildBriefMarkdownArgs = {
   node: BriefNode
   systemPrompt: string
   skills: readonly SkillReference[]
+  /** The launching agent: picks each skill's invocation, or the inlined fallback (FR-019/020). */
+  agent?: string
+  fallbackSkillTexts?: SkillsSectionArgs['fallbackTexts']
   briefInputs: BriefReferenceInputs
   /** The Loop iteration of a body node; shown only when `briefInputs.loopPrevious` is set. */
   iteration?: number
@@ -162,7 +116,11 @@ export function buildBriefMarkdown(args: BuildBriefMarkdownArgs): {
     '',
     '## Skills',
     '',
-    skillsSection(args.skills),
+    skillsSection({
+      skills: args.skills,
+      agent: args.agent,
+      fallbackTexts: args.fallbackSkillTexts
+    }),
     '',
     '## Result',
     '',
