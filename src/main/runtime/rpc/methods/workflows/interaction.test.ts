@@ -68,7 +68,7 @@ describe('workflow.run.answer / workflow.run.sendMessage', () => {
         runId,
         attemptId: attempt.id,
         question: { source: 'acme-decks', host: 'ssh:devbox', skills: ['deck'], agents: ['claude'] }
-      })
+      }).question
     }
     return db.createWorkflowQuestion({
       runId,
@@ -82,11 +82,19 @@ describe('workflow.run.answer / workflow.run.sendMessage', () => {
     })
   }
 
-  function answer(params: Record<string, unknown>, clientId?: string) {
-    return dispatcher.dispatch(
-      request('workflow.run.answer', { runId, ...params }),
-      clientId ? { clientId, clientKind: 'mobile' } : undefined
+  /** Via dispatchStreaming, the WebSocket entry point that carries the paired device identity. */
+  async function asDevice(req: RpcRequest, pairedDeviceId?: string): Promise<unknown> {
+    let reply: unknown
+    await dispatcher.dispatchStreaming(
+      req,
+      (raw) => (reply = JSON.parse(raw)),
+      pairedDeviceId ? { pairedDeviceId, clientKind: 'mobile' } : undefined
     )
+    return reply
+  }
+
+  function answer(params: Record<string, unknown>, pairedDeviceId?: string) {
+    return asDevice(request('workflow.run.answer', { runId, ...params }), pairedDeviceId)
   }
 
   function questionById(id: string): RunQuestionView | undefined {
@@ -243,9 +251,9 @@ describe('workflow.run.answer / workflow.run.sendMessage', () => {
     it('records a queued follow-up from the sending client and wakes the run', async () => {
       const attemptId = running()
 
-      const response = await dispatcher.dispatch(
+      const response = await asDevice(
         request('workflow.run.sendMessage', { runId, attemptId, text: 'Also add tests.' }),
-        { clientId: 'mobile_7', clientKind: 'mobile' }
+        'mobile_7'
       )
 
       const [message] = db.listWorkflowMessages(runId)

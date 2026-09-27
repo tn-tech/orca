@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -20,15 +20,23 @@ async function errorCodeForMobile(method: string): Promise<unknown> {
   const userDataPath = mkdtempSync(join(tmpdir(), 'orca-runtime-rpc-workflow-'))
   const { runtime } = createMobileRpcSurfaceRuntime()
   const server = new OrcaRuntimeRpcServer({ runtime, userDataPath, enableWebSocket: false })
-  server['deviceRegistry'] = new DeviceRegistry(userDataPath)
-  const phone = server['deviceRegistry']!.addDevice('phone', 'mobile')
-  const replies: { error?: { code?: unknown } }[] = []
-  await server['handleWebSocketMessage'](
-    JSON.stringify({ id: 'req_1', method, deviceToken: phone.token, params: {} }),
-    (response) => replies.push(JSON.parse(response)),
-    () => {}
-  )
-  return replies[0]?.error?.code
+  try {
+    // No public seam installs a registry without starting the listener; the sibling
+    // allowlist suites reach it the same way.
+    const registry = new DeviceRegistry(userDataPath)
+    server['deviceRegistry'] = registry
+    const phone = registry.addDevice('phone', 'mobile')
+    const replies: { error?: { code?: unknown } }[] = []
+    await server['handleWebSocketMessage'](
+      JSON.stringify({ id: 'req_1', method, deviceToken: phone.token, params: {} }),
+      (response) => replies.push(JSON.parse(response)),
+      () => {}
+    )
+    return replies[0]?.error?.code
+  } finally {
+    await server.stop()
+    rmSync(userDataPath, { recursive: true, force: true })
+  }
 }
 
 describe('mobile workflow run surface (T110)', () => {

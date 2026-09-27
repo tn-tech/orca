@@ -11,6 +11,7 @@ import {
   revokeSourceTrust
 } from '../../../workflows/workflow-source-trust'
 import { wakeWorkflowRun } from '../../../workflows/workflow-run-wake'
+import { workflowCallerIdentity } from './workflow-caller-identity'
 
 // Why: skeletons for U10; P3 proposals replace each throw.
 function notImplemented(): never {
@@ -30,7 +31,8 @@ export const WORKFLOW_TRUST_METHODS = [
   defineMethod({
     name: 'workflow.trust.decide',
     params: WorkflowTrustDecide,
-    handler: (params, { runtime, clientId }) => {
+    handler: (params, ctx) => {
+      const { runtime } = ctx
       if (!params.decision) {
         throw new Error('Missing trust decision: pass trusted or refused')
       }
@@ -38,7 +40,7 @@ export const WORKFLOW_TRUST_METHODS = [
         host: params.host ?? LOCAL_TRUST_HOST,
         source: params.source,
         decision: params.decision,
-        decidedBy: clientId ?? 'user'
+        decidedBy: workflowCallerIdentity(ctx)
       })
       for (const runId of runIds) {
         wakeWorkflowRun(runId)

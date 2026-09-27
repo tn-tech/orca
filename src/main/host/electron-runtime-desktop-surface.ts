@@ -1,4 +1,5 @@
 import { BrowserWindow, ipcMain, Notification, powerMonitor } from 'electron'
+import { translateMain } from '../i18n/main-i18n'
 import { readDesktopAwayState } from '../notifications/desktop-away-state'
 import type { RuntimeDesktopSurface } from '../runtime/runtime-desktop-surface'
 
@@ -12,6 +13,7 @@ export const electronRuntimeDesktopSurface: RuntimeDesktopSurface = {
     new Notification({ title, body }).show()
     return true
   },
+  translate: (key, fallback, values) => translateMain(key, fallback, values),
   findWindowById: (id) => BrowserWindow.fromId(id),
   onIpc: (channel, listener) => {
     ipcMain.on(channel, listener as Parameters<typeof ipcMain.on>[1])

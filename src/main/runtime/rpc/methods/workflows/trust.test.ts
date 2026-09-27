@@ -59,7 +59,7 @@ describe('workflow.trust.list / workflow.trust.decide / workflow.trust.revoke', 
       runId: run.id,
       attemptId: 'wfa_1',
       question: { source: 'acme-decks', host: 'local', skills: ['deck-writer'], agents: ['claude'] }
-    })
+    }).question
     const wake = vi.fn()
     const unregister = registerWorkflowRunWaker(run.id, wake)
 

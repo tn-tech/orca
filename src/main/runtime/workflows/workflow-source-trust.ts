@@ -84,12 +84,15 @@ export const TRUST_QUESTION_CHOICES = [
 
 type TrustQuestionArgs = { runId: string; attemptId: string; question: TrustQuestionSubject }
 
-/** The attempt's pending trust question for the same source on the same host, if any. */
-export function findPendingTrustQuestion(
+/**
+ * Reuses the attempt's pending trust question for the same source on the same host rather than
+ * asking twice; `created` says whether this call asked it.
+ */
+export function raiseTrustQuestion(
   db: OrchestrationDb,
   { runId, attemptId, question }: TrustQuestionArgs
-): RunQuestionView | undefined {
-  return db
+): { question: RunQuestionView; created: boolean } {
+  const existing = db
     .listPendingWorkflowQuestions(runId)
     .find(
       (candidate) =>
@@ -97,16 +100,10 @@ export function findPendingTrustQuestion(
         trustQuestionSubject(candidate)?.source === question.source &&
         trustQuestionSubject(candidate)?.host === question.host
     )
-}
-
-/** Reuses the attempt's pending trust question for the same source rather than asking twice. */
-export function raiseTrustQuestion(db: OrchestrationDb, args: TrustQuestionArgs): RunQuestionView {
-  const { runId, attemptId, question } = args
-  const existing = findPendingTrustQuestion(db, args)
   if (existing) {
-    return existing
+    return { question: existing, created: false }
   }
-  return db.createWorkflowQuestion({
+  const created = db.createWorkflowQuestion({
     runId,
     attemptId,
     kind: 'trust',
@@ -115,6 +112,7 @@ export function raiseTrustQuestion(db: OrchestrationDb, args: TrustQuestionArgs)
       `skill(s) ${question.skills.join(', ')} there for ${question.agents.join(', ')}.`,
     options: { choices: [...TRUST_QUESTION_CHOICES], trust: question }
   })
+  return { question: created, created: true }
 }
 
 /**

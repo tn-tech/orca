@@ -182,10 +182,11 @@ describe('source trust store (FR-018a)', () => {
       question: subject('local')
     })
 
-    expect(again.id).toBe(first.id)
-    expect(first).toMatchObject({ kind: 'trust', state: 'pending' })
-    expect(first.prompt).toContain('acme-decks')
-    expect(trustQuestionSubject(first)).toEqual(subject('local'))
+    expect(first.created).toBe(true)
+    expect(again).toEqual({ question: first.question, created: false })
+    expect(first.question).toMatchObject({ kind: 'trust', state: 'pending' })
+    expect(first.question.prompt).toContain('acme-decks')
+    expect(trustQuestionSubject(first.question)).toEqual(subject('local'))
   })
 
   it('answers only the pending questions for that source on that host', () => {
@@ -195,22 +196,22 @@ describe('source trust store (FR-018a)', () => {
       runId: runA.id,
       attemptId: 'a1',
       question: subject('local')
-    })
+    }).question
     const localB = raiseTrustQuestion(db, {
       runId: runB.id,
       attemptId: 'b1',
       question: subject('local')
-    })
+    }).question
     const sshB = raiseTrustQuestion(db, {
       runId: runB.id,
       attemptId: 'b2',
       question: subject('ssh:devbox')
-    })
+    }).question
     const otherSource = raiseTrustQuestion(db, {
       runId: runB.id,
       attemptId: 'b3',
       question: subject('local', 'other')
-    })
+    }).question
 
     const runIds = decideSourceTrust(db, notifier, {
       host: 'local',

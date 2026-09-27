@@ -64,7 +64,11 @@ class OrcaRuntimeService extends OrcaRuntimeWithResolveWaiter {
 
   /** Every WorkflowRunRecorder reaches this through its notifier, wherever it was built. */
   notifyWorkflowAttention(attention: WorkflowAttention): void {
-    dispatchWorkflowAttention(this.mobileNotifications, attention)
+    dispatchWorkflowAttention(
+      this.mobileNotifications,
+      attention,
+      this.store?.getSettings().notifications
+    )
   }
 
   /** Stops every active run controller; called on shutdown so a worker's mailbox is left quiet. */

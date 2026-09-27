@@ -137,6 +137,23 @@ describe('workflow.run.start (real engine, in-place trivial workflow)', () => {
     expect(db.getWorkflowRun(runId)).toBeDefined()
   })
 
+  it('records the paired device as the starter, never its bearer credential', async () => {
+    await writeWorkflow(repo, 'project', 'trivial', TRIVIAL_WORKFLOW_YAML, null)
+    const secret = 'dvc_tok_5f0c9a7e3b1d4e2f8a6c0b9d7e5f3a1c'
+    let runId = ''
+    // The WebSocket transport's entry point, which carries the paired device identity.
+    await dispatcher().dispatchStreaming(
+      makeRequest('workflow.run.start', { repo: repoPath, name: 'trivial', objective: 'go' }),
+      (raw) => {
+        const reply: { result?: { runId?: string } } = JSON.parse(raw)
+        runId = reply.result?.runId ?? ''
+      },
+      { clientId: secret, pairedDeviceId: 'device_phone_1', clientKind: 'mobile' }
+    )
+    expect(db.getWorkflowRun(runId)?.startedByClient).toBe('device_phone_1')
+    expect(JSON.stringify(db.getWorkflowRun(runId))).not.toContain(secret)
+  })
+
   it('maps a graph-invalid workflow to workflow_invalid with problems', async () => {
     await writeWorkflow(repo, 'project', 'no-end', NO_END_WORKFLOW_YAML, null)
     const response = await dispatcher().dispatch(

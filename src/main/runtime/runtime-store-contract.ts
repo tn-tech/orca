@@ -1,5 +1,6 @@
 import type { Store } from '../persistence'
 import type { GlobalSettings } from '../../shared/global-settings-types'
+import type { NotificationSettings } from '../../shared/notification-settings-types'
 import type { VoiceSettings } from '../../shared/speech-types'
 
 export type RuntimeStore = {
@@ -71,6 +72,8 @@ export type RuntimeStore = {
   setMobileClientTabSelections?: Store['setMobileClientTabSelections']
   getSettings(): {
     workspaceDir: string
+    // Read by host-originated notifications (workflow-attention); absent in minimal test stores.
+    notifications?: NotificationSettings
     nestWorkspaces: boolean
     // Read by worktree placement: decides whether this project's worktrees
     // mirror into a WSL distro instead of the Windows drive.

@@ -6,24 +6,21 @@ import {
 import { OrchestrationError } from '../../../orchestration/orchestration-error'
 import { queueFollowUp } from '../../../workflows/workflow-follow-up-delivery'
 import { answerRunQuestion } from '../../../workflows/workflow-question-answer'
-
-/** Who answered or sent, as recorded on the run: the calling client, as `workflow.trust.decide` does. */
-function callerIdentity(clientId: string | undefined): string {
-  return clientId ?? 'user'
-}
+import { workflowCallerIdentity } from './workflow-caller-identity'
 
 export const WORKFLOW_INTERACTION_METHODS = [
   defineMethod({
     name: 'workflow.run.answer',
     params: WorkflowRunAnswer,
-    handler: (params, { runtime, clientId }) => {
+    handler: (params, ctx) => {
+      const { runtime } = ctx
       const db = runtime.getOrchestrationDb()
       answerRunQuestion(db, runtime, {
         runId: params.runId,
         questionId: params.questionId,
         ...(params.answer !== undefined ? { answer: params.answer } : {}),
         ...(params.optionId !== undefined ? { optionId: params.optionId } : {}),
-        answeredBy: callerIdentity(clientId)
+        answeredBy: workflowCallerIdentity(ctx)
       })
       const run = db.getWorkflowRun(params.runId)
       if (!run) {
@@ -35,7 +32,8 @@ export const WORKFLOW_INTERACTION_METHODS = [
   defineMethod({
     name: 'workflow.run.sendMessage',
     params: WorkflowRunSendMessage,
-    handler: (params, { runtime, clientId }) => {
+    handler: (params, ctx) => {
+      const { runtime } = ctx
       if (params.text === undefined) {
         throw new OrchestrationError('invalid_argument', 'Missing follow-up text.', {
           runId: params.runId,
@@ -47,7 +45,7 @@ export const WORKFLOW_INTERACTION_METHODS = [
         attemptId: params.attemptId,
         text: params.text,
         mode: params.mode ?? 'queued',
-        sender: callerIdentity(clientId)
+        sender: workflowCallerIdentity(ctx)
       })
       return { messageId: message.id }
     }

@@ -13,6 +13,7 @@ import { WorkflowGraphValidationError } from '../../../workflows/workflow-engine
 import { readWorkerOutput } from '../orchestration/worker/worker-control'
 import { agentSupportsModel, isKnownAgent } from './workflow-agent-catalog-support'
 import { disallowedSourceProblems, throwSourceNotAllowedError } from './workflow-allowlist-refusal'
+import { workflowCallerIdentity } from './workflow-caller-identity'
 import { readNamedWorkflow } from './workflow-source-resolution'
 
 // Why: skeletons for U10; the US1 unit replaces each throw with the workflow engine call.
@@ -24,7 +25,8 @@ export const WORKFLOW_RUN_METHODS = [
   defineMethod({
     name: 'workflow.run.start',
     params: WorkflowRunStart,
-    handler: async (params, { runtime, clientId }) => {
+    handler: async (params, ctx) => {
+      const { runtime } = ctx
       const repo = await runtime.showRepo(params.repo)
       const named = await readNamedWorkflow(repo, params.name, params.source)
       if (!named.definition) {
@@ -39,7 +41,7 @@ export const WORKFLOW_RUN_METHODS = [
           workflowVersion: named.revision,
           objective: params.objective ?? '',
           repo,
-          ...(clientId ? { startedByClient: clientId } : {}),
+          startedByClient: workflowCallerIdentity(ctx),
           ...(params.overrides?.concurrencyLimit !== undefined
             ? { concurrencyLimit: params.overrides.concurrencyLimit }
             : {}),

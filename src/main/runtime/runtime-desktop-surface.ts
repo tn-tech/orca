@@ -19,6 +19,8 @@ export type RuntimeDesktopSurface = {
   /** Show a native notification. Returns false when the host cannot, so callers can say so. */
   isAwayForMobileNotifications?(): boolean | undefined
   showNotification(input: { title: string; body: string }): boolean
+  /** The desktop's `translateMain`; absent on a Node host, whose callers use the English fallback. */
+  translate?(key: string, fallback: string, values?: Record<string, string>): string
   /** The renderer window with this id, or null when there is no desktop. */
   findWindowById(id: number): BrowserWindow | null
   onIpc(channel: string, listener: (event: IpcMainEvent, ...args: never[]) => void): void

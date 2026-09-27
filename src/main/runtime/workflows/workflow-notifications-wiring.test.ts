@@ -65,12 +65,11 @@ describe('workflow-attention wiring', () => {
 
     first.controller.stop()
     await first.finished
+    // The rehydrated controller has settled once it sleeps on its mailbox.
+    const sleeps = vi.spyOn(h.runtime, 'waitForMessage')
     const again = h.createController(first.run.id)
     const finished = again.run()
-    await waitUntil(() => h.db.listWorkflowEvents(first.run.id).length > 0)
-    for (let spins = 0; spins < 100; spins += 1) {
-      await new Promise<void>((resolve) => setImmediate(resolve))
-    }
+    await waitUntil(() => sleeps.mock.calls.length > 0)
     expect(titles()).toEqual(['approval: Approval needed', 'approval: Approval overdue'])
     again.stop()
     await finished

@@ -18504,6 +18504,15 @@
       "working": "working",
       "stopped": "stopped",
       "finished": "finished"
+    },
+    "workflowAttention": {
+      "runFailed": "{{workflowName}}: Run failed",
+      "runCompleted": "{{workflowName}}: Run completed",
+      "approvalOverdue": "{{workflowName}}: Approval overdue",
+      "approvalNeeded": "{{workflowName}}: Approval needed",
+      "agentQuestionOverdue": "{{workflowName}}: Agent question overdue",
+      "agentQuestion": "{{workflowName}}: Agent question",
+      "trustNeeded": "{{workflowName}}: Trust needed"
     }
   },
   "sessionSearch": {

@@ -11,6 +11,7 @@ import type {
   NotificationDispatchResult,
   NotificationSettings
 } from '../../shared/notification-settings-types'
+import { isDesktopNotificationAllowed } from '../../shared/notification-desktop-policy'
 import type { OrcaRuntimeService } from '../runtime/orca-runtime'
 import { buildNotificationOptions } from '../ipc/notification-options'
 import { reserveNotificationCooldown } from '../ipc/notification-burst-cooldown'
@@ -80,10 +81,7 @@ export function createNotificationDeliveryService(
       }
 
       const settings = deps.readNotificationSettings()
-      const desktopAllowed =
-        settings.enabled &&
-        (request.source !== 'agent-task-complete' || settings.agentTaskComplete) &&
-        (request.source !== 'terminal-bell' || settings.terminalBell)
+      const desktopAllowed = isDesktopNotificationAllowed(settings, request.source)
 
       const notificationOptions = buildNotificationOptions(request)
 
