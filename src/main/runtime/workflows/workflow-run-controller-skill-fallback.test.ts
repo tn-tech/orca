@@ -71,7 +71,7 @@ describe('WorkflowRunController — prompt-fallback skills (FR-020)', () => {
   }
 
   it('fails the node before launch when the skill has no SKILL.md', async () => {
-    repoFiles.set('skills/other/SKILL.md', '---\nname: other\n---\nOther.')
+    repoFiles.set('skills/other/SKILL.md', '---\nname: other\ndescription: d\n---\nOther.')
     const run = h.createRun(FALLBACK_AGENT_WORKFLOW)
     const finished = h.createController(run.id).run()
 
@@ -83,7 +83,7 @@ describe('WorkflowRunController — prompt-fallback skills (FR-020)', () => {
   })
 
   it('inlines the fetched SKILL.md in the brief and launches the worker', async () => {
-    repoFiles.set('skills/plan/SKILL.md', '---\nname: plan\n---\nPlan carefully.')
+    repoFiles.set('skills/plan/SKILL.md', '---\nname: plan\ndescription: d\n---\nPlan carefully.')
     const run = h.createRun(FALLBACK_AGENT_WORKFLOW)
     void h.createController(run.id).run()
 
@@ -91,7 +91,9 @@ describe('WorkflowRunController — prompt-fallback skills (FR-020)', () => {
     const briefPath = implementAttempt(run.id)?.briefPath ?? ''
     const brief = await readFile(join(workspaceRoot, briefPath), 'utf-8')
     const skills = brief.slice(brief.indexOf('## Skills'), brief.indexOf('## Result'))
-    expect(skills).toContain('```markdown\n---\nname: plan\n---\nPlan carefully.\n```')
+    expect(skills).toContain(
+      '```markdown\n---\nname: plan\ndescription: d\n---\nPlan carefully.\n```'
+    )
     expect(skills).toContain(`\`skills/plan/SKILL.md\` from ${SOURCE}`)
   })
 })

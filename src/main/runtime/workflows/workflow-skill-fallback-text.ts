@@ -6,7 +6,9 @@
 import type { SkillReference } from '../../../shared/workflows/workflow-skill-reference-schema'
 import type { FallbackSkillText } from './workflow-brief-skills'
 import { getRoleFetchHost, type RoleFetchHost } from './workflow-role-fetch-host'
-import { skillMdCandidates, skillMdDeclaresName } from './workflow-skill-md-location'
+import { isENOENT } from '../../ipc/filesystem-auth'
+import { locateSkillMd } from './workflow-skill-md-location'
+import type { SkillRepositoryCheckout } from './workflow-skill-repository-manifests'
 import { workflowSkillWorkspaceTarget } from './workflow-skill-workspace-target'
 import {
   findAllowedWorkflowSource,
@@ -29,39 +31,42 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-function isNamedDir(path: string, name: string): boolean {
-  return path.split('/').at(-2)?.toLowerCase() === name.toLowerCase()
-}
-
-async function readSkillMd(
+/** Each file is read at most once per fetch: on SSH every read is a round trip. */
+function cachedCheckout(
   host: RoleFetchHost,
   checkoutDir: string,
-  candidates: readonly string[],
-  name: string
-): Promise<{ path: string; text: string } | undefined> {
-  // Why: each read is a round trip on SSH, and `<name>/SKILL.md` is the usual match.
-  const ordered = [...candidates].sort(
-    (a, b) => Number(isNamedDir(b, name)) - Number(isNamedDir(a, name))
-  )
-  for (const path of ordered) {
-    const text = await host.readFile(host.joinPath(checkoutDir, path))
-    if (skillMdDeclaresName(text, name)) {
-      return { path, text }
+  paths: readonly string[]
+): SkillRepositoryCheckout {
+  const reads = new Map<string, Promise<string | null>>()
+  const readText = (path: string): Promise<string | null> =>
+    host.readFile(host.joinPath(checkoutDir, path)).catch((error: unknown) => {
+      // The CLI skips a SKILL.md it cannot read as text; anything else (a lost host) propagates.
+      if (isENOENT(error) || errorMessage(error) === 'workflow_role_file_binary') {
+        return null
+      }
+      throw error
+    })
+  return {
+    paths,
+    readText(path) {
+      const cached = reads.get(path) ?? readText(path)
+      reads.set(path, cached)
+      return cached
     }
   }
-  return undefined
 }
 
-async function listSkillMdCandidates(
+async function cloneCheckout(
   host: RoleFetchHost,
   source: string,
   tempDir: string
-): Promise<string[]> {
+): Promise<SkillRepositoryCheckout> {
   await host.clone(source, undefined, tempDir, CHECKOUT_DIR_NAME)
-  const listing = await host.runGit(['ls-files', '-z'], host.joinPath(tempDir, CHECKOUT_DIR_NAME))
+  const checkoutDir = host.joinPath(tempDir, CHECKOUT_DIR_NAME)
+  const listing = await host.runGit(['ls-files', '-z'], checkoutDir)
   // Why: the path is echoed into the brief, so one that could break its markdown is skipped.
   const paths = listing.split('\0').filter((path) => path.length > 0 && !UNSAFE_PATH.test(path))
-  return skillMdCandidates(paths)
+  return cachedCheckout(host, checkoutDir, paths)
 }
 
 async function fetchFromSource(
@@ -73,9 +78,9 @@ async function fetchFromSource(
   const found = new Map<string, FallbackSkillText>()
   const tempDir = await host.createTempDir()
   try {
-    let candidates: string[]
+    let checkout: SkillRepositoryCheckout
     try {
-      candidates = await listSkillMdCandidates(host, source, tempDir)
+      checkout = await cloneCheckout(host, source, tempDir)
     } catch (error) {
       // An optional skill that cannot be fetched does not block the node, as with installs.
       if (!skills.some((skill) => skill.required)) {
@@ -86,9 +91,8 @@ async function fetchFromSource(
         `Could not fetch skill(s) ${names} from ${source} to inline for agent "${agent}": ${errorMessage(error)}`
       )
     }
-    const checkoutDir = host.joinPath(tempDir, CHECKOUT_DIR_NAME)
     for (const skill of skills) {
-      const match = await readSkillMd(host, checkoutDir, candidates, skill.name)
+      const match = await locateSkillMd(checkout, skill.name)
       if (match) {
         found.set(skill.name, { source, ...match })
       } else if (skill.required) {

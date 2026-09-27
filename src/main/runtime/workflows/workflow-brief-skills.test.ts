@@ -73,6 +73,23 @@ describe('skillsSection', () => {
     expect(text).toContain(`${SKILL_TEXT_INLINE_CAP_CHARS} characters`)
   })
 
+  it('never cuts the cap through a surrogate pair', () => {
+    const body = `${'x'.repeat(SKILL_TEXT_INLINE_CAP_CHARS - 1)}\u{1F600}tail`
+    const text = skillsSection({
+      skills: [repoSkill],
+      agent: 'aider',
+      fallbackTexts: fallback(body)
+    })
+    expect(text).not.toContain('\uD83D')
+    expect(text).toContain(`${'x'.repeat(SKILL_TEXT_INLINE_CAP_CHARS - 1)}\n`)
+  })
+
+  it('does not call a required skill without text optional', () => {
+    const text = skillsSection({ skills: [repoSkill], agent: 'aider', fallbackTexts: new Map() })
+    expect(text).toContain('**speckit-plan**')
+    expect(text).not.toContain('optional')
+  })
+
   it('names a plugin skill only, and an optional skill whose text was not found', () => {
     const optional = { ...repoSkill, name: 'speckit-extra', required: false }
     const text = skillsSection({

@@ -120,6 +120,7 @@ async function launchBriefNode(
   try {
     const launch = resolveNodeLaunch(node, ctx.definition.roles)
     const skills = nodeSkills(node, ctx.definition.roles)
+    // Brief preparation, including this FR-020 SKILL.md fetch, runs while the attempt is `pending`.
     const fallbackSkillTexts = await loadRunFallbackSkillTexts(ctx.workspace, {
       agent: launch.agent,
       skills

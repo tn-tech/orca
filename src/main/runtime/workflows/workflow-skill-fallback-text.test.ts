@@ -121,6 +121,31 @@ describe('fetchFallbackSkillTexts', () => {
     expect(texts.size).toBe(0)
   })
 
+  it('reads each repository file at most once per fetch', async () => {
+    const { host } = fakeHost({
+      'skills/x/SKILL.md': skillMd('a'),
+      'skills/y/SKILL.md': skillMd('b'),
+      'skills/z/SKILL.md': skillMd('c')
+    })
+    const texts = await fetchFallbackSkillTexts(
+      { agent: 'aider', skills: [skill('c'), skill('b'), skill('a')] },
+      { allowlist: [SOURCE], getHost: () => host }
+    )
+    expect([...texts.keys()]).toEqual(['c', 'b', 'a'])
+    const reads = vi.mocked(host.readFile).mock.calls.map(([path]) => path)
+    expect(reads).toHaveLength(new Set(reads).size)
+  })
+
+  it('skips optional skills whose repository cannot be cloned', async () => {
+    const { host, removed } = fakeHost({}, { cloneError: new Error('repository not found') })
+    const texts = await fetchFallbackSkillTexts(
+      { agent: 'aider', skills: [skill('plan', false)] },
+      { allowlist: [SOURCE], getHost: () => host }
+    )
+    expect(texts.size).toBe(0)
+    expect(removed).toEqual(['/host/tmp/t1'])
+  })
+
   it('fails a required skill whose repository cannot be cloned, naming the source', async () => {
     const { host, removed } = fakeHost({}, { cloneError: new Error('repository not found') })
     await expect(

@@ -44,10 +44,17 @@ function longestBacktickRun(text: string): number {
   return Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length))
 }
 
+/** Cuts at the cap, backing off one unit rather than splitting a surrogate pair. */
+function capText(text: string): string {
+  const last = text.charCodeAt(SKILL_TEXT_INLINE_CAP_CHARS - 1)
+  const isHighSurrogate = last >= 0xd800 && last <= 0xdbff
+  return text.slice(0, SKILL_TEXT_INLINE_CAP_CHARS - (isHighSurrogate ? 1 : 0))
+}
+
 /** Untrusted repository text: a fence longer than any backtick run inside keeps it one block. */
 function inlinedSkill(skill: SkillReference, fetched: FallbackSkillText): string[] {
   const truncated = fetched.text.length > SKILL_TEXT_INLINE_CAP_CHARS
-  const body = truncated ? fetched.text.slice(0, SKILL_TEXT_INLINE_CAP_CHARS) : fetched.text
+  const body = truncated ? capText(fetched.text) : fetched.text
   const fence = '`'.repeat(Math.max(3, longestBacktickRun(body) + 1))
   return [
     `### ${skill.name}`,
@@ -81,7 +88,7 @@ function fallbackLines(
   const fetched = fallbackTexts.get(skill.name)
   if (!fetched) {
     return [
-      `- **${skill.name}** — optional skill; its SKILL.md could not be fetched from ${skill.source.location}.`,
+      `- **${skill.name}** — ${skill.required ? 'required' : 'optional'} skill; its SKILL.md could not be fetched from ${skill.source.location}.`,
       ''
     ]
   }
