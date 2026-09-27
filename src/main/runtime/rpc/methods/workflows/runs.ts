@@ -90,7 +90,8 @@ export const WORKFLOW_RUN_METHODS = [
         attempts: db.listWorkflowAttempts(params.runId),
         questions: db.listWorkflowQuestions(params.runId),
         messages: db.listWorkflowMessages(params.runId),
-        events: db.listWorkflowEventsTail(params.runId)
+        events: db.listWorkflowEventsTail(params.runId),
+        proposals: db.listWorkflowRoleProposals(params.runId)
       }
     }
   }),

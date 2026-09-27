@@ -167,6 +167,12 @@ const STRUCTURED_RUNTIME_PASSTHROUGH_CODES: ReadonlySet<string> = new Set([
   // stops offering actions on a finished run, rather than reading a generic failure.
   'workflow_question_not_pending',
   'workflow_run_not_active',
+  // workflow.proposal.accept/export: the client stops offering an action the proposal no longer
+  // allows, or explains that only an imported role has an origin to export to.
+  'workflow_proposal_not_found',
+  'workflow_proposal_not_pending',
+  'workflow_role_not_found',
+  'workflow_role_not_imported',
   ARTIFACT_SHARING_DISABLED_CODE,
   AGENT_SKILL_SHARING_DISABLED_CODE,
   AGENT_SKILL_NOT_SHAREABLE_CODE,

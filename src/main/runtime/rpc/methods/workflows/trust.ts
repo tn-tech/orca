@@ -1,6 +1,5 @@
 import { defineMethod } from '../../core'
 import {
-  WorkflowProposalAction,
   WorkflowTrustDecide,
   WorkflowTrustRevoke
 } from '../../../../../shared/rpc-contract/workflow-run-params'
@@ -12,11 +11,6 @@ import {
 } from '../../../workflows/workflow-source-trust'
 import { wakeWorkflowRun } from '../../../workflows/workflow-run-wake'
 import { workflowCallerIdentity } from './workflow-caller-identity'
-
-// Why: skeletons for U10; P3 proposals replace each throw.
-function notImplemented(): never {
-  throw new Error('workflow_not_implemented')
-}
 
 export const WORKFLOW_TRUST_METHODS = [
   defineMethod({
@@ -60,15 +54,5 @@ export const WORKFLOW_TRUST_METHODS = [
       })
       return {}
     }
-  }),
-  defineMethod({
-    name: 'workflow.proposal.accept',
-    params: WorkflowProposalAction,
-    handler: notImplemented
-  }),
-  defineMethod({
-    name: 'workflow.proposal.export',
-    params: WorkflowProposalAction,
-    handler: notImplemented
   })
 ]

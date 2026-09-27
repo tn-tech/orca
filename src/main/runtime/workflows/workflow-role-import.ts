@@ -43,7 +43,7 @@ export class RoleSourceNotAllowedError extends Error {
   }
 }
 
-function assertValidRoleName(roleName: string): void {
+export function assertValidRoleName(roleName: string): void {
   if (!ROLE_NAME_PATTERN.test(roleName) || roleName.includes('..')) {
     throw new OrchestrationError('workflow_role_name_invalid', 'workflow_role_name_invalid', {
       roleName

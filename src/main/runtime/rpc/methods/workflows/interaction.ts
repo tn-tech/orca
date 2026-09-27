@@ -1,12 +1,15 @@
 import { defineMethod } from '../../core'
 import {
+  WorkflowProposalAction,
   WorkflowRunAnswer,
   WorkflowRunSendMessage
 } from '../../../../../shared/rpc-contract/workflow-run-params'
 import { OrchestrationError } from '../../../orchestration/orchestration-error'
 import { queueFollowUp } from '../../../workflows/workflow-follow-up-delivery'
 import { answerRunQuestion } from '../../../workflows/workflow-question-answer'
+import { acceptRoleProposal, exportRoleProposal } from '../../../workflows/workflow-role-proposals'
 import { workflowCallerIdentity } from './workflow-caller-identity'
+import { roleProposalPorts } from './workflow-proposal-ports'
 
 export const WORKFLOW_INTERACTION_METHODS = [
   defineMethod({
@@ -49,5 +52,27 @@ export const WORKFLOW_INTERACTION_METHODS = [
       })
       return { messageId: message.id }
     }
+  }),
+  // US7 AS2: the accepted change lands in the workflow file and on the run that proposed it.
+  defineMethod({
+    name: 'workflow.proposal.accept',
+    params: WorkflowProposalAction,
+    handler: (params, ctx) =>
+      acceptRoleProposal(roleProposalPorts(ctx.runtime), {
+        runId: params.runId,
+        proposalId: params.proposalId,
+        actor: workflowCallerIdentity(ctx)
+      })
+  }),
+  // US7 AS3: a change bundle for the role's origin repository, written in the run workspace.
+  defineMethod({
+    name: 'workflow.proposal.export',
+    params: WorkflowProposalAction,
+    handler: (params, ctx) =>
+      exportRoleProposal(roleProposalPorts(ctx.runtime), {
+        runId: params.runId,
+        proposalId: params.proposalId,
+        actor: workflowCallerIdentity(ctx)
+      })
   })
 ]

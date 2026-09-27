@@ -3,6 +3,7 @@
 import type { MessageRow } from '../orchestration/types'
 import { releaseAgentQuestionWait } from './workflow-agent-questions'
 import { artifactsFor, resultContractFor } from './workflow-brief-builder'
+import { captureReflectionResult, recordReflectionProposals } from './workflow-reflection'
 import { captureNodeResult } from './workflow-result-capture'
 import { captureRouterResult, recordRouterChoice } from './workflow-router'
 import type { RunMail } from './workflow-run-mailbox-message'
@@ -62,7 +63,9 @@ export async function handleWorkerDone(
   const capture =
     node.type === 'router'
       ? await captureRouterResult(node, captureArgs)
-      : await captureNodeResult({ ...captureArgs, resultContract: resultContractFor(node) })
+      : node.type === 'reflection'
+        ? await captureReflectionResult(ctx.definition.roles, captureArgs)
+        : await captureNodeResult({ ...captureArgs, resultContract: resultContractFor(node) })
   // Why: a stopped controller leaves the delivery unacknowledged, so the next one re-captures it.
   if (ctx.signal?.aborted) {
     return false
@@ -78,6 +81,9 @@ export async function handleWorkerDone(
       resultJson: capture.result,
       artifactsJson: capture.artifacts
     })
+    if (node.type === 'reflection') {
+      recordReflectionProposals(db, recorder, attempt, capture.result, ctx.definition.roles)
+    }
     // Why: taskCreate readies a successor only once every dep Task is completed.
     await ensureTaskStatus(ctx, attempt.taskId, 'completed')
     if (node.type === 'router') {

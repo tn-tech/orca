@@ -71,6 +71,7 @@ import { attachWorkflowEngineRunBinding } from './workflow-runs/workflow-engine-
 import { attachWorkflowEventStore } from './workflow-runs/workflow-event-store'
 import { attachWorkflowMessageStore } from './workflow-runs/workflow-message-store'
 import { attachWorkflowTrustStore } from './workflow-runs/workflow-trust-store'
+import { attachWorkflowProposalStore } from './workflow-runs/workflow-proposal-store'
 import { attachWorkflowQuestionStore } from './workflow-runs/workflow-question-store'
 import { attachWorkflowRunStore } from './workflow-runs/workflow-run-store'
 
@@ -149,5 +150,6 @@ export function attachOrchestrationDbMethods(ctor: { prototype: object }): void 
   attachWorkflowQuestionStore(ctor)
   attachWorkflowMessageStore(ctor)
   attachWorkflowTrustStore(ctor)
+  attachWorkflowProposalStore(ctor)
   attachWorkflowEngineRunBinding(ctor)
 }

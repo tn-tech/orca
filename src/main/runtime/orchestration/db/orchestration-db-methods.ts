@@ -71,6 +71,7 @@ import type { WorkflowEngineRunBindingMethods } from './workflow-runs/workflow-e
 import type { WorkflowEventStoreMethods } from './workflow-runs/workflow-event-store'
 import type { WorkflowMessageStoreMethods } from './workflow-runs/workflow-message-store'
 import type { WorkflowTrustStoreMethods } from './workflow-runs/workflow-trust-store'
+import type { WorkflowProposalStoreMethods } from './workflow-runs/workflow-proposal-store'
 import type { WorkflowQuestionStoreMethods } from './workflow-runs/workflow-question-store'
 import type { WorkflowRunStoreMethods } from './workflow-runs/workflow-run-store'
 
@@ -148,4 +149,5 @@ export type OrchestrationDbMethods = AttemptObservationStoreMethods &
   WorkflowQuestionStoreMethods &
   WorkflowMessageStoreMethods &
   WorkflowTrustStoreMethods &
+  WorkflowProposalStoreMethods &
   WorkflowEngineRunBindingMethods

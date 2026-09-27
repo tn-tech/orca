@@ -23,7 +23,6 @@ export type IncomingEdgeOutcome =
 
 export type FrontierDecision = { eligible: string[]; skipped: string[] }
 
-// The Reflection frontier lands with its own phase; it stays pending here.
 // Loop bodies advance per iteration in workflow-loop-unrolling.ts; the Loop node itself is offered here.
 export const FRONTIER_NODE_TYPES: ReadonlySet<Node['type']> = new Set<Node['type']>([
   'start',
@@ -32,7 +31,8 @@ export const FRONTIER_NODE_TYPES: ReadonlySet<Node['type']> = new Set<Node['type
   'router',
   'loop',
   'join',
-  'approval'
+  'approval',
+  'reflection'
 ])
 
 /** Whether a completed ported node (Router choice, Approval option) picked `edge`'s port. */

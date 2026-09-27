@@ -36,6 +36,24 @@ export function attempt(
   return { nodeId, iteration: 0, attemptIndex: extra.attemptIndex ?? 0, state, ...extra }
 }
 
+/**
+ * A Loop nested in another Loop's body. The engine never runs one, so a branch through it never
+ * settles — the stand-in for "a branch nothing can settle".
+ */
+export function nestedLoop(id: string): Node {
+  return {
+    id,
+    type: 'loop',
+    title: `Nested loop ${id}`,
+    body: { nodeIds: [] },
+    entryNodeId: id,
+    exitNodeId: id,
+    maxIterations: 1,
+    exitCondition: { path: 'done', op: 'truthy' },
+    onCapReached: 'fail'
+  }
+}
+
 export const start: Node = { id: 'start', type: 'start', title: 'Start' }
 export const end: Node = { id: 'end', type: 'end', title: 'End' }
 

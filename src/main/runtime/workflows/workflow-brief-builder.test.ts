@@ -142,6 +142,45 @@ describe('buildBriefMarkdown', () => {
     expect(text).toContain('"roleId"')
   })
 
+  it('names the roles a Reflection may change and lists the run record in its inputs', () => {
+    const { text } = buildBriefMarkdown({
+      workflowName: 'wf',
+      runId: 'run-1',
+      attemptId: 'attempt-2',
+      node: reflectionNode,
+      systemPrompt: role.systemPrompt,
+      skills: [],
+      briefInputs,
+      reflection: {
+        roles: {
+          developer: { id: 'developer', name: 'Dev', agent: 'codex', systemPrompt: 'x', skills: [] }
+        },
+        runRecord: [
+          {
+            nodeId: 'implement',
+            title: 'Implement',
+            nodeType: 'agent',
+            iteration: 0,
+            attemptIndex: 0,
+            state: 'failed',
+            resultPath: '.orca/workflow-runs/run-1/attempt-1/result.json',
+            artifacts: [],
+            failureReason: 'result_invalid',
+            transcript: { dispatchId: 'dsp_1' }
+          }
+        ]
+      }
+    })
+    const inputs = text.slice(text.indexOf('## Inputs'), text.indexOf('## Skills'))
+    expect(inputs).toContain('### Run record')
+    expect(inputs).toContain('`.orca/workflow-runs/run-1/attempt-1/result.json`')
+    expect(inputs).toContain('`orchestration worker-read --dispatch dsp_1`')
+    expect(inputs).toContain('failure `result_invalid`')
+    const result = text.slice(text.indexOf('## Result'), text.indexOf('## Artifacts'))
+    expect(result).toContain('- "developer"')
+    expect(result).toContain('complete new system prompt')
+  })
+
   it('notes when a role has no skills', () => {
     const { text } = buildBriefMarkdown({
       workflowName: 'wf',

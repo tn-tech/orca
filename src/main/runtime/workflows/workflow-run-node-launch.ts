@@ -13,6 +13,7 @@ import { joinBranchesInput, settleJoin } from './workflow-join-settlement'
 import { loopPreviousInputs } from './workflow-loop-unrolling'
 import { resolveNodeLaunch } from './workflow-node-dispatch'
 import { dispatchBriefAttempt, nodeSkills } from './workflow-brief-attempt-dispatch'
+import { buildRunRecord } from './workflow-brief-run-record'
 import type { WorkflowOrchestrationClient } from './workflow-orchestration-client'
 import type { WorkflowRunRecorder } from './workflow-run-recorder'
 import { loadRunFallbackSkillTexts } from './workflow-skill-fallback-text'
@@ -142,6 +143,14 @@ async function launchBriefNode(
       skills,
       agent: launch.agent,
       fallbackSkillTexts,
+      ...(node.type === 'reflection'
+        ? {
+            reflection: {
+              runRecord: buildRunRecord(ctx.definition, attempts, node.id),
+              roles: ctx.definition.roles
+            }
+          }
+        : {}),
       briefInputs: {
         objective: ctx.objective,
         upstream: upstreamInputs(attempts),

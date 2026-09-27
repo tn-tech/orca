@@ -4,7 +4,7 @@ import type { Edge, LoopNode, Node } from '../../../shared/workflows/workflow-de
 import type { WorkflowAttemptState } from '../../../shared/workflows/workflow-node-states'
 import { computeFrontier } from './workflow-frontier'
 import { createNodeTask } from './workflow-frontier-node-task'
-import { agent, end, start, workflow } from './workflow-frontier-test-fixtures'
+import { agent, end, nestedLoop, start, workflow } from './workflow-frontier-test-fixtures'
 import { computeLoopProgress, type LoopProgressAttempt } from './workflow-loop-unrolling'
 
 function loop(bodyNodeIds: string[]): LoopNode {
@@ -21,8 +21,8 @@ function loop(bodyNodeIds: string[]): LoopNode {
   }
 }
 
-// Reflection is still a pending seam in the engine (the frontier never offers it).
-const gate: Node = { id: 'route', type: 'reflection', title: 'Route', prompt: 'Reflect.' }
+// The engine never runs a Loop nested in a body, so nothing is ever offered past it.
+const gate: Node = nestedLoop('route')
 
 function at(
   nodeId: string,
@@ -116,7 +116,14 @@ describe('Loop exit resolution', () => {
 
   it('settles when that outside node never gets an attempt and nothing else is moving', () => {
     const def = workflow(
-      [start, loop(['implement', 'review']), agent('implement'), agent('review'), gate, end],
+      [
+        start,
+        loop(['implement', 'review']),
+        agent('implement'),
+        agent('review'),
+        agent('route'),
+        end
+      ],
       [
         entry,
         { id: 'a', from: 'implement', to: 'review' },

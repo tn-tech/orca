@@ -4,7 +4,8 @@ import type {
   AgentNode,
   ReflectionNode,
   ResultContract,
-  RouterNode
+  RouterNode,
+  Workflow
 } from '../../../shared/workflows/workflow-definition-types'
 import type { SkillReference } from '../../../shared/workflows/workflow-skill-reference-schema'
 import type { WorkflowProblem } from '../../../shared/workflows/workflow-problem'
@@ -18,7 +19,9 @@ import { joinWorktreeRelativePath } from '../runtime-relative-paths'
 import { ensureRemoteOrcaDirIgnored } from '../runtime-repository-issue-command'
 import type { WorkflowFilesystem } from './workflow-file-store-filesystem'
 import { inputsSection } from './workflow-brief-inputs-section'
+import { runRecordLines, type RunRecordEntry } from './workflow-brief-run-record'
 import { skillsSection, type SkillsSectionArgs } from './workflow-brief-skills'
+import { REFLECTION_RESULT_CONTRACT, reflectionProposalLines } from './workflow-reflection'
 import { routerChoiceLines, routerResultContract } from './workflow-router'
 
 /** A brief-eligible node: the three role-dispatching node types (agent-brief.md). */
@@ -36,27 +39,7 @@ export function resultContractFor(node: BriefNode): ResultContract {
   if (node.type === 'router') {
     return routerResultContract(node)
   }
-  return {
-    type: 'object',
-    required: ['proposals'],
-    properties: {
-      proposals: {
-        type: 'array',
-        items: {
-          type: 'object',
-          required: ['roleId', 'change', 'evidence'],
-          properties: {
-            roleId: { type: 'string' },
-            change: {
-              type: 'object',
-              properties: { systemPrompt: { type: 'string' }, skills: { type: 'array' } }
-            },
-            evidence: { type: 'string' }
-          }
-        }
-      }
-    }
-  }
+  return REFLECTION_RESULT_CONTRACT
 }
 
 export function artifactsFor(node: BriefNode): { path: string; required: boolean }[] {
@@ -85,6 +68,8 @@ export type BuildBriefMarkdownArgs = {
   briefInputs: BriefReferenceInputs
   /** The Loop iteration of a body node; shown only when `briefInputs.loopPrevious` is set. */
   iteration?: number
+  /** Reflection only: the run's earlier attempts to review, and the roles it may change. */
+  reflection?: { runRecord: RunRecordEntry[]; roles: Workflow['roles'] }
 }
 
 /** Renders brief.md's seven sections, in the order contracts/agent-brief.md defines them. */
@@ -113,6 +98,7 @@ export function buildBriefMarkdown(args: BuildBriefMarkdownArgs): {
     '## Inputs',
     '',
     inputsSection(args.briefInputs, args.iteration, inputsJsonPath),
+    ...(args.reflection ? ['', ...runRecordLines(args.reflection.runRecord)] : []),
     '',
     '## Skills',
     '',
@@ -125,6 +111,7 @@ export function buildBriefMarkdown(args: BuildBriefMarkdownArgs): {
     '## Result',
     '',
     ...(args.node.type === 'router' ? routerChoiceLines(args.node) : []),
+    ...(args.reflection ? reflectionProposalLines(args.reflection.roles) : []),
     'The result must validate against this JSON Schema:',
     '',
     '```json',
@@ -154,6 +141,7 @@ export type BuildInputsJsonArgs = {
   upstream: BriefReferenceInputs['upstream']
   loopPrevious?: BriefReferenceInputs['loopPrevious']
   joinBranches?: BriefReferenceInputs['joinBranches']
+  runRecord?: RunRecordEntry[]
 }
 
 /** inputs.json: `nodeId`/`iteration` are read by every worker (config/scripts/workflow-stub-agent.mjs). */
@@ -164,7 +152,8 @@ export function buildInputsJson(args: BuildInputsJsonArgs): Record<string, unkno
     objective: args.objective,
     upstream: args.upstream,
     ...(args.loopPrevious === undefined ? {} : { loopPrevious: args.loopPrevious }),
-    ...(args.joinBranches === undefined ? {} : { joinBranches: args.joinBranches })
+    ...(args.joinBranches === undefined ? {} : { joinBranches: args.joinBranches }),
+    ...(args.runRecord === undefined ? {} : { runRecord: args.runRecord })
   }
 }
 
@@ -234,7 +223,8 @@ export async function writeBrief(args: WriteBriefArgs): Promise<WriteBriefResult
     objective: args.briefInputs.objective,
     upstream: args.briefInputs.upstream,
     loopPrevious: args.briefInputs.loopPrevious,
-    joinBranches: args.briefInputs.joinBranches
+    joinBranches: args.briefInputs.joinBranches,
+    runRecord: args.reflection?.runRecord
   })
   await args.fs.writeFile(
     joinWorktreeRelativePath(args.workspaceRoot, `${dir}/inputs.json`),

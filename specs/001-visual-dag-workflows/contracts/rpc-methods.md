@@ -46,6 +46,14 @@ Host capability: `workflow.engine.v1` (`WORKFLOW_ENGINE_RUNTIME_CAPABILITY`).
 | `workflow.proposal.accept` (P3) | `{ runId, proposalId }`                             | `{ revision }`                                                                                                                                                                    |
 | `workflow.proposal.export` (P3) | `{ runId, proposalId }`                             | `{ exportPath }`                                                                                                                                                                  |
 
+Proposals are listed in `workflow.run.show` as `proposals` (optional; older hosts omit it). Accept
+replaces the proposed fields of the role in the run's workflow file through the save gate, refusing
+`workflow_file_conflict` when those fields changed in the file since the run; an imported role keeps
+its `origin` and is flagged `localModified`. Export writes `<roleId>.patch` and
+`<roleId>.README.md` under the run workspace's `.orca/workflow-runs/<runId>/proposals/`
+(`workflow_role_not_imported` for a role with no origin). Other errors:
+`workflow_proposal_not_found`, `workflow_proposal_not_pending`, `workflow_role_not_found`.
+
 ## Events
 
 - `runtime.clientEvents.subscribe` gains `{ type: 'workflowRunChanged', runId, reason:

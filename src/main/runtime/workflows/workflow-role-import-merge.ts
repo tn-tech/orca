@@ -30,7 +30,7 @@ export function roleContentHash(content: RoleContent): string {
     .digest('hex')
 }
 
-function roleContentOf(role: Role): RoleContent {
+export function roleContentOf(role: Role): RoleContent {
   const { id: _id, origin: _origin, ...content } = role
   return content
 }

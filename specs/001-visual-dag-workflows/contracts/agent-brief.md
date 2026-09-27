@@ -14,6 +14,9 @@ live under the per-user, git-ignored `.orca/` directory.
 1. **Role** – the role's system prompt (after overrides).
 2. **Task** – the node prompt with `${...}` references resolved.
 3. **Inputs** – table of upstream node results and artifact paths, plus `inputs.json` path.
+   Reflection nodes also get a **Run record**: every earlier worker attempt's brief, result and
+   artifact paths, failure reason, and the `orchestration worker-read --dispatch <id>` command
+   for its transcript (also `runRecord` in `inputs.json`).
 4. **Skills** – the skills to use, with the provider-specific invocation (for example
    `/speckit-plan`); for agents without workspace skill support, the skill text is inlined here.
 5. **Result** – the JSON Schema the result must satisfy and the exact path to write:
@@ -36,6 +39,8 @@ Write your result to .orca/workflow-runs/<runId>/<attemptId>/result.json and pas
 - Must parse as JSON and validate against the node's `resultContract`.
 - Router nodes: `{ "choice": "<one of choices>", "reason": "..." }`.
 - Reflection nodes: `{ "proposals": [{ "roleId", "change": { "systemPrompt"?: string, "skills"?: SkillReference[] }, "evidence": string }] }`.
+  Each set `change` field replaces the role's value whole; a proposal for a role the workflow
+  lacks, or one that sets neither field, fails the node `result_invalid`.
 - Optional top-level `artifacts: string[]` adds declared artifact paths beyond the node's list.
 
 ## Engine validation on `worker_done`

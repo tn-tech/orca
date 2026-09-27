@@ -3,6 +3,7 @@
 import type { JsonValue } from './workflow-condition-schema'
 import type { Node, Workflow } from './workflow-definition-types'
 import type { WorkflowAttemptState, WorkflowRunState } from './workflow-node-states'
+import type { SkillReference } from './workflow-skill-reference-schema'
 
 export type WorkflowRunSource = 'project' | 'personal'
 
@@ -103,4 +104,19 @@ export type RunEventView = {
   kind: string
   payloadJson: JsonValue
   createdAt: string
+}
+
+/** A Reflection's proposed change: each set field replaces the role's own value whole. */
+export type RoleProposalChange = { systemPrompt?: string; skills?: SkillReference[] }
+export type RoleProposalState = 'proposed' | 'accepted' | 'exported' | 'rejected'
+
+/** `workflow_role_proposals`: one Reflection proposal, tied to the run and attempt that made it. */
+export type RoleProposalView = {
+  id: string
+  runId: string
+  attemptId: string
+  roleId: string
+  change: RoleProposalChange
+  evidence: string
+  state: RoleProposalState
 }

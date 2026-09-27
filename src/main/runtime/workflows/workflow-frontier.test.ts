@@ -160,7 +160,7 @@ describe('computeFrontier', () => {
     expect(computeFrontier(linear, attempts)).toEqual({ eligible: ['b'], skipped: [] })
   })
 
-  it('leaves node types handled by later phases pending without crashing', () => {
+  it('offers a Reflection once the Join before it completes', () => {
     const def = workflow(
       [
         start,
@@ -185,7 +185,7 @@ describe('computeFrontier', () => {
       attempt('b', 'completed'),
       attempt('join', 'completed')
     ]
-    expect(computeFrontier(def, attempts)).toEqual({ eligible: [], skipped: [] })
+    expect(computeFrontier(def, attempts)).toEqual({ eligible: ['gate'], skipped: [] })
   })
 })
 

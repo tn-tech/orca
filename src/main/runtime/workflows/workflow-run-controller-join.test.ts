@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Node } from '../../../shared/workflows/workflow-definition-types'
 import { resolveApproval } from './workflow-approval-gates'
 import { approvalNode, HOUR_MS } from './workflow-approval-test-fixtures'
+import { nestedLoop } from './workflow-frontier-test-fixtures'
 import {
   branchAgent,
   fanOutWorkflow,
@@ -19,8 +20,11 @@ import {
 } from './workflow-run-controller-test-harness'
 
 const gate = approvalNode({ question: 'ok?', options: ['yes'] })
-// Reflection is not run by the engine yet: a branch that can never settle.
-const unrun: Node = { id: 'unrun', type: 'reflection', title: 'Unrun', prompt: 'Reflect.' }
+// Branches nothing can settle: an agent whose only way in is a port its source does not have,
+// and, inside a Loop body, a nested Loop (which the engine never runs).
+const unrun: Node = branchAgent('unrun')
+const neverOffered = { from: 'start', to: 'unrun', fromPort: 'unreachable' }
+const unrunLoop: Node = nestedLoop('unrun')
 
 describe('WorkflowRunController Join execution', () => {
   let workspaceRoot: string
@@ -173,7 +177,7 @@ describe('WorkflowRunController Join execution', () => {
       ['a'],
       [
         { id: 'e1', from: 'start', to: 'a' },
-        { id: 'e2', from: 'start', to: 'unrun' },
+        { id: 'e2', ...neverOffered },
         { id: 'e3', from: 'a', to: 'join' },
         { id: 'e4', from: 'unrun', to: 'join' }
       ],
@@ -205,7 +209,7 @@ describe('WorkflowRunController Join execution', () => {
           onCapReached: 'fail'
         },
         branchAgent('a'),
-        unrun,
+        unrunLoop,
         joinNode('all', 'fail'),
         { id: 'end', type: 'end', title: 'Done' }
       ],

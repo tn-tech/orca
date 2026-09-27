@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { JsonValue } from '../../../shared/workflows/workflow-condition-schema'
 import type { Edge, Node } from '../../../shared/workflows/workflow-definition-types'
 import type { WorkflowAttemptState } from '../../../shared/workflows/workflow-node-states'
-import { agent, end, start, workflow } from './workflow-frontier-test-fixtures'
+import { agent, end, nestedLoop, start, workflow } from './workflow-frontier-test-fixtures'
 import { computeLoopProgress, type LoopProgressAttempt } from './workflow-loop-unrolling'
 
 const join = (id: string): Node => ({
@@ -12,8 +12,8 @@ const join = (id: string): Node => ({
   policy: 'all',
   onFailure: 'fail'
 })
-// Reflection is not run by the engine yet, so it stands in for a branch that never settles.
-const gate: Node = { id: 'gate', type: 'reflection', title: 'Gate', prompt: 'Reflect.' }
+// The engine never runs a Loop nested in a body, so it stands in for a branch that never settles.
+const gate: Node = nestedLoop('gate')
 
 /** start -> qa{ entry a ... exit e } -> end; `e` completes on its own path from `a`. */
 function loopWith(bodyNodes: Node[], bodyEdges: Edge[]) {
@@ -86,7 +86,7 @@ describe('Loop settlement with a Join in the body', () => {
     ])
   })
 
-  // a -> j <- gate(reflection): the unrun Reflection leaves j Waiting forever.
+  // a -> j <- gate(nested loop): the unrun nested Loop leaves j Waiting forever.
   const stuckSideJoin = loopWith(
     [gate, join('j')],
     [
