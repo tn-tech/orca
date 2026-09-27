@@ -266,11 +266,11 @@ Monorepo per plan.md: shared types `src/shared/workflows/`, engine `src/main/run
 
 ### Tests for User Story 6
 
-- [ ] T114 [P] [US6] Write `src/main/runtime/workflows/workflow-draft.test.ts` with the stub agent returning a definition: draft is validated, problems attached, draft flagged and not written to disk until saved
+- [X] T114 [P] [US6] Write `src/main/runtime/workflows/workflow-draft.test.ts` with the stub agent returning a definition: draft is validated, problems attached, draft flagged and not written to disk until saved
 
 ### Implementation for User Story 6
 
-- [ ] T115 [US6] Create `src/main/runtime/workflows/workflow-draft.ts`: run a single one-off Agent node (planner role from settings default) whose result contract is the workflow definition schema, validate, return `{definition, problems}`; implement `workflow.draft` in `methods/workflows/definitions.ts`
+- [X] T115 [US6] Create `src/main/runtime/workflows/workflow-draft.ts`: run a single one-off Agent node (planner role from settings default) whose result contract is the workflow definition schema, validate, return `{definition, problems}`; implement `workflow.draft` in `methods/workflows/definitions.ts`
 - [ ] T116 [P] [US6] Add `src/renderer/src/components/workflows/DraftWorkflowDialog.tsx` and a "Draft from objective" action in `WorkflowListPane.tsx`; drafts open in the editor with a draft badge until first save
 
 **Checkpoint**: A drafted workflow appears on the canvas fully specified and editable.
