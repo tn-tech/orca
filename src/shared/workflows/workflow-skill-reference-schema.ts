@@ -1,7 +1,13 @@
 import { z } from 'zod'
+import { isWorkflowPluginId, WORKFLOW_PLUGIN_ID_MESSAGE } from './workflow-plugin-id'
 
 const SkillSourceSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('plugin'), plugin: z.string().min(1) }).strict(),
+  z
+    .object({
+      kind: z.literal('plugin'),
+      plugin: z.string().min(1).refine(isWorkflowPluginId, WORKFLOW_PLUGIN_ID_MESSAGE)
+    })
+    .strict(),
   z
     .object({
       kind: z.literal('repository'),

@@ -24,6 +24,7 @@ import {
 } from './workflow-run-node-launch'
 import { WorkflowRunRecorder, type WorkflowRunChangeNotifier } from './workflow-run-recorder'
 import { settleRunIfQuiet } from './workflow-run-settlement'
+import { registerWorkflowRunWaker } from './workflow-run-wake'
 import { releaseRunSkills } from './workflow-skill-provisioning-host'
 
 export type WorkflowRunControllerRuntime = WorkflowRunChangeNotifier & {
@@ -81,10 +82,12 @@ export class WorkflowRunController {
         orchestrationRunId: session.engineRunId
       })
     }
+    const unregisterWaker = registerWorkflowRunWaker(run.id, () => this.wake())
     try {
       await this.advance(session)
       return await this.consumeMailbox(session)
     } finally {
+      unregisterWaker()
       if (TERMINAL_RUN_STATES.has(this.readRun().state)) {
         await releaseRunSkills(run.id, async () => session.launch.workspace)
       }

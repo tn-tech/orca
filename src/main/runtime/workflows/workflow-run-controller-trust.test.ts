@@ -27,6 +27,7 @@ import {
   TWO_NODE_WORKFLOW,
   waitUntil
 } from './workflow-run-controller-test-harness'
+import { wakeWorkflowRun } from './workflow-run-wake'
 import { decideSourceTrust } from './workflow-source-trust'
 
 const SOURCE = 'acme-decks@acme'
@@ -113,7 +114,7 @@ describe('WorkflowRunController — plugin source trust (FR-018a, US4 AS4a)', ()
     expect(host.installs).toEqual([])
 
     expect(decide('trusted')).toEqual([run.id])
-    controller.wake()
+    wakeWorkflowRun(run.id)
     await waitUntil(() => h.workerHandles.length === 1)
 
     expect(host.installs).toEqual([SOURCE])
@@ -126,10 +127,10 @@ describe('WorkflowRunController — plugin source trust (FR-018a, US4 AS4a)', ()
   })
 
   it('fails the node without installing when the source is refused', async () => {
-    const { run, controller, finished } = await startUntilWaiting()
+    const { run, finished } = await startUntilWaiting()
 
     decide('refused')
-    controller.wake()
+    wakeWorkflowRun(run.id)
     await waitUntil(() => h.db.getWorkflowRun(run.id)?.state === 'failed')
     await finished
 

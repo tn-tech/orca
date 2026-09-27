@@ -4,6 +4,7 @@ import { RpcDispatcher } from '../../dispatcher'
 import { OrcaRuntimeService } from '../../../orca-runtime'
 import { OrchestrationDb } from '../../../orchestration/db'
 import { TWO_NODE_WORKFLOW } from '../../../workflows/workflow-run-controller-test-harness'
+import { registerWorkflowRunWaker } from '../../../workflows/workflow-run-wake'
 import { raiseTrustQuestion } from '../../../workflows/workflow-source-trust'
 import { WORKFLOW_TRUST_METHODS } from './trust'
 
@@ -59,7 +60,8 @@ describe('workflow.trust.list / workflow.trust.decide', () => {
       attemptId: 'wfa_1',
       question: { source: 'acme-decks', host: 'local', skills: ['deck-writer'], agents: ['claude'] }
     })
-    const wakeRun = vi.spyOn(runtime.getWorkflowEngine(), 'wakeRun')
+    const wake = vi.fn()
+    const unregister = registerWorkflowRunWaker(run.id, wake)
 
     const response = await dispatcher.dispatch(
       makeRequest('workflow.trust.decide', { source: 'acme-decks', decision: 'refused' })
@@ -69,7 +71,8 @@ describe('workflow.trust.list / workflow.trust.decide', () => {
     expect(db.listWorkflowQuestions(run.id)).toEqual([
       expect.objectContaining({ id: question.id, state: 'answered', answer: 'refused' })
     ])
-    expect(wakeRun).toHaveBeenCalledWith(run.id)
+    expect(wake).toHaveBeenCalledTimes(1)
+    unregister()
   })
 
   it('refuses a decide call without a decision', async () => {

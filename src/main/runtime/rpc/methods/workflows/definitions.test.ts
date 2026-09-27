@@ -205,6 +205,19 @@ describe('workflow definition RPC methods', () => {
     expect(response.ok).toBe(true)
   })
 
+  it('refuses to save a plugin id that could parse as a CLI option, naming the rule', async () => {
+    const d = dispatcher()
+    const response = await d.dispatch(
+      makeRequest('workflow.write', {
+        repo: 'path:unused',
+        name: 'demo',
+        definition: agentWorkflowWithSkillSource({ kind: 'plugin', plugin: '--scope=project' })
+      })
+    )
+    expect(response).toMatchObject({ ok: false, error: { code: 'invalid_argument' } })
+    expect(JSON.stringify(response)).toContain('name@marketplace')
+  })
+
   it('fails workflow_file_conflict when expectedRevision is stale', async () => {
     const d = dispatcher()
     await d.dispatch(

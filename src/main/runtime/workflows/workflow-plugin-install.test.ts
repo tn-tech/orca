@@ -143,6 +143,17 @@ describe('createWorkflowPluginPort — install', () => {
     )
   })
 
+  it('refuses an id the CLI would read as an option, running nothing', async () => {
+    const host = fakeHost({})
+    const port = createWorkflowPluginPort(host)
+
+    for (const plugin of ['-y', '--scope=project', '[acme']) {
+      const result = await port.install({ plugin, agent: 'claude' })
+      expect(!result.ok && result.reason, plugin).toContain('name@marketplace')
+    }
+    expect(host.runCli).not.toHaveBeenCalled()
+  })
+
   it('treats an inherited object key as an unknown provider', () => {
     expect(pluginInstallUnavailableReason({ plugin: 'p', agent: 'toString' })).toBeDefined()
   })

@@ -2,6 +2,10 @@
 // on the executing host, whether their provider can install them at all, whether their source
 // is trusted there, and then the install itself, verified afterwards.
 import type { SkillReference } from '../../../shared/workflows/workflow-definition-types'
+import {
+  isWorkflowPluginId,
+  WORKFLOW_PLUGIN_ID_MESSAGE
+} from '../../../shared/workflows/workflow-plugin-id'
 import type {
   WorkflowSkillProvisioningOutcome,
   WorkflowSkillProvisioningPorts
@@ -17,6 +21,13 @@ export async function planPluginInstalls(
   pluginSkills: readonly { skill: SkillReference; plugin: string }[],
   ports: WorkflowSkillProvisioningPorts
 ): Promise<{ missing: MissingPlugins } | Failed | TrustRequired> {
+  const invalid = pluginSkills.find(({ plugin }) => !isWorkflowPluginId(plugin))
+  if (invalid) {
+    return {
+      kind: 'failed',
+      reason: `Skill "${invalid.skill.name}" names plugin "${invalid.plugin}": ${WORKFLOW_PLUGIN_ID_MESSAGE}`
+    }
+  }
   const missing = await pluginsToInstall(agent, pluginSkills, ports)
   return (
     dropUninstallablePlugins(agent, missing, ports) ??

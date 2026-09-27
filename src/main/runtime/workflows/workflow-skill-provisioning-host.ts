@@ -5,6 +5,7 @@ import { cp, lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { runProcess } from '../../../shared/child-process/run-process'
+import { runKeyedSerializedOperation } from '../../cli/keyed-promise-queue'
 import {
   resolveCliCommand,
   withCliRuntimeOnPath
@@ -76,8 +77,23 @@ export const localWorkflowSkillFilesystem: WorkflowSkillFilesystem = {
 // Why: with no trust store to read (cleanup-only callers), nothing is ever trusted.
 const askAlways: WorkflowSkillTrustGate = { decide: async () => 'needs-question' }
 
-function hostExtras(trust: WorkflowSkillTrustGate): SkillHostExtras {
-  return (host) => ({ plugins: createWorkflowPluginPort(host), trust })
+// Why per host, not per workspace: plugin installs write the host's shared user config.
+const hostPluginInstallQueues = new Map<string, Promise<void>>()
+
+function hostExtras(trustHost: string, trust: WorkflowSkillTrustGate): SkillHostExtras {
+  return (host) => {
+    const plugins = createWorkflowPluginPort(host)
+    return {
+      plugins: {
+        ...plugins,
+        install: (request) =>
+          runKeyedSerializedOperation(hostPluginInstallQueues, trustHost, () =>
+            plugins.install(request)
+          )
+      },
+      trust
+    }
+  }
 }
 
 const localCleanupPorts: SkillCleanupPorts = {
@@ -158,7 +174,7 @@ export function createRunSkillProvisioner(
 ): RunSkillProvisioner {
   const trustHost = workflowTrustHostKey(workspace)
   const trust = db ? sourceTrustGate(db, trustHost) : askAlways
-  const host = hostProvisioningPorts(workspace, hostExtras(trust))
+  const host = hostProvisioningPorts(workspace, hostExtras(trustHost, trust))
   const target = workspace.orcaIgnoreTarget
   return {
     async provision({ runId, agent, skills }) {

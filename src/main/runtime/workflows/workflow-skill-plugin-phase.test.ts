@@ -51,6 +51,26 @@ describe('provisionNodeSkills — verify-only plugin providers', () => {
   })
 })
 
+describe('provisionNodeSkills — plugin ids', () => {
+  it('fails an invalid plugin id before any check, trust question or install', async () => {
+    const { ports, plugins, trustGate } = createSkillPorts(workspaceRoot, null, {
+      trust: 'trusted'
+    })
+    const skill: SkillReference = {
+      name: 'deck-writer',
+      source: { kind: 'plugin', plugin: '--scope=project' },
+      required: true
+    }
+
+    const outcome = await provisionNodeSkills(skillInput(workspaceRoot, { skills: [skill] }), ports)
+
+    expect(outcome.kind === 'failed' && outcome.reason).toContain('name@marketplace')
+    expect(plugins.isInstalled).not.toHaveBeenCalled()
+    expect(trustGate.decide).not.toHaveBeenCalled()
+    expect(plugins.install).not.toHaveBeenCalled()
+  })
+})
+
 describe('provisionNodeSkills — verifying a plugin install', () => {
   it('fails when the install succeeds but the skill is still not available', async () => {
     const { ports, plugins } = createSkillPorts(workspaceRoot, null, { trust: 'trusted' })

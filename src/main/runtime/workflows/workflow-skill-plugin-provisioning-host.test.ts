@@ -53,6 +53,8 @@ async function installPluginOnHost(): Promise<void> {
 }
 
 /** Stands in for the relay: shell file operations run for real, `$HOME` is the host's own. */
+const claudeActivity = { running: 0, peak: 0 }
+
 function relayWithClaude() {
   const actual = vi.importActual<typeof RunProcessModule>(
     '../../../shared/child-process/run-process'
@@ -60,6 +62,10 @@ function relayWithClaude() {
   return vi.fn(async (request: RelayRequest) => {
     let result: ProcessResult
     if (request.binary === 'claude') {
+      claudeActivity.running += 1
+      claudeActivity.peak = Math.max(claudeActivity.peak, claudeActivity.running)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      claudeActivity.running -= 1
       await installPluginOnHost()
       result = { code: 0, signal: null, stdout: 'Installed', stderr: '', timedOut: false }
     } else {
@@ -82,11 +88,11 @@ function relayWithClaude() {
   })
 }
 
-function sshProvisioner() {
+function sshProvisioner(root = workspaceRoot) {
   return createRunSkillProvisioner(
     {
-      workspaceRoot,
-      orcaIgnoreTarget: { host: 'remote', repoPath: workspaceRoot, connectionId: 'conn-1' }
+      workspaceRoot: root,
+      orcaIgnoreTarget: { host: 'remote', repoPath: root, connectionId: 'conn-1' }
     },
     db
   )
@@ -103,6 +109,7 @@ describe('createRunSkillProvisioner — plugin skills on an SSH host (FR-018, FR
     relayExec = relayWithClaude()
     sshHost.provider = { exec: vi.fn(), execNonInteractiveOperation: relayExec }
     vi.mocked(runProcess).mockClear()
+    claudeActivity.peak = 0
   })
 
   afterEach(async () => {
@@ -177,5 +184,26 @@ describe('createRunSkillProvisioner — plugin skills on an SSH host (FR-018, FR
     expect(
       await sshProvisioner().provision({ runId: 'wfr_1', agent: 'claude', skills: [pluginSkill] })
     ).toEqual({ kind: 'ready', installed: [] })
+  })
+
+  it('never runs two plugin installs at once on one host, even from two workspaces', async () => {
+    decideSourceTrust(
+      db,
+      { notifyWorkflowRunChanged: vi.fn() },
+      { host: 'ssh:conn-1', source: PLUGIN_ID, decision: 'trusted', decidedBy: 'me' }
+    )
+    const otherRoot = await mkdtemp(join(tmpdir(), 'workflow-plugin-host-ws2-'))
+    try {
+      const request = { runId: 'wfr_1', agent: 'claude', skills: [pluginSkill] }
+      const results = await Promise.all([
+        sshProvisioner().provision(request),
+        sshProvisioner(otherRoot).provision({ ...request, runId: 'wfr_2' })
+      ])
+
+      expect(results.every((outcome) => outcome.kind === 'ready')).toBe(true)
+      expect(claudeActivity.peak).toBe(1)
+    } finally {
+      await rm(otherRoot, { recursive: true, force: true })
+    }
   })
 })

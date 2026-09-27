@@ -172,7 +172,18 @@ status changes are not timestamped): `id, run_id, attempt_id?, kind, payload_jso
 Follow-ups: `id, run_id, attempt_id, sender, text, mode ('queued'|'interrupt'), state (queued|delivered|failed), created_at, delivered_at`.
 
 ### workflow_source_trust
-Per host: `source TEXT PK, decision ('trusted'|'refused'), decided_by, decided_at`.
+Per source per host: `source TEXT PK, decision ('trusted'|'refused'), decided_by, decided_at`.
+The host is folded into the one key column (no separate column):
+
+- Host keys: `local` (the machine the Orca runtime runs on), `ssh:<connectionId>` (the SSH target
+  the repo is bound to), `wsl:<distro>` (distro name lower-cased).
+- Plugin ids are `name` or `name@marketplace` (letters, digits, `.`, `_`, `-`; first character a
+  letter or digit), enforced by the workflow schema and again before any key is built.
+- `source` holds the plain plugin id for host `local`, and `JSON.stringify([host, pluginId])`
+  (e.g. `["ssh:devbox","acme-decks@acme"]`) for every other host. A valid id never starts with
+  `[`, so a local key can never equal an encoded one; a key that is not a two-string JSON array
+  decodes as a local decision.
+- `workflow.trust.list` decodes each key back to `{ source, host }`.
 
 ### workflow_role_proposals (P3)
 `id, run_id, attempt_id, role_id, diff_json, evidence, state (proposed|accepted|exported|rejected)`.

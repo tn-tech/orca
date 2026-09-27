@@ -5,6 +5,10 @@
 // Host key: `local` (the machine this runtime runs on), `ssh:<connectionId>` (the SSH target a
 // repo is bound to), `wsl:<distro>`. The table's single `source` key column holds the plain
 // source for `local` and `JSON.stringify([host, source])` elsewhere, so no schema change is needed.
+import {
+  isWorkflowPluginId,
+  WORKFLOW_PLUGIN_ID_MESSAGE
+} from '../../../shared/workflows/workflow-plugin-id'
 import type { RunQuestionView } from '../../../shared/workflows/workflow-run-types'
 import { parseWslUncPath } from '../../../shared/wsl-paths'
 import type { OrchestrationDb } from '../orchestration/db'
@@ -35,10 +39,15 @@ export function workflowTrustHostKey(workspace: {
     return `ssh:${workspace.orcaIgnoreTarget.connectionId}`
   }
   const wsl = parseWslUncPath(workspace.workspaceRoot)
-  return wsl ? `wsl:${wsl.distro}` : LOCAL_TRUST_HOST
+  // Windows resolves distro names case-insensitively, so `Ubuntu` and `UBUNTU` are one host.
+  return wsl ? `wsl:${wsl.distro.toLowerCase()}` : LOCAL_TRUST_HOST
 }
 
+/** A valid plugin id never starts with `[`, so a local key cannot collide with an encoded one. */
 function trustRecordKey(host: string, source: string): string {
+  if (!isWorkflowPluginId(source)) {
+    throw new Error(`Cannot record trust for "${source}": ${WORKFLOW_PLUGIN_ID_MESSAGE}`)
+  }
   return host === LOCAL_TRUST_HOST ? source : JSON.stringify([host, source])
 }
 

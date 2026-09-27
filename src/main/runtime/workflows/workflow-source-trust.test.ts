@@ -33,7 +33,13 @@ describe('workflowTrustHostKey', () => {
         workspaceRoot: '\\\\wsl.localhost\\Ubuntu\\home\\dev\\repo',
         orcaIgnoreTarget: { host: 'local' }
       })
-    ).toBe('wsl:Ubuntu')
+    ).toBe('wsl:ubuntu')
+    expect(
+      workflowTrustHostKey({
+        workspaceRoot: '\\\\wsl$\\UBUNTU\\home\\dev\\repo',
+        orcaIgnoreTarget: { host: 'local' }
+      })
+    ).toBe('wsl:ubuntu')
   })
 })
 
@@ -75,6 +81,31 @@ describe('source trust store (FR-018a)', () => {
     expect(await local.decide({ source: 'acme-decks' })).toBe('trusted')
     expect(await ssh.decide({ source: 'acme-decks' })).toBe('needs-question')
     expect(await local.decide({ source: 'other' })).toBe('needs-question')
+  })
+
+  it('keeps a local id shaped like an encoded key from colliding with a remote decision', async () => {
+    decideSourceTrust(db, notifier, {
+      host: 'ssh:devbox',
+      source: 'acme',
+      decision: 'trusted',
+      decidedBy: 'me'
+    })
+    const forged = '["ssh:devbox","acme"]'
+
+    await expect(sourceTrustGate(db, 'local').decide({ source: forged })).rejects.toThrow(
+      'name@marketplace'
+    )
+    expect(() =>
+      decideSourceTrust(db, notifier, {
+        host: 'local',
+        source: forged,
+        decision: 'trusted',
+        decidedBy: 'me'
+      })
+    ).toThrow('name@marketplace')
+    expect(listSourceTrustDecisions(db)).toEqual([
+      expect.objectContaining({ host: 'ssh:devbox', source: 'acme' })
+    ])
   })
 
   it('lists decisions with their host, and a later decision revokes an earlier one', () => {

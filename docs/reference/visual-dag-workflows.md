@@ -158,6 +158,9 @@ executes the node):
 claude plugin install <plugin> --scope user
 ```
 
+- `claude plugin install --help` documents no `--` separator, so none is passed; instead the
+  plugin id is validated as `name` or `name@marketplace` (no leading `-` or `[`) in the workflow
+  schema, before planning, and again in the install port. Installs are serialized per host.
 - `<plugin>` is the skill's declared source verbatim (`name` or `name@marketplace`); the
   marketplace must already be configured on that host, otherwise the install fails and the node
   fails with the CLI's message.
@@ -235,7 +238,7 @@ Trust (FR-018a) is remembered per source per host in `workflow_source_trust`. Th
 |---|---|
 | The machine the Orca runtime runs on | `local` |
 | An SSH workspace | `ssh:<connectionId>` (the SSH target id the repo is bound to) |
-| A WSL workspace | `wsl:<distro>` |
+| A WSL workspace | `wsl:<distro>` (lower-cased) |
 
 A pending trust question is resolved with `workflow.trust.decide { source, host?, decision }`
 (`host` defaults to `local`). It records the decision, answers every pending `trust` question for

@@ -4,6 +4,10 @@
 // Every check and install runs on the host that executes the node, through `PluginHostAccess`.
 import type { ProcessResult, ProcessSpec } from '../../../shared/child-process/run-process'
 import {
+  isWorkflowPluginId,
+  WORKFLOW_PLUGIN_ID_MESSAGE
+} from '../../../shared/workflows/workflow-plugin-id'
+import {
   getClaudePluginMetadataPaths,
   resolveClaudePluginInstallPaths,
   type SkillDiscoveryPathApi
@@ -109,6 +113,10 @@ export function createWorkflowPluginPort(host: PluginHostAccess): WorkflowPlugin
       const provider = pluginProvider(agent)
       if (!provider) {
         return { ok: false, reason: pluginInstallUnavailableReason({ plugin, agent }) ?? '' }
+      }
+      // Why: `claude plugin install --help` documents no `--`, so the id itself must not parse as an option.
+      if (!isWorkflowPluginId(plugin)) {
+        return { ok: false, reason: `Refused plugin "${plugin}": ${WORKFLOW_PLUGIN_ID_MESSAGE}` }
       }
       const { program, args } = provider.installCommand(plugin)
       const manual = `Install plugin "${plugin}" on this host manually, then rerun the node.`

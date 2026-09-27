@@ -8,6 +8,7 @@ import {
   LOCAL_TRUST_HOST,
   listSourceTrustDecisions
 } from '../../../workflows/workflow-source-trust'
+import { wakeWorkflowRun } from '../../../workflows/workflow-run-wake'
 
 // Why: skeletons for U10; P3 proposals replace each throw.
 function notImplemented(): never {
@@ -37,9 +38,8 @@ export const WORKFLOW_TRUST_METHODS = [
         decision: params.decision,
         decidedBy: clientId ?? 'user'
       })
-      const engine = runtime.getWorkflowEngine()
       for (const runId of runIds) {
-        engine.wakeRun(runId)
+        wakeWorkflowRun(runId)
       }
       return {}
     }
