@@ -165,4 +165,51 @@ describe('workflow-attempt-store', () => {
       expect(d.findWorkflowAttemptByTask('task_missing')).toBeUndefined()
     })
   })
+
+  describe('copyWorkflowAttempts', () => {
+    it('copies attempts into another run with their results and timing, but not their Task', () => {
+      const d = createDb()
+      const source = createRun(d)
+      const target = createRun(d)
+      const a = d.createWorkflowAttempt({ runId: source.id, nodeId: 'node_a', nodeType: 'agent' })
+      d.updateWorkflowAttempt(a.id, {
+        taskId: 'task_a',
+        dispatchId: 'dispatch_a',
+        resultPath: '.orca/workflow-runs/r/a/result.json',
+        resultJson: { summary: 'ok' },
+        artifactsJson: [{ path: 'notes/plan.md', exists: true }]
+      })
+      for (const state of ['provisioning', 'running', 'completed'] as const) {
+        d.transitionWorkflowAttempt(a.id, state)
+      }
+      const original = d.listWorkflowAttempts(source.id)[0]
+
+      const [copy] = d.copyWorkflowAttempts([a.id], target.id)
+
+      expect(copy.id).not.toBe(a.id)
+      expect(copy).toMatchObject({
+        runId: target.id,
+        nodeId: 'node_a',
+        state: 'completed',
+        dispatchId: 'dispatch_a',
+        resultPath: original.resultPath,
+        resultJson: { summary: 'ok' },
+        artifactsJson: [{ path: 'notes/plan.md', exists: true }],
+        startedAt: original.startedAt,
+        finishedAt: original.finishedAt
+      })
+      expect(copy.taskId).toBeUndefined()
+      expect(d.listWorkflowAttempts(target.id)).toEqual([copy])
+      expect(d.listWorkflowAttempts(source.id)).toEqual([original])
+    })
+
+    it('copies nothing when any source attempt is missing', () => {
+      const d = createDb()
+      const source = createRun(d)
+      const target = createRun(d)
+      const a = d.createWorkflowAttempt({ runId: source.id, nodeId: 'node_a', nodeType: 'agent' })
+      expect(() => d.copyWorkflowAttempts([a.id, 'wfa_missing'], target.id)).toThrow()
+      expect(d.listWorkflowAttempts(target.id)).toEqual([])
+    })
+  })
 })

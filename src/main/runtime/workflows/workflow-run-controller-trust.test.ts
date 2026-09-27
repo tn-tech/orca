@@ -27,6 +27,7 @@ import {
   TWO_NODE_WORKFLOW,
   waitUntil
 } from './workflow-run-controller-test-harness'
+import { pauseWorkflowRun, resumeWorkflowRun } from './workflow-run-control'
 import { wakeWorkflowRun } from './workflow-run-wake'
 import { decideSourceTrust } from './workflow-source-trust'
 
@@ -160,6 +161,23 @@ describe('WorkflowRunController — plugin source trust (FR-018a, US4 AS4a)', ()
     const review = h.db.listWorkflowAttempts(run.id).find((a) => a.nodeId === 'review')
     expect(review?.state).toBe('running')
     expect(implementOf(run.id)[0].state).toBe('waiting')
+    controller.stop()
+    await finished
+  })
+
+  it('launches nothing for a trust answer made while paused until the run resumes (FR-030)', async () => {
+    const { run, controller, finished } = await startUntilWaiting()
+    expect(pauseWorkflowRun(h.db, h.runtime, run.id)).toBe('paused')
+
+    decide('trusted')
+    wakeWorkflowRun(run.id)
+    await settle()
+    expect(h.workerHandles).toEqual([])
+    expect(implementOf(run.id)[0].state).toBe('waiting')
+
+    expect(resumeWorkflowRun(h.db, h.runtime, run.id)).toBe('running')
+    await waitUntil(() => h.workerHandles.length === 1)
+    expect(implementOf(run.id)[0].state).toBe('running')
     controller.stop()
     await finished
   })

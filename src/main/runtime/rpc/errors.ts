@@ -167,6 +167,11 @@ const STRUCTURED_RUNTIME_PASSTHROUGH_CODES: ReadonlySet<string> = new Set([
   // stops offering actions on a finished run, rather than reading a generic failure.
   'workflow_question_not_pending',
   'workflow_run_not_active',
+  // workflow.run.pause/resume/cancel/rerun: a run in the wrong state for the action, or a rerun
+  // the host refuses (planner run, not failed, unknown node, busy or missing workspace).
+  'workflow_run_transition_invalid',
+  'workflow_rerun_refused',
+  'workflow_rerun_workspace_unavailable',
   // workflow.proposal.accept/export: the client stops offering an action the proposal no longer
   // allows, or explains that only an imported role has an origin to export to.
   'workflow_proposal_not_found',

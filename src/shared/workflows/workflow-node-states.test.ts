@@ -52,6 +52,11 @@ describe('canTransition — run', () => {
     }
   })
 
+  it('waiting <-> paused (FR-030: pause keeps open questions answerable)', () => {
+    expect(canTransition('run', 'waiting', 'paused')).toBe(true)
+    expect(canTransition('run', 'paused', 'waiting')).toBe(true)
+  })
+
   it('paused -> cancelled (FR-030: cancel any run)', () => {
     expect(canTransition('run', 'paused', 'cancelled')).toBe(true)
   })

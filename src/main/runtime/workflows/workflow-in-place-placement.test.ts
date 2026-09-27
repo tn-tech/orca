@@ -10,6 +10,7 @@ import type { Workflow } from '../../../shared/workflows/workflow-definition-typ
 import { getRepoMainWorktreeId } from '../../../shared/worktree/id'
 import { gitExecFileAsync } from '../../git/runner'
 import { WorkflowEngine } from './workflow-engine'
+import { startRerun } from './workflow-rerun'
 import { createControllerHarness, waitUntil } from './workflow-run-controller-test-harness'
 import { storeFor } from './workflow-placement-test-fixtures'
 
@@ -145,6 +146,55 @@ describe('in-place workflow worker placement (real workspace resolution)', () =>
       return state === 'running' || state === 'failed'
     })
     expect(workAttempt(h, run.id)?.failureReason).toBeUndefined()
+    expect(showWorkspace).toHaveBeenCalledWith(`id:${getRepoMainWorktreeId(repo)}`)
+    h.db.close()
+  })
+
+  it('places a rerun of a failed in-place run in the checkout, not its stored row id', async () => {
+    const repo: Repo = {
+      id: 'repo-rerun',
+      path: repoPath,
+      displayName: 'Rerun',
+      badgeColor: '#000',
+      addedAt: 0,
+      kind: 'folder'
+    }
+    const { h, showWorkspace, engine: started } = await setUp(repo)
+    const source = h.db.createWorkflowRun({
+      workflowName: IN_PLACE_AGENT_WORKFLOW.name,
+      workflowSource: 'project',
+      workflowSnapshot: IN_PLACE_AGENT_WORKFLOW,
+      workflowVersion: 'v1',
+      objective: 'failed once',
+      repoId: repo.id,
+      worktreeId: repo.id
+    })
+    for (const [nodeId, nodeType, states] of [
+      ['start', 'start', ['provisioning', 'running', 'completed']],
+      ['work', 'agent', ['provisioning', 'running', 'failed']]
+    ] as const) {
+      const attempt = h.db.createWorkflowAttempt({ runId: source.id, nodeId, nodeType })
+      states.forEach((state) => h.db.transitionWorkflowAttempt(attempt.id, state))
+    }
+    h.db.transitionWorkflowRun(source.id, 'running')
+    h.db.transitionWorkflowRun(source.id, 'failed')
+
+    const rerun = await startRerun(
+      {
+        db: h.db,
+        launch: (run) => started.launch(run),
+        resolveRepo: async () => repo,
+        showManagedWorktree: (selector) => h.runtime.showManagedWorktree(selector),
+        validation: { agentSupportsModel: () => true }
+      },
+      { runId: source.id }
+    )
+    await waitUntil(() => {
+      const state = workAttempt(h, rerun.id)?.state
+      return state === 'running' || state === 'failed'
+    })
+    expect(workAttempt(h, rerun.id)?.failureReason).toBeUndefined()
+    expect(workAttempt(h, rerun.id)?.state).toBe('running')
     expect(showWorkspace).toHaveBeenCalledWith(`id:${getRepoMainWorktreeId(repo)}`)
     h.db.close()
   })

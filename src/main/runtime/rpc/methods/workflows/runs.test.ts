@@ -331,3 +331,114 @@ describe('workflow.run.list/show/events/readNodeOutput (seeded db)', () => {
     expect(response).toMatchObject({ ok: false, error: { code: 'dispatch_not_found' } })
   })
 })
+
+describe('workflow.run.pause/resume/cancel/rerun (real runtime)', () => {
+  let repoPath: string
+  let repo: Repo
+  let runtime: OrcaRuntimeService
+  let db: OrchestrationDb
+
+  beforeEach(async () => {
+    repoPath = await mkdtemp(join(tmpdir(), 'orca-workflow-run-control-'))
+    repo = repoFixture(repoPath)
+    db = new OrchestrationDb(':memory:')
+    runtime = new OrcaRuntimeService(storeFixture(repo))
+    runtime.setOrchestrationDb(db)
+  })
+
+  afterEach(async () => {
+    await runtime.stopWorkflowEngine()
+    await rm(repoPath, { recursive: true, force: true })
+    db.close()
+  })
+
+  function dispatcher(): RpcDispatcher {
+    return new RpcDispatcher({ runtime, methods: WORKFLOW_RUN_METHODS })
+  }
+
+  const TRIVIAL: Workflow = {
+    version: 1,
+    name: 'trivial',
+    workspacePolicy: 'in-place',
+    roles: {},
+    nodes: [
+      { id: 'start', type: 'start', title: 'Start' },
+      { id: 'end', type: 'end', title: 'Done' }
+    ],
+    edges: [{ id: 'e1', from: 'start', to: 'end' }],
+    layout: {}
+  }
+
+  function seedRun(state: 'running' | 'failed', workflowVersion = 'rev-1') {
+    const run = db.createWorkflowRun({
+      workflowName: TRIVIAL.name,
+      workflowSource: 'project',
+      workflowSnapshot: TRIVIAL,
+      workflowVersion,
+      objective: 'go',
+      repoId: repo.id,
+      worktreeId: repo.id
+    })
+    db.transitionWorkflowRun(run.id, 'running')
+    if (state === 'failed') {
+      const start = db.createWorkflowAttempt({ runId: run.id, nodeId: 'start', nodeType: 'start' })
+      for (const next of ['provisioning', 'running', 'completed'] as const) {
+        db.transitionWorkflowAttempt(start.id, next)
+      }
+      db.transitionWorkflowRun(run.id, 'failed')
+    }
+    return run
+  }
+
+  it('pauses, resumes and cancels a run, answering with its state', async () => {
+    const run = seedRun('running')
+    const call = (method: string) => dispatcher().dispatch(makeRequest(method, { runId: run.id }))
+
+    expect(await call('workflow.run.pause')).toMatchObject({
+      ok: true,
+      result: { state: 'paused' }
+    })
+    expect(await call('workflow.run.resume')).toMatchObject({
+      ok: true,
+      result: { state: 'running' }
+    })
+    expect(await call('workflow.run.cancel')).toMatchObject({
+      ok: true,
+      result: { state: 'cancelled' }
+    })
+    expect(db.getWorkflowRun(run.id)?.state).toBe('cancelled')
+    expect(await call('workflow.run.pause')).toMatchObject({
+      ok: false,
+      error: { code: 'workflow_run_transition_invalid' }
+    })
+  })
+
+  it('reruns a failed run as the calling device, keeping upstream results', async () => {
+    const source = seedRun('failed')
+    let runId = ''
+    await dispatcher().dispatchStreaming(
+      makeRequest('workflow.run.rerun', { runId: source.id }),
+      (raw) => {
+        const reply: { result?: { runId?: string } } = JSON.parse(raw)
+        runId = reply.result?.runId ?? ''
+      },
+      { clientId: 'dvc_tok_secret', pairedDeviceId: 'device_phone_1', clientKind: 'mobile' }
+    )
+    expect(db.getWorkflowRun(runId)).toMatchObject({
+      rerunOfRunId: source.id,
+      startedByClient: 'device_phone_1',
+      workflowVersion: 'rev-1'
+    })
+    await runtime.getWorkflowEngine().whenControllerSettled(runId)
+    expect(db.getWorkflowRun(runId)?.state).toBe('completed')
+    expect(db.listWorkflowEventsOfKind(runId, 'attempt_copied')).toHaveLength(1)
+  })
+
+  it('refuses to rerun a draft planner run', async () => {
+    const planner = seedRun('failed', 'orca:draft-planner')
+    const response = await dispatcher().dispatch(
+      makeRequest('workflow.run.rerun', { runId: planner.id })
+    )
+    expect(response).toMatchObject({ ok: false, error: { code: 'workflow_rerun_refused' } })
+  })
+})

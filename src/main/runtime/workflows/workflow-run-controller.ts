@@ -35,6 +35,7 @@ import {
   type WorkflowRunWorkspaceAccess
 } from './workflow-run-node-launch'
 import { WorkflowRunRecorder, type WorkflowRunChangeNotifier } from './workflow-run-recorder'
+import { seedRerunAttempts } from './workflow-rerun'
 import { settleRunIfQuiet } from './workflow-run-settlement'
 import { registerWorkflowRunWaker } from './workflow-run-wake'
 import { releaseRunSkills } from './workflow-skill-provisioning-host'
@@ -80,6 +81,8 @@ export class WorkflowRunController {
   private readonly recorder: WorkflowRunRecorder
   private readonly answerBackoff = new AgentAnswerDeliveryBackoff()
   private readonly followUpBackoff = new AgentAnswerDeliveryBackoff()
+  /** A pause held an advance back (FR-030); it runs once the run is no longer paused. */
+  private advanceOnResume = false
 
   constructor(private readonly deps: WorkflowRunControllerDeps) {
     this.recorder = new WorkflowRunRecorder(deps.db, deps.runtime, deps.workflowRunId)
@@ -104,6 +107,7 @@ export class WorkflowRunController {
     }
     const session = await this.openSession(run)
     if (run.state === 'queued') {
+      seedRerunAttempts(this.deps.db, this.recorder, run)
       this.recorder.transitionRun('running', 'run_started', {
         orchestrationRunId: session.engineRunId
       })
@@ -180,6 +184,10 @@ export class WorkflowRunController {
       const state = this.readRun().state
       if (TERMINAL_RUN_STATES.has(state)) {
         return state
+      }
+      if (this.advanceOnResume && state !== 'paused') {
+        await this.advance(session)
+        continue
       }
       await deliverFollowUps(session.followUps)
       // Also on rehydrate: an answer recorded while no controller ran resumes here.
@@ -278,7 +286,7 @@ export class WorkflowRunController {
 
   /** Advances the run until the frontier is quiet, then settles it. */
   private async advance(session: ControllerSession): Promise<void> {
-    await advanceRun(session.launch)
+    this.advanceOnResume = !(await advanceRun(session.launch))
     settleRunIfQuiet(this.deps.db, this.recorder)
   }
 }

@@ -184,6 +184,10 @@ async function launchBriefNode(
  * attempt leaves `waiting` synchronously before any await, so it never dispatches twice.
  */
 export async function resumeAnsweredTrustWaits(ctx: WorkflowNodeLaunchContext): Promise<boolean> {
+  // A pause holds the worker launch back; the controller's next pass after resume retries it.
+  if (ctx.db.getWorkflowRun(ctx.recorder.runId)?.state === 'paused') {
+    return false
+  }
   const resumable = answeredTrustWaits(ctx.db, ctx.recorder.runId)
   for (const attempt of resumable) {
     const node = requireBriefNode(ctx.definition, attempt.nodeId)

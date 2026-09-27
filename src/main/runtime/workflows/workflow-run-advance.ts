@@ -75,17 +75,23 @@ function settleLoop(ctx: WorkflowNodeLaunchContext, settlement: LoopSettlement):
   ctx.recorder.transitionAttempt(settlement.attemptId, 'failed')
 }
 
-/** Loops until the frontier is quiet; the caller then decides whether the run is over. */
-export async function advanceRun(ctx: WorkflowNodeLaunchContext): Promise<void> {
-  // Read fresh (not carried on ctx) so a rehydrated controller enforces the same budget a live
-  // one would; the run row, not the controller's memory, is this run's concurrency limit.
-  const run = ctx.db.getWorkflowRun(ctx.recorder.runId)
-  // A run stopped early (an unrouted Approval option) must not launch anything more.
-  if (run?.state === 'completed' || run?.state === 'failed' || run?.state === 'cancelled') {
-    return
-  }
-  const concurrencyLimit = run?.concurrencyLimit ?? DEFAULT_WORKFLOW_CONCURRENCY_LIMIT
+/**
+ * Loops until the frontier is quiet; the caller then decides whether the run is over. `false`
+ * when a pause held work back (FR-030), so the caller advances again once the run resumes.
+ */
+export async function advanceRun(ctx: WorkflowNodeLaunchContext): Promise<boolean> {
   for (;;) {
+    // Read fresh every pass: a pause or cancel landing mid-advance stops the next launches, and
+    // the run row (not controller memory) is this run's concurrency limit, as after a rehydrate.
+    const run = ctx.db.getWorkflowRun(ctx.recorder.runId)
+    if (run?.state === 'paused') {
+      return false
+    }
+    // A run stopped early (an unrouted Approval option, a cancel) must not launch anything more.
+    if (run?.state === 'completed' || run?.state === 'failed' || run?.state === 'cancelled') {
+      return true
+    }
+    const concurrencyLimit = run?.concurrencyLimit ?? DEFAULT_WORKFLOW_CONCURRENCY_LIMIT
     const attempts = ctx.db.listWorkflowAttempts(ctx.recorder.runId)
     const frontier = computeFrontier(ctx.definition, attempts)
     const loops = computeLoopProgress(ctx.definition, attempts)
@@ -99,7 +105,7 @@ export async function advanceRun(ctx: WorkflowNodeLaunchContext): Promise<void> 
     ]
     if (skipped.length === 0 && eligible.length === 0 && loops.settlements.length === 0) {
       refreshWaitingJoins(ctx)
-      return
+      return true
     }
     for (const node of skipped) {
       recordSkip(ctx, node)
@@ -131,7 +137,7 @@ export async function advanceRun(ctx: WorkflowNodeLaunchContext): Promise<void> 
     }
     if (skipped.length === 0 && loops.settlements.length === 0 && launchable.length === 0) {
       // Every remaining eligible node is blocked on a full run; the next worker_done retries it.
-      return
+      return true
     }
     await Promise.all(
       launchable.map(({ nodeId, iteration }) =>

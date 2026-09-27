@@ -225,12 +225,54 @@ export function findWorkflowAttemptByTask(
   return row ? toAttemptView(row) : undefined
 }
 
+/**
+ * A rerun's retained upstream attempts (FR-030): same state, results, artifacts and timing, in one
+ * transaction. The Task is not carried over; it belongs to the source run's orchestration Run.
+ */
+export function copyWorkflowAttempts(
+  this: OrchestrationDb,
+  sourceAttemptIds: readonly string[],
+  targetRunId: string
+): NodeAttemptView[] {
+  const copyIds: string[] = []
+  const insert = this.db.prepare(
+    `INSERT INTO workflow_node_attempts (
+       id, run_id, node_id, node_type, iteration, attempt_index, task_id, dispatch_id, state,
+       requested_launch, effective_launch, brief_path, result_path, result_json, artifacts_json,
+       failure_reason, workspace_worktree_id, transcript_ref, started_at, finished_at
+     )
+     SELECT ?, ?, node_id, node_type, iteration, attempt_index, NULL, dispatch_id, state,
+       requested_launch, effective_launch, brief_path, result_path, result_json, artifacts_json,
+       failure_reason, workspace_worktree_id, transcript_ref, started_at, finished_at
+     FROM workflow_node_attempts WHERE id = ?`
+  )
+  this.db.exec('BEGIN IMMEDIATE')
+  try {
+    for (const sourceId of sourceAttemptIds) {
+      const id = generateId('wfa')
+      if (insert.run(id, targetRunId, sourceId).changes !== 1) {
+        throw new Error(`Node attempt ${sourceId} was not found to copy.`)
+      }
+      copyIds.push(id)
+    }
+    this.db.exec('COMMIT')
+  } catch (error) {
+    this.db.exec('ROLLBACK')
+    throw error
+  }
+  return copyIds.flatMap((id) => {
+    const row = selectAttemptRow(this.db, id)
+    return row ? [toAttemptView(row)] : []
+  })
+}
+
 export type WorkflowAttemptStoreMethods = {
   createWorkflowAttempt: typeof createWorkflowAttempt
   updateWorkflowAttempt: typeof updateWorkflowAttempt
   transitionWorkflowAttempt: typeof transitionWorkflowAttempt
   listWorkflowAttempts: typeof listWorkflowAttempts
   findWorkflowAttemptByTask: typeof findWorkflowAttemptByTask
+  copyWorkflowAttempts: typeof copyWorkflowAttempts
 }
 
 export function attachWorkflowAttemptStore(ctor: { prototype: object }): void {
@@ -239,6 +281,7 @@ export function attachWorkflowAttemptStore(ctor: { prototype: object }): void {
     updateWorkflowAttempt,
     transitionWorkflowAttempt,
     listWorkflowAttempts,
-    findWorkflowAttemptByTask
+    findWorkflowAttemptByTask,
+    copyWorkflowAttempts
   })
 }

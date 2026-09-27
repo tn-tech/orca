@@ -14,6 +14,8 @@ import {
   type DraftRunTeardownReason
 } from './workflows/workflow-draft-teardown'
 import { WorkflowEngine } from './workflows/workflow-engine'
+import { cancelWorkflowRun } from './workflows/workflow-run-control'
+import type { WorkflowRunState } from '../../shared/workflows/workflow-node-states'
 import {
   dispatchWorkflowAttention,
   type WorkflowAttention
@@ -21,7 +23,7 @@ import {
 
 class OrcaRuntimeService extends OrcaRuntimeWithResolveWaiter {
   private workflowEngine: WorkflowEngine | null = null
-  private workflowDraftTeardown: DraftRunTeardownDeps | null = null
+  private workflowRunStopDeps: DraftRunTeardownDeps | null = null
 
   constructor(...args: ConstructorParameters<typeof OrcaRuntimeWithResolveWaiter>) {
     super(...args)
@@ -68,14 +70,14 @@ class OrcaRuntimeService extends OrcaRuntimeWithResolveWaiter {
         getRepo: (repoId) => this.store?.getRepo(repoId)
       })
       const engine = this.workflowEngine
-      this.workflowDraftTeardown = {
+      this.workflowRunStopDeps = {
         db,
         runtime: this,
         dispatcher,
         whenControllerSettled: (runId) => engine.whenControllerSettled(runId)
       }
       // Before rehydrate: its synchronous part cancels orphaned planner runs so none relaunches.
-      void sweepDraftRunsAtBoot(this.workflowDraftTeardown).catch((error: unknown) => {
+      void sweepDraftRunsAtBoot(this.workflowRunStopDeps).catch((error: unknown) => {
         console.warn('[workflow-draft] boot sweep failed:', error)
       })
       this.workflowEngine.rehydrateActiveRuns()
@@ -90,9 +92,21 @@ class OrcaRuntimeService extends OrcaRuntimeWithResolveWaiter {
     reason: DraftRunTeardownReason
   ): Promise<void> {
     this.getWorkflowEngine()
-    if (this.workflowDraftTeardown) {
-      await tearDownDraftRun(this.workflowDraftTeardown, runId, reason)
+    if (this.workflowRunStopDeps) {
+      await tearDownDraftRun(this.workflowRunStopDeps, runId, reason)
     }
+  }
+
+  /** `workflow.run.cancel` (workflow-run-control.ts): workers stop under the engine's principal. */
+  async cancelWorkflowRun(
+    this: OrcaRuntimeServiceExport,
+    runId: string
+  ): Promise<WorkflowRunState> {
+    this.getWorkflowEngine()
+    if (!this.workflowRunStopDeps) {
+      throw new Error('workflow_engine_stopped')
+    }
+    return cancelWorkflowRun(this.workflowRunStopDeps, runId)
   }
 
   /** Every WorkflowRunRecorder reaches this through its notifier, wherever it was built. */

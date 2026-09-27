@@ -15,10 +15,22 @@ import { agentSupportsModel, isKnownAgent } from './workflow-agent-catalog-suppo
 import { disallowedSourceProblems, throwSourceNotAllowedError } from './workflow-allowlist-refusal'
 import { workflowCallerIdentity } from './workflow-caller-identity'
 import { readNamedWorkflow } from './workflow-source-resolution'
+import { startRerun } from '../../../workflows/workflow-rerun'
+import { pauseWorkflowRun, resumeWorkflowRun } from '../../../workflows/workflow-run-control'
+import type { Repo } from '../../../../../shared/repo-types'
+import type { Workflow } from '../../../../../shared/workflows/workflow-definition-types'
 
-// Why: skeletons for U10; the US1 unit replaces each throw with the workflow engine call.
-function notImplemented(): never {
-  throw new Error('workflow_not_implemented')
+/** A start-time refusal (graph problems, a non-allowlisted source) in its wire shape. */
+function rethrowRunRefusal(error: unknown, repo: Repo, workflow: Workflow): never {
+  if (error instanceof WorkflowGraphValidationError) {
+    if (disallowedSourceProblems(error.problems).length > 0) {
+      throwSourceNotAllowedError(repo, workflow, error.problems)
+    }
+    throw new OrchestrationError('workflow_invalid', 'workflow_invalid', {
+      problems: error.problems
+    })
+  }
+  throw error
 }
 
 export const WORKFLOW_RUN_METHODS = [
@@ -49,15 +61,7 @@ export const WORKFLOW_RUN_METHODS = [
         })
         return { runId: run.id }
       } catch (error) {
-        if (error instanceof WorkflowGraphValidationError) {
-          if (disallowedSourceProblems(error.problems).length > 0) {
-            throwSourceNotAllowedError(repo, named.definition, error.problems)
-          }
-          throw new OrchestrationError('workflow_invalid', 'workflow_invalid', {
-            problems: error.problems
-          })
-        }
-        throw error
+        rethrowRunRefusal(error, repo, named.definition)
       }
     }
   }),
@@ -98,19 +102,60 @@ export const WORKFLOW_RUN_METHODS = [
   defineMethod({
     name: 'workflow.run.pause',
     params: WorkflowRunControl,
-    handler: notImplemented
+    handler: (params, { runtime }) => ({
+      state: pauseWorkflowRun(runtime.getOrchestrationDb(), runtime, params.runId)
+    })
   }),
   defineMethod({
     name: 'workflow.run.resume',
     params: WorkflowRunControl,
-    handler: notImplemented
+    handler: (params, { runtime }) => ({
+      state: resumeWorkflowRun(runtime.getOrchestrationDb(), runtime, params.runId)
+    })
   }),
   defineMethod({
     name: 'workflow.run.cancel',
     params: WorkflowRunControl,
-    handler: notImplemented
+    handler: async (params, { runtime }) => ({
+      state: await runtime.cancelWorkflowRun(params.runId)
+    })
   }),
-  defineMethod({ name: 'workflow.run.rerun', params: WorkflowRunRerun, handler: notImplemented }),
+  defineMethod({
+    name: 'workflow.run.rerun',
+    params: WorkflowRunRerun,
+    handler: async (params, ctx) => {
+      const { runtime } = ctx
+      const engine = runtime.getWorkflowEngine()
+      const db = runtime.getOrchestrationDb()
+      let repo: Repo | undefined
+      try {
+        const rerun = await startRerun(
+          {
+            db,
+            launch: (run) => engine.launch(run),
+            resolveRepo: async (repoId) => {
+              repo = await runtime.showRepo(`id:${repoId}`)
+              return repo
+            },
+            showManagedWorktree: (selector) => runtime.showManagedWorktree(selector),
+            validation: { agentSupportsModel, isKnownAgent }
+          },
+          {
+            runId: params.runId,
+            ...(params.fromNodeId ? { fromNodeId: params.fromNodeId } : {}),
+            startedByClient: workflowCallerIdentity(ctx)
+          }
+        )
+        return { runId: rerun.id }
+      } catch (error) {
+        const source = db.getWorkflowRun(params.runId)
+        if (repo && source) {
+          rethrowRunRefusal(error, repo, source.workflowSnapshot)
+        }
+        throw error
+      }
+    }
+  }),
   defineMethod({
     name: 'workflow.run.readNodeOutput',
     params: WorkflowRunReadNodeOutput,

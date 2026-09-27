@@ -9,10 +9,9 @@ import { isDraftPlannerRun, DRAFT_PLANNER_WORKFLOW_NAME } from './workflow-draft
 import type { WorkflowEngineWorktreeCleanup } from './workflow-engine'
 import {
   createWorkflowOrchestrationClient,
-  type WorkflowOrchestrationClient,
-  type WorkflowOrchestrationDispatcher
+  type WorkflowOrchestrationClient
 } from './workflow-orchestration-client'
-import { stopWorkerAttempt } from './workflow-join-branch-stop'
+import { stopActiveAttempts, type WorkflowRunStopDeps } from './workflow-run-control'
 import { WorkflowRunRecorder, type WorkflowRunChangeNotifier } from './workflow-run-recorder'
 import { wakeWorkflowRun } from './workflow-run-wake'
 
@@ -21,13 +20,8 @@ const TORN_DOWN_EVENT = 'draft_run_torn_down'
 
 export type DraftRunTeardownReason = 'settled' | 'timeout' | 'aborted' | 'boot_sweep'
 
-export type DraftRunTeardownDeps = {
-  db: OrchestrationDb
+export type DraftRunTeardownDeps = WorkflowRunStopDeps & {
   runtime: WorkflowRunChangeNotifier & WorkflowEngineWorktreeCleanup
-  /** The engine's own dispatcher: worker stop/release run under the run's engine principal. */
-  dispatcher: WorkflowOrchestrationDispatcher
-  /** `WorkflowEngine.whenControllerSettled`; absent where no controller can be live (boot). */
-  whenControllerSettled?: (runId: string) => Promise<void>
 }
 
 function isTornDown(db: OrchestrationDb, runId: string): boolean {
@@ -68,34 +62,25 @@ async function releaseWorker(
 const STOP_CAUSE = { eventPrefix: 'draft_worker_stop', reason: 'draft_run_abandoned', subject: {} }
 
 /**
- * Stops each still-active planner worker with the Join-branch rule (`stopWorkerAttempt`): the
- * attempt is cancelled only on a proven `stopped`. Then releases (closes) each worker terminal.
- * `false` while any worker may still be alive, so the run stays eligible for the boot sweep.
+ * Stops each still-active planner worker with the run-cancel rule (`stopActiveAttempts`): the
+ * attempt is cancelled only on a proven `stopped`. Then releases (closes) each stopped worker's
+ * terminal. `false` while any worker may still be alive, so the run stays eligible for the boot sweep.
  */
 async function stopAndReleaseWorkers(
   deps: DraftRunTeardownDeps,
   recorder: WorkflowRunRecorder
 ): Promise<boolean> {
+  let clean = await stopActiveAttempts(deps, recorder, STOP_CAUSE)
   const client = createWorkflowOrchestrationClient({
     dispatcher: deps.dispatcher,
     principal: { kind: 'workflow-engine', workflowRunId: recorder.runId }
   })
-  let clean = true
   for (const attempt of deps.db.listWorkflowAttempts(recorder.runId)) {
-    if (ACTIVE_ATTEMPT_STATES.has(attempt.state)) {
-      if (!attempt.dispatchId) {
-        // Its controller has settled, so no worker-start is still in flight for it.
-        recorder.transitionAttempt(attempt.id, 'cancelled', { reason: STOP_CAUSE.reason })
-        continue
-      }
-      await stopWorkerAttempt({ recorder, client }, attempt, STOP_CAUSE)
-      const after = deps.db.listWorkflowAttempts(recorder.runId).find((a) => a.id === attempt.id)
-      if (after && ACTIVE_ATTEMPT_STATES.has(after.state)) {
-        clean = false
-        continue
-      }
-    }
-    if (attempt.dispatchId && !(await releaseWorker(client, recorder, attempt.dispatchId))) {
+    if (
+      attempt.dispatchId &&
+      !ACTIVE_ATTEMPT_STATES.has(attempt.state) &&
+      !(await releaseWorker(client, recorder, attempt.dispatchId))
+    ) {
       clean = false
     }
   }

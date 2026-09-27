@@ -2,8 +2,6 @@
 // workspace and DB row, tracks live controllers so shutdown can stop them, and rehydrates every
 // run a prior process left non-terminal so a Remote Orca Server run survives a restart.
 import type { Repo } from '../../../shared/repo-types'
-import type { GraphValidationContext } from '../../../shared/workflows/workflow-graph-validation'
-import { validateWorkflowGraph } from '../../../shared/workflows/workflow-graph-validation'
 import type { Workflow } from '../../../shared/workflows/workflow-definition-types'
 import type { RunSnapshot, WorkflowRunSource } from '../../../shared/workflows/workflow-run-types'
 import { getRepoMainWorktreeId } from '../../../shared/worktree/id'
@@ -17,12 +15,12 @@ import type { WorkflowOrchestrationDispatcher } from './workflow-orchestration-c
 import { WorkflowRunController, type WorkflowRunControllerRuntime } from './workflow-run-controller'
 import { isHostUnreachableError, resolveRunWorkspaceAccess } from './workflow-run-host-access'
 import { WorkflowRunRecorder } from './workflow-run-recorder'
+import { assertWorkflowRunnable, type WorkflowRunValidation } from './workflow-run-validation'
 import {
   createRunWorkspace,
   resolveInPlaceWorkspace,
   type RunWorkspaceCreatePort
 } from './workflow-run-workspace'
-import { getRepoWorkflowSourceAllowlist } from './workflow-source-allowlist'
 
 const TERMINAL_RUN_STATES = new Set<RunSnapshot['state']>(['completed', 'failed', 'cancelled'])
 
@@ -74,7 +72,7 @@ export type WorkflowStartRunInput = {
   rerunFromNodeId?: string
   /** Skips the repo's setup hook in a created run workspace (throwaway planner runs). */
   skipSetup?: boolean
-  validation: Pick<GraphValidationContext, 'agentSupportsModel' | 'isKnownAgent'>
+  validation: WorkflowRunValidation
 }
 
 export { WorkflowGraphValidationError }
@@ -94,15 +92,7 @@ export class WorkflowEngine {
     if (this.stopped) {
       throw new Error('workflow_engine_stopped')
     }
-    const allowlistedSources = await getRepoWorkflowSourceAllowlist(input.repo)
-    const problems = validateWorkflowGraph(input.workflow, {
-      agentSupportsModel: input.validation.agentSupportsModel,
-      ...(input.validation.isKnownAgent ? { isKnownAgent: input.validation.isKnownAgent } : {}),
-      allowlistedSources
-    })
-    if (problems.some((problem) => problem.severity === 'error')) {
-      throw new WorkflowGraphValidationError(problems)
-    }
+    await assertWorkflowRunnable(input.workflow, input.repo, input.validation)
     // Why generated here: createRunWorkspace names the worktree from the run id, and that
     // workspace must exist before the row referencing it does.
     const id = generateId('wfr')
@@ -205,7 +195,8 @@ export class WorkflowEngine {
     this.active.clear()
   }
 
-  private launch(run: RunSnapshot, options: { rehydrated: boolean } = { rehydrated: false }): void {
+  /** Starts a controller for a persisted run row; `startRun` and reruns (workflow-rerun.ts). */
+  launch(run: RunSnapshot, options: { rehydrated: boolean } = { rehydrated: false }): void {
     if (this.stopped || this.active.has(run.id)) {
       return
     }
