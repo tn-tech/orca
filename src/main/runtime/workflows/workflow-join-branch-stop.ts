@@ -67,33 +67,47 @@ function receiptField(receipt: unknown, key: string): JsonValue {
   return typeof value === 'string' ? value : null
 }
 
+/** Why a worker is being stopped: events are `<eventPrefix>_failed|_unconfirmed`. */
+export type WorkerStopCause = {
+  eventPrefix: string
+  reason: string
+  subject: Record<string, JsonValue>
+}
+
 /** Only a `stopped` receipt proves the worker is gone; anything else leaves the attempt as is. */
-async function stopBranch(
+export async function stopWorkerAttempt(
   ctx: WorkflowNodeLaunchContext,
-  joinNodeId: string,
-  branch: NodeAttemptView
+  attempt: NodeAttemptView,
+  cause: WorkerStopCause
 ): Promise<void> {
-  const payload = { joinNodeId, nodeId: branch.nodeId, dispatchId: branch.dispatchId ?? null }
-  const options = { attemptId: branch.id, reason: 'attempt' as const }
-  if (!branch.dispatchId) {
-    ctx.recorder.event('join_branch_stop_unconfirmed', { ...payload, state: null }, options)
+  const payload = {
+    ...cause.subject,
+    nodeId: attempt.nodeId,
+    dispatchId: attempt.dispatchId ?? null
+  }
+  const options = { attemptId: attempt.id, reason: 'attempt' as const }
+  if (!attempt.dispatchId) {
+    ctx.recorder.event(`${cause.eventPrefix}_unconfirmed`, { ...payload, state: null }, options)
     return
   }
   let receipt: unknown
   try {
-    receipt = await ctx.client.call('orchestration.workerStop', { dispatch: branch.dispatchId })
+    receipt = await ctx.client.call('orchestration.workerStop', { dispatch: attempt.dispatchId })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    ctx.recorder.event('join_branch_stop_failed', { ...payload, error: message }, options)
+    ctx.recorder.event(`${cause.eventPrefix}_failed`, { ...payload, error: message }, options)
     return
   }
   const state = receiptField(receipt, 'state')
   if (state === 'stopped') {
-    ctx.recorder.transitionAttempt(branch.id, 'cancelled', { reason: 'join_failed', joinNodeId })
+    ctx.recorder.transitionAttempt(attempt.id, 'cancelled', {
+      reason: cause.reason,
+      ...cause.subject
+    })
     return
   }
   ctx.recorder.event(
-    'join_branch_stop_unconfirmed',
+    `${cause.eventPrefix}_unconfirmed`,
     { ...payload, state, lastError: receiptField(receipt, 'lastError') },
     options
   )
@@ -127,5 +141,10 @@ export async function stopRemainingBranches(
       })
     }
   }
-  await Promise.all(active.map((branch) => stopBranch(ctx, join.id, branch)))
+  const cause = {
+    eventPrefix: 'join_branch_stop',
+    reason: 'join_failed',
+    subject: { joinNodeId: join.id }
+  }
+  await Promise.all(active.map((branch) => stopWorkerAttempt(ctx, branch, cause)))
 }

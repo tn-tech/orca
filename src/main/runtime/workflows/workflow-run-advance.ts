@@ -79,9 +79,12 @@ function settleLoop(ctx: WorkflowNodeLaunchContext, settlement: LoopSettlement):
 export async function advanceRun(ctx: WorkflowNodeLaunchContext): Promise<void> {
   // Read fresh (not carried on ctx) so a rehydrated controller enforces the same budget a live
   // one would; the run row, not the controller's memory, is this run's concurrency limit.
-  const concurrencyLimit =
-    ctx.db.getWorkflowRun(ctx.recorder.runId)?.concurrencyLimit ??
-    DEFAULT_WORKFLOW_CONCURRENCY_LIMIT
+  const run = ctx.db.getWorkflowRun(ctx.recorder.runId)
+  // A run stopped early (an unrouted Approval option) must not launch anything more.
+  if (run?.state === 'completed' || run?.state === 'failed' || run?.state === 'cancelled') {
+    return
+  }
+  const concurrencyLimit = run?.concurrencyLimit ?? DEFAULT_WORKFLOW_CONCURRENCY_LIMIT
   for (;;) {
     const attempts = ctx.db.listWorkflowAttempts(ctx.recorder.runId)
     const frontier = computeFrontier(ctx.definition, attempts)

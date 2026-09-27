@@ -193,6 +193,7 @@ export function expireWorkflowQuestion(
   return row ? toQuestionView(row) : undefined
 }
 
+/** Open questions whose final deadline (`timeout_at`, after any escalation grace) has passed. */
 export function listExpiredWorkflowQuestions(
   this: OrchestrationDb,
   now: number
@@ -200,7 +201,7 @@ export function listExpiredWorkflowQuestions(
   const rows = selectWorkflowRows<WorkflowRunQuestionRow>(
     this.db,
     `SELECT * FROM workflow_run_questions
-     WHERE state = 'pending' AND timeout_at IS NOT NULL AND timeout_at <= ?
+     WHERE state IN ('pending', 'escalated') AND timeout_at IS NOT NULL AND timeout_at <= ?
      ORDER BY timeout_at ASC`,
     now
   )

@@ -10,6 +10,7 @@ import {
   approvalNode,
   approvalWorkflow
 } from './workflow-approval-test-fixtures'
+import { joinDriver } from './workflow-run-controller-join-fixtures'
 import { createControllerHarness } from './workflow-run-controller-test-harness'
 
 describe('Approval nodes', () => {
@@ -103,20 +104,24 @@ describe('Approval nodes', () => {
     expect(d.attempt(run.id, 'a')?.state).toBe('skipped')
   })
 
-  it('ends the run when the chosen option has no outgoing edge', async () => {
-    const run = h.createRun(
-      approvalWorkflow(approvalNode(), { withRejectEdge: false, withSideBranch: false })
-    )
+  it('stops the whole run when the chosen option has no outgoing edge', async () => {
+    const run = h.createRun(approvalWorkflow(approvalNode(), { withRejectEdge: false }))
+    const stops = joinDriver(h).interceptWorkerStop(() => ({ state: 'stopped' }))
     const finished = h.createController(run.id).run()
     await d.reached(run.id, 'gate', 'waiting')
+    const side = await d.reached(run.id, 'side', 'running')
     answer(run.id, 'reject')
     await expect(finished).resolves.toBe('failed')
     expect(d.attempt(run.id, 'gate')).toMatchObject({
       state: 'completed',
       resultJson: { option: 'reject' }
     })
-    expect(d.attempt(run.id, 'a')?.state).toBe('skipped')
-    expect(d.attempt(run.id, 'end')).toMatchObject({ state: 'skipped' })
+    // The side branch would otherwise reach End; it is asked to stop instead.
+    expect(stops).toEqual([side.dispatchId])
+    expect(d.attempt(run.id, 'side')?.state).toBe('cancelled')
+    expect(d.attempt(run.id, 'end')).toBeUndefined()
+    const failed = h.db.listWorkflowEvents(run.id).find((event) => event.kind === 'run_failed')
+    expect(failed?.payloadJson).toMatchObject({ reason: 'approval_rejected', nodeId: 'gate' })
   })
 
   it('accepts only the first answer, and only one of the options', async () => {

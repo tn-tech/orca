@@ -6,8 +6,8 @@
 // the question (resolveApproval) and wakes the run; the controller then resolves the gate, stores
 // `{ option }` as the attempt result and completes it, and the frontier follows that option's
 // port. Only the Approval's downstream waits: other ready branches keep running while the run
-// shows `waiting`. An option with no outgoing edge fires nothing, so its path ends there and the
-// run stops once nothing else can reach End.
+// shows `waiting`. An option with no outgoing edge stops the whole run
+// (workflow-approval-rejection.ts).
 import {
   approvalQuestionOptions,
   approvalQuestionSubject
@@ -17,6 +17,7 @@ import type { NodeAttemptView, RunQuestionView } from '../../../shared/workflows
 import type { OrchestrationDb } from '../orchestration/db'
 import { OrchestrationError } from '../orchestration/orchestration-error'
 import type { ApprovalResult } from './workflow-approval-choice'
+import { approvalOptionHasEdge, stopRunForApproval } from './workflow-approval-rejection'
 import {
   applyApprovalDeadlines,
   approvalDeadlines,
@@ -29,6 +30,12 @@ import { wakeWorkflowRun } from './workflow-run-wake'
 import { leaveRunWaitIfClear } from './workflow-trust-wait'
 
 const WAITING_OR_APPLYING = new Set<NodeAttemptView['state']>(['waiting', 'running'])
+const TERMINAL_RUN_STATES = new Set(['completed', 'failed', 'cancelled'])
+
+function isRunOver(db: OrchestrationDb, runId: string): boolean {
+  const state = db.getWorkflowRun(runId)?.state
+  return state === undefined || TERMINAL_RUN_STATES.has(state)
+}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -169,6 +176,11 @@ async function applyAnswer(
   }
   const result: ApprovalResult = { option }
   ctx.db.updateWorkflowAttempt(attempt.id, { resultJson: result })
+  // Why before completing: a completed Approval reads as a routed one, so a stop cut short by a
+  // restart must still find this attempt open and replay.
+  if (!approvalOptionHasEdge(ctx, attempt.nodeId, option)) {
+    await stopRunForApproval(ctx, attempt, option)
+  }
   if (attempt.state === 'waiting') {
     ctx.recorder.transitionAttempt(attempt.id, 'running')
   }
@@ -197,6 +209,9 @@ async function applyAnsweredApprovals(ctx: WorkflowNodeLaunchContext): Promise<b
     }
     await applyAnswer(ctx, question, attempt, question.answer)
     applied = true
+    if (isRunOver(ctx.db, ctx.recorder.runId)) {
+      break
+    }
   }
   return applied
 }
@@ -237,6 +252,12 @@ export function resolveApproval(
   const subject = question ? approvalQuestionSubject(question) : undefined
   if (!question || !subject) {
     throw notPending(`Run ${runId} has no approval ${questionId}.`, { runId, questionId })
+  }
+  if (isRunOver(db, runId)) {
+    throw new OrchestrationError('workflow_run_not_active', `Run ${runId} has already ended.`, {
+      runId,
+      questionId
+    })
   }
   if (!subject.options.includes(optionId)) {
     throw new OrchestrationError(

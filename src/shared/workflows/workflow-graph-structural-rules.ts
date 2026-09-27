@@ -216,8 +216,16 @@ export function checkJoinNodes(nodes: Node[], edges: Edge[]): WorkflowProblem[] 
 // The engine reads these `fromPort` values as Loop ports, so an option with that name never routes.
 const LOOP_PORT_NAMES: ReadonlySet<string> = new Set(['exit', 'body'])
 
-/** Every option/choice needs exactly one outgoing edge on that port; no other edges are allowed. */
-function checkPortOptions(nodeId: string, options: string[], edges: Edge[]): WorkflowProblem[] {
+/**
+ * Every option/choice needs exactly one outgoing edge on that port; no other edges are allowed.
+ * An Approval option may have none (spec US5: choosing it stops the run), so that only warns.
+ */
+function checkPortOptions(
+  nodeId: string,
+  options: string[],
+  edges: Edge[],
+  missingEdge: 'error' | 'warning'
+): WorkflowProblem[] {
   const problems: WorkflowProblem[] = []
   const outgoing = edges.filter((edge) => edge.from === nodeId)
   for (const option of options) {
@@ -232,13 +240,15 @@ function checkPortOptions(nodeId: string, options: string[], edges: Edge[]): Wor
     }
     const matches = outgoing.filter((edge) => edge.fromPort === option)
     if (matches.length === 0) {
-      problems.push(
-        error({
-          code: 'graph_option_missing_edge',
-          message: `Node "${nodeId}" option "${option}" has no outgoing edge.`,
-          nodeId
-        })
-      )
+      problems.push({
+        code: 'graph_option_missing_edge',
+        message:
+          missingEdge === 'error'
+            ? `Node "${nodeId}" option "${option}" has no outgoing edge.`
+            : `Node "${nodeId}" option "${option}" has no outgoing edge; choosing it stops the run.`,
+        nodeId,
+        severity: missingEdge
+      })
     }
     for (const duplicate of matches.slice(1)) {
       problems.push(
@@ -271,9 +281,9 @@ export function checkPortedNodes(nodes: Node[], edges: Edge[]): WorkflowProblem[
   const problems: WorkflowProblem[] = []
   for (const node of nodes) {
     if (node.type === 'approval') {
-      problems.push(...checkPortOptions(node.id, node.options, edges))
+      problems.push(...checkPortOptions(node.id, node.options, edges, 'warning'))
     } else if (node.type === 'router') {
-      problems.push(...checkPortOptions(node.id, node.choices, edges))
+      problems.push(...checkPortOptions(node.id, node.choices, edges, 'error'))
     }
   }
   return problems

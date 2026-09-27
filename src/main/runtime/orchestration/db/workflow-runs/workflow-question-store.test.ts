@@ -193,8 +193,19 @@ describe('workflow-question-store', () => {
         timeoutAt: now + 100000
       })
 
+      const escalated = d.createWorkflowQuestion({
+        runId: run.id,
+        attemptId: 'wfa_3',
+        kind: 'approval',
+        prompt: 'Escalated?',
+        timeoutAt: now - 500
+      })
+      d.escalateWorkflowQuestion(escalated.id)
+
       const candidates = d.listExpiredWorkflowQuestions(now)
-      expect(candidates.map((q) => q.id)).toEqual([expired.id])
+      // An escalated question is still open, so it expires at its timeout too.
+      expect(candidates.map((q) => q.id)).toEqual([expired.id, escalated.id])
+      d.expireWorkflowQuestion(escalated.id)
 
       const result = d.expireWorkflowQuestion(expired.id)
       expect(result?.state).toBe('expired')

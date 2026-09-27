@@ -12,6 +12,7 @@ import type {
 } from '../../../shared/workflows/workflow-node-states'
 import type { NodeAttemptView, RunSnapshot } from '../../../shared/workflows/workflow-run-types'
 import type { OrchestrationDb } from '../orchestration/db'
+import { closeOpenApprovals } from './workflow-approval-deadlines'
 import type { WorkflowAttemptDispatchStore } from './workflow-node-dispatch'
 
 export type WorkflowRunChangeNotifier = {
@@ -19,6 +20,12 @@ export type WorkflowRunChangeNotifier = {
 }
 
 export type WorkflowEventPayload = Record<string, JsonValue>
+
+const TERMINAL_RUN_STATES: ReadonlySet<WorkflowRunState> = new Set([
+  'completed',
+  'failed',
+  'cancelled'
+])
 
 export class WorkflowRunRecorder {
   constructor(
@@ -51,6 +58,9 @@ export class WorkflowRunRecorder {
   ): RunSnapshot | undefined {
     const run = this.db.transitionWorkflowRun(this.runId, toState)
     this.event(kind, { state: toState, ...payload })
+    if (TERMINAL_RUN_STATES.has(toState)) {
+      closeOpenApprovals(this.db, this)
+    }
     return run
   }
 

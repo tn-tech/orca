@@ -479,18 +479,17 @@ describe('validateWorkflowGraph: join nodes', () => {
 })
 
 describe('validateWorkflowGraph: approval and router ports', () => {
-  it('rejects an approval option with no outgoing edge', () => {
+  it('only warns about an approval option with no outgoing edge (choosing it stops the run)', () => {
     const wf = workflow({
       nodes: [startNode(), approvalNode('gate'), endNode()],
       edges: [edge('e1', 'start', 'gate'), edge('e2', 'gate', 'end', { fromPort: 'approve' })]
     })
-    expect(validateWorkflowGraph(wf, permissiveContext)).toContainEqual(
-      expect.objectContaining({
-        code: 'graph_option_missing_edge',
-        nodeId: 'gate',
-        severity: 'error'
-      })
+    const gateProblems = validateWorkflowGraph(wf, permissiveContext).filter(
+      (problem) => problem.nodeId === 'gate'
     )
+    expect(gateProblems).toEqual([
+      expect.objectContaining({ code: 'graph_option_missing_edge', severity: 'warning' })
+    ])
   })
 
   it('rejects an approval option with more than one outgoing edge', () => {
