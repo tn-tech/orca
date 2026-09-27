@@ -4,19 +4,15 @@
 // deadlines, and puts the attempt in Waiting. Other nodes keep running. A person's answer is only
 // recorded here (answerAgentQuestion) and wakes the run; the controller then delivers it to the
 // agent's existing session (workflow-agent-question-settlement.ts).
-import {
-  ORCHESTRATION_ASK_DEFAULT_TIMEOUT_MS,
-  ORCHESTRATION_ASK_MAX_TIMEOUT_MS
-} from '../../../shared/orchestration-ask-timeout'
 import type { Node } from '../../../shared/workflows/workflow-definition-types'
 import type { NodeAttemptView, RunQuestionView } from '../../../shared/workflows/workflow-run-types'
 import type { OrchestrationDb } from '../orchestration/db'
 import { OrchestrationError } from '../orchestration/orchestration-error'
 import type { MessageRow } from '../orchestration/types'
+import { agentQuestionDeadlines, readAgentAskWait } from './workflow-agent-question-ask-wait'
 import {
   atomically,
   expireQuestion,
-  questionDeadlines,
   type WorkflowQuestionListener
 } from './workflow-question-deadlines'
 import type { RunMail } from './workflow-run-mailbox-message'
@@ -27,25 +23,7 @@ import { leaveRunWaitIfClear } from './workflow-trust-wait'
 
 export const AGENT_QUESTION_TIMED_OUT_REASON = 'agent_question_timed_out'
 
-// Why: router and reflection nodes have no `question` config, yet their agents can still ask.
-const DEFAULT_QUESTION_TIMING = {
-  timeoutMs: ORCHESTRATION_ASK_DEFAULT_TIMEOUT_MS,
-  escalationGraceMs: ORCHESTRATION_ASK_DEFAULT_TIMEOUT_MS
-}
-
 const TERMINAL_RUN_STATES = new Set(['completed', 'failed', 'cancelled'])
-
-/** Escalation never comes later than the worker's own `ask` wait can last. */
-export function agentQuestionDeadlines(
-  raisedAt: number,
-  node: Node | undefined
-): { escalationAt: number; timeoutAt: number } {
-  const timing = node?.type === 'agent' ? node.question : DEFAULT_QUESTION_TIMING
-  return questionDeadlines(raisedAt, {
-    timeoutMs: Math.min(timing.timeoutMs, ORCHESTRATION_ASK_MAX_TIMEOUT_MS),
-    escalationGraceMs: timing.escalationGraceMs
-  })
-}
 
 type AgentQuestion = RunQuestionView & { kind: 'agent-question' }
 
@@ -71,7 +49,9 @@ function questionContext(node: Node | undefined, options: readonly string[]): st
 
 /**
  * Stores the question and moves its attempt to Waiting in one transaction; a replayed delivery
- * finds the question already stored and changes nothing.
+ * finds the question already stored and changes nothing. A new question supersedes the attempt's
+ * older open ones: the agent only waits on its latest ask. One whose ask wait already ended (the
+ * run saw it late) is stored expired and nothing waits on it.
  */
 export function raiseAgentQuestion(
   ctx: WorkflowNodeLaunchContext,
@@ -98,8 +78,11 @@ export function raiseAgentQuestion(
     return
   }
   const node = ctx.definition.nodes.find((candidate) => candidate.id === attempt.nodeId)
+  const now = Date.now()
+  const deadlines = agentQuestionDeadlines(now, node, readAgentAskWait(db, message))
   let question: RunQuestionView | undefined
   atomically(db, () => {
+    const superseded = openAgentQuestions(db, recorder.runId, attempt.id)
     question = db.createWorkflowQuestion({
       runId: recorder.runId,
       attemptId: attempt.id,
@@ -107,8 +90,27 @@ export function raiseAgentQuestion(
       questionMessageId: message.id,
       prompt: mail.prompt,
       options: { options: mail.options, context: questionContext(node, mail.options) },
-      ...agentQuestionDeadlines(Date.now(), node)
+      ...deadlines
     })
+    for (const older of superseded) {
+      expireQuestion(db, recorder, older, { reason: 'superseded' })
+    }
+    if (deadlines.timeoutAt <= now) {
+      // The agent's latest ask already gave up, so it is working again, not waiting.
+      expireQuestion(
+        db,
+        recorder,
+        { ...question, kind: 'agent-question' },
+        {
+          reason: 'ask_wait_ended'
+        }
+      )
+      if (attempt.state === 'waiting') {
+        recorder.transitionAttempt(attempt.id, 'running', { reason: 'ask_wait_ended' })
+      }
+      question = undefined
+      return
+    }
     // Asking proves the worker is alive, so an unverifiable attempt is running again.
     if (attempt.state === 'unverifiable') {
       recorder.transitionAttempt(attempt.id, 'running')
@@ -181,6 +183,20 @@ export function answerAgentQuestion(
       questionId
     })
   }
+  if (question.state !== 'pending' && question.state !== 'escalated') {
+    throw notPending(`Agent question ${questionId} is no longer open (${question.state}).`, {
+      runId,
+      questionId
+    })
+  }
+  // Only an attempt still waiting on the agent can take the answer to its session.
+  const attempt = db.listWorkflowAttempts(runId).find((a) => a.id === question.attemptId)
+  if (attempt?.state !== 'waiting') {
+    throw notPending(`Agent question ${questionId}'s node is no longer waiting on it.`, {
+      runId,
+      questionId
+    })
+  }
   if (answer.trim().length === 0) {
     throw new OrchestrationError('invalid_argument', 'An answer cannot be empty.', {
       runId,
@@ -188,11 +204,8 @@ export function answerAgentQuestion(
     })
   }
   const answered = db.answerWorkflowQuestion(questionId, answer, answeredBy)
-  if (answered?.state !== 'answered' || question.state === 'answered') {
-    throw notPending(`Agent question ${questionId} is no longer open (${answered?.state}).`, {
-      runId,
-      questionId
-    })
+  if (answered?.state !== 'answered') {
+    throw notPending(`Agent question ${questionId} could not be answered.`, { runId, questionId })
   }
   new WorkflowRunRecorder(db, notifier, runId).event(
     'agent_question_answered',

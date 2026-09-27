@@ -194,6 +194,7 @@ export function createControllerHarness(workspaceRoot: string) {
     handle: string
     question: string
     options?: string
+    timeoutMs?: number
   }): Promise<RpcResponse> {
     const capability = /--dispatch-capability (\S+)/.exec(prompts.get(args.handle) ?? '')?.[1]
     requestSequence += 1
@@ -204,7 +205,8 @@ export function createControllerHarness(workspaceRoot: string) {
       params: {
         from: args.handle,
         question: args.question,
-        ...(args.options ? { options: args.options } : {})
+        ...(args.options ? { options: args.options } : {}),
+        ...(args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {})
       },
       orchestrationContractVersion: ORCHESTRATION_CONTRACT_VERSION,
       orchestrationRequestId: `ask_request_${requestSequence}`,

@@ -6,6 +6,7 @@ import type { RunSnapshot } from '../../../shared/workflows/workflow-run-types'
 import type { OrchestrationDb } from '../orchestration/db'
 import type { MessageRow } from '../orchestration/types'
 import type { MessageWaitResult } from '../runtime-message-waiters'
+import { AgentAnswerDeliveryBackoff } from './workflow-agent-answer-delivery'
 import { settleAgentQuestions } from './workflow-agent-question-settlement'
 import { raiseAgentQuestion } from './workflow-agent-questions'
 import { settleApprovals } from './workflow-approval-gates'
@@ -62,6 +63,7 @@ export class WorkflowRunController {
   private readonly abort = new AbortController()
   private wakeSignal = new AbortController()
   private readonly recorder: WorkflowRunRecorder
+  private readonly answerBackoff = new AgentAnswerDeliveryBackoff()
 
   constructor(private readonly deps: WorkflowRunControllerDeps) {
     this.recorder = new WorkflowRunRecorder(deps.db, deps.runtime, deps.workflowRunId)
@@ -165,7 +167,12 @@ export class WorkflowRunController {
         continue
       }
       const wake = this.wakeSignal
-      const disarm = armQuestionDeadlineTimer(db, this.deps.workflowRunId, () => wake.abort())
+      const disarm = armQuestionDeadlineTimer(
+        db,
+        this.deps.workflowRunId,
+        () => wake.abort(),
+        this.answerBackoff.nextRetryAt()
+      )
       const woke = await runtime
         .waitForMessage(`run:${session.engineRunId}`, {
           exclusive: true,
@@ -188,7 +195,10 @@ export class WorkflowRunController {
     return (
       (await resumeAnsweredTrustWaits(launch)) ||
       (await settleApprovals(launch, { onEscalated: onApprovalEscalated })) ||
-      (await settleAgentQuestions(launch, { onEscalated: onAgentQuestionEscalated }))
+      (await settleAgentQuestions(launch, {
+        onEscalated: onAgentQuestionEscalated,
+        deliveryBackoff: this.answerBackoff
+      }))
     )
   }
 

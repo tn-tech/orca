@@ -2,17 +2,17 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ORCHESTRATION_ASK_MAX_TIMEOUT_MS } from '../../../shared/orchestration-ask-timeout'
+import { ORCHESTRATION_ASK_DEFAULT_TIMEOUT_MS } from '../../../shared/orchestration-ask-timeout'
 import type { AgentNode, Workflow } from '../../../shared/workflows/workflow-definition-types'
 import type { RunQuestionView } from '../../../shared/workflows/workflow-run-types'
 import { OrchestrationError } from '../orchestration/orchestration-error'
+import { AGENT_QUESTION_TIMED_OUT_REASON, answerAgentQuestion } from './workflow-agent-questions'
 import {
-  AGENT_QUESTION_TIMED_OUT_REASON,
-  agentQuestionDeadlines,
-  answerAgentQuestion
-} from './workflow-agent-questions'
+  AGENT_QUESTION_ASK_WAIT_MARGIN_MS,
+  agentQuestionDeadlines
+} from './workflow-agent-question-ask-wait'
 import { approvalDriver } from './workflow-approval-test-fixtures'
-import { branchAgent, joinDriver } from './workflow-run-controller-join-fixtures'
+import { branchAgent, fanOutWorkflow, joinDriver } from './workflow-run-controller-join-fixtures'
 import { WorkflowRunRecorder } from './workflow-run-recorder'
 import {
   createControllerHarness,
@@ -105,15 +105,34 @@ describe('agent questions during a run', () => {
   }
 
   /** Resolves once the question is raised; `reply` is the worker's still-blocked ask call. */
-  async function ask(runId: string, question = 'Which database should I use?') {
-    await d.reached(runId, 'work', 'running')
+  async function ask(
+    runId: string,
+    options: { question?: string; nodeId?: string; timeoutMs?: number } = {}
+  ) {
+    const nodeId = options.nodeId ?? 'work'
+    await d.reached(runId, nodeId, 'running')
     const reply = h.askQuestion({
-      handle: workerHandle(runId, 'work'),
-      question,
-      options: 'postgres,sqlite'
+      handle: workerHandle(runId, nodeId),
+      question: options.question ?? 'Which database should I use?',
+      options: 'postgres,sqlite',
+      ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {})
     })
-    await d.reached(runId, 'work', 'waiting')
+    await d.reached(runId, nodeId, 'waiting')
     return { reply }
+  }
+
+  /** A worker stop the host proved: the dispatch settles, leaving its Task blocked. */
+  function interceptConfirmedStop() {
+    return joinDriver(h).interceptWorkerStop((dispatchId) => {
+      const id = String(dispatchId)
+      h.db.beginWorkerStop(id, 'runtime_test')
+      h.db.settleWorkerStop(id)
+      return { state: 'stopped' }
+    })
+  }
+
+  function events(runId: string, kind: string) {
+    return h.db.listWorkflowEvents(runId).filter((event) => event.kind === kind)
   }
 
   function answer(runId: string, text = 'postgres', answeredBy = 'user_1'): RunQuestionView {
@@ -187,7 +206,7 @@ describe('agent questions during a run', () => {
   })
 
   it('escalates at the timeout, then stops the worker and fails the node after the grace', async () => {
-    const stops = joinDriver(h).interceptWorkerStop(() => ({ state: 'stopped' }))
+    const stops = interceptConfirmedStop()
     const { run, finished } = start()
     await ask(run.id)
     const dispatchId = d.attempt(run.id, 'work')?.dispatchId
@@ -202,6 +221,7 @@ describe('agent questions during a run', () => {
     await d.reached(run.id, 'work', 'failed')
     expect(stops).toEqual([dispatchId])
     expect(d.attempt(run.id, 'work')?.failureReason).toBe(AGENT_QUESTION_TIMED_OUT_REASON)
+    expect(h.db.getTask(d.attempt(run.id, 'work')?.taskId ?? '')?.status).toBe('failed')
     expect(agentQuestion(run.id)).toMatchObject({
       state: 'expired',
       prompt: 'Which database should I use?'
@@ -229,6 +249,8 @@ describe('agent questions during a run', () => {
       .listWorkflowEvents(run.id)
       .find((event) => event.kind === 'agent_question_stop_unconfirmed')
     expect(stopEvent?.payloadJson).toMatchObject({ state: 'unknown' })
+    // The worker may still be running, so its Task is left as orchestration holds it.
+    expect(h.db.getTask(d.attempt(run.id, 'work')?.taskId ?? '')?.status).toBe('dispatched')
     expect(JSON.stringify(h.db.listWorkflowEvents(run.id))).not.toContain('exited')
     controller.stop()
     await finished
@@ -271,25 +293,36 @@ describe('agent questions during a run', () => {
     await expect(finished).resolves.toBe('completed')
   })
 
-  it('keeps the node waiting until every question it asked is answered', async () => {
+  it('supersedes the older open question when the agent asks again', async () => {
+    const stops = interceptConfirmedStop()
     const { run, controller, finished } = start()
     await ask(run.id)
+    const [first] = h.db.listWorkflowQuestions(run.id)
     const second = h.askQuestion({
       handle: workerHandle(run.id, 'work'),
       question: 'And the port?'
     })
     await waitUntil(() => h.db.listWorkflowQuestions(run.id).length === 2)
-    const [first, next] = h.db.listWorkflowQuestions(run.id)
-    expect(next).toMatchObject({ kind: 'agent-question', prompt: 'And the port?' })
-
-    answerAgentQuestion(h.db, h.runtime, {
-      runId: run.id,
-      questionId: first?.id ?? '',
-      answer: 'postgres',
-      answeredBy: 'user_1'
+    const next = h.db.listWorkflowQuestions(run.id)[1]
+    expect(next).toMatchObject({
+      kind: 'agent-question',
+      state: 'pending',
+      prompt: 'And the port?'
     })
-    await waitUntil(() => h.db.getQuestion(first?.questionMessageId ?? '')?.status === 'answered')
+    expect(h.db.listWorkflowQuestions(run.id)[0]?.state).toBe('expired')
+    expect(events(run.id, 'agent_question_expired')[0]?.payloadJson).toEqual({
+      questionId: first?.id,
+      reason: 'superseded'
+    })
     expect(d.attempt(run.id, 'work')?.state).toBe('waiting')
+    expect(() =>
+      answerAgentQuestion(h.db, h.runtime, {
+        runId: run.id,
+        questionId: first?.id ?? '',
+        answer: 'postgres',
+        answeredBy: 'user_1'
+      })
+    ).toThrow(expect.objectContaining({ code: 'workflow_question_not_pending' }))
 
     answerAgentQuestion(h.db, h.runtime, {
       runId: run.id,
@@ -300,6 +333,122 @@ describe('agent questions during a run', () => {
     await d.reached(run.id, 'work', 'running')
     const response = await second
     expect(response.ok && response.result).toMatchObject({ answer: '5432' })
+    // The superseded question's deadlines never fail the node.
+    await vi.advanceTimersByTimeAsync(TIMEOUT_MS + GRACE_MS)
+    expect(d.attempt(run.id, 'work')?.state).toBe('running')
+    expect(stops).toEqual([])
+    controller.stop()
+    await finished
+  })
+
+  it('fits escalation and grace inside the agent’s own ask wait', async () => {
+    const { run, controller, finished } = start()
+    const askStartedAt = Date.now()
+    await ask(run.id, { timeoutMs: 40_000 })
+    const question = agentQuestion(run.id)
+    const escalationAt = Date.parse(question?.escalationAt ?? '')
+    const timeoutAt = Date.parse(question?.timeoutAt ?? '')
+    expect(timeoutAt).toBeLessThanOrEqual(askStartedAt + 40_000 - AGENT_QUESTION_ASK_WAIT_MARGIN_MS)
+    expect(escalationAt).toBeGreaterThan(askStartedAt - 1_000)
+    expect(escalationAt).toBeLessThan(timeoutAt)
+    controller.stop()
+    await finished
+  })
+
+  it('does not wait on a question whose ask wait ended before the run saw it', async () => {
+    const run = h.createRun(questionWorkflow())
+    const first = controllerFor(run.id)
+    const firstDone = first.run()
+    await d.reached(run.id, 'work', 'running')
+    first.stop()
+    await firstDone
+    void h.askQuestion({ handle: workerHandle(run.id, 'work'), question: 'Still there?' })
+    await waitUntil(() => h.db.getInbox(10).some((message) => message.type === 'question'))
+    vi.setSystemTime(Date.now() + ORCHESTRATION_ASK_DEFAULT_TIMEOUT_MS)
+
+    const second = controllerFor(run.id)
+    const finished = second.run()
+    await waitUntil(() => agentQuestion(run.id)?.state === 'expired')
+    expect(events(run.id, 'agent_question_expired')[0]?.payloadJson).toMatchObject({
+      reason: 'ask_wait_ended'
+    })
+    expect(d.attempt(run.id, 'work')?.state).toBe('running')
+    expect(raised).toEqual([])
+    second.stop()
+    await finished
+  })
+
+  it('keeps reading mail while an answer cannot be delivered, then retries it', async () => {
+    let refuse = true
+    const dispatch = h.dispatcher.dispatchAsWorkflowEngine.bind(h.dispatcher)
+    vi.spyOn(h.dispatcher, 'dispatchAsWorkflowEngine').mockImplementation(
+      async (request, ...rest) =>
+        refuse && request.method === 'orchestration.reply'
+          ? {
+              id: request.id,
+              ok: false,
+              error: { code: 'legacy_read_only', message: 'refused' },
+              _meta: { runtimeId: 'test' }
+            }
+          : dispatch(request, ...rest)
+    )
+    const { run, finished } = start()
+    const { reply } = await ask(run.id)
+    answer(run.id)
+    await waitUntil(() => events(run.id, 'agent_question_delivery_failed').length > 0)
+    expect(d.attempt(run.id, 'work')?.state).toBe('waiting')
+
+    // Mail still flows: the side branch's report is processed.
+    await d.report(run.id, 'side')
+    await d.reached(run.id, 'side', 'completed')
+    expect(d.attempt(run.id, 'work')?.state).toBe('waiting')
+
+    refuse = false
+    await d.reached(run.id, 'work', 'running')
+    const response = await reply
+    expect(response.ok && response.result).toMatchObject({ answer: 'postgres' })
+    expect(events(run.id, 'agent_question_delivered')).toHaveLength(1)
+    await d.report(run.id, 'work')
+    await expect(finished).resolves.toBe('completed')
+  })
+
+  it('closes the questions of an attempt a failed Join cancels', async () => {
+    interceptConfirmedStop()
+    const j = joinDriver(h)
+    const fanOut = fanOutWorkflow('all', 'fail')
+    // The side branch keeps the run going after the Join fails.
+    const run = h.createRun({
+      ...fanOut,
+      nodes: [...fanOut.nodes, branchAgent('side')],
+      edges: [
+        ...fanOut.edges,
+        { id: 'start-side', from: 'start', to: 'side' },
+        { id: 'side-end', from: 'side', to: 'end' }
+      ]
+    })
+    const controller = controllerFor(run.id)
+    const finished = controller.run()
+    await ask(run.id, { nodeId: 'a' })
+    const question = agentQuestion(run.id)
+    await j.report(run.id, 'b', 'failed')
+    await d.reached(run.id, 'a', 'cancelled')
+    expect(h.db.getWorkflowRun(run.id)?.state).not.toMatch(/completed|failed|cancelled/)
+
+    expect(agentQuestion(run.id)?.state).toBe('expired')
+    expect(events(run.id, 'agent_question_expired')[0]?.payloadJson).toEqual({
+      questionId: question?.id,
+      reason: 'attempt_cancelled'
+    })
+    expect(() =>
+      answerAgentQuestion(h.db, h.runtime, {
+        runId: run.id,
+        questionId: question?.id ?? '',
+        answer: 'postgres',
+        answeredBy: 'user_1'
+      })
+    ).toThrow(expect.objectContaining({ code: 'workflow_question_not_pending' }))
+    await vi.advanceTimersByTimeAsync(3_600_000)
+    expect(escalated).toEqual([])
     controller.stop()
     await finished
   })
@@ -360,13 +509,14 @@ describe('agent questions during a run', () => {
     ).toThrow(expect.objectContaining({ code: 'workflow_question_not_pending' }))
   })
 
-  it('never lets the node timeout exceed the worker ask ceiling', () => {
+  it('fits the node timing inside the default ask wait when the ask’s own is unknown', () => {
     const raisedAt = 1_000
-    const long = asker({ timeoutMs: ORCHESTRATION_ASK_MAX_TIMEOUT_MS * 4, escalationGraceMs: 5 })
-    expect(agentQuestionDeadlines(raisedAt, long)).toEqual({
-      escalationAt: raisedAt + ORCHESTRATION_ASK_MAX_TIMEOUT_MS,
-      timeoutAt: raisedAt + ORCHESTRATION_ASK_MAX_TIMEOUT_MS + 5
-    })
+    const window = ORCHESTRATION_ASK_DEFAULT_TIMEOUT_MS - AGENT_QUESTION_ASK_WAIT_MARGIN_MS
+    const long = asker({ timeoutMs: window * 4, escalationGraceMs: window })
+    const fitted = agentQuestionDeadlines(raisedAt, long)
+    expect(fitted.timeoutAt).toBe(raisedAt + window)
+    expect(fitted.escalationAt).toBe(raisedAt + (window * 4) / 5)
+
     const short = asker({ timeoutMs: TIMEOUT_MS, escalationGraceMs: GRACE_MS })
     expect(agentQuestionDeadlines(raisedAt, short)).toEqual({
       escalationAt: raisedAt + TIMEOUT_MS,

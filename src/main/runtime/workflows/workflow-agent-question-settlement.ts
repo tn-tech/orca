@@ -3,12 +3,13 @@
 // the node of each timed-out question fails after its worker is asked to stop, then recorded
 // answers reach the agent's existing session. Each step reads only the DB, so a runtime stopped
 // between any two of them resumes on the next pass or rehydrate.
-import type { NodeAttemptView, RunQuestionView } from '../../../shared/workflows/workflow-run-types'
+import type { NodeAttemptView } from '../../../shared/workflows/workflow-run-types'
 import {
-  AGENT_QUESTION_TIMED_OUT_REASON,
-  isAgentQuestion,
-  openAgentQuestions
-} from './workflow-agent-questions'
+  type AgentAnswerDeliveryBackoff,
+  deliverAgentAnswers,
+  latestAgentQuestions
+} from './workflow-agent-answer-delivery'
+import { AGENT_QUESTION_TIMED_OUT_REASON } from './workflow-agent-questions'
 import { requestWorkerStop } from './workflow-join-branch-stop'
 import {
   applyDueQuestionDeadlines,
@@ -18,47 +19,25 @@ import {
 } from './workflow-question-deadlines'
 import type { WorkflowNodeLaunchContext } from './workflow-run-node-launch'
 import { leaveRunWaitIfClear } from './workflow-trust-wait'
-
-type QuestionWithAttempt = { question: RunQuestionView; attempt: NodeAttemptView }
-
-function agentQuestionsWithAttempts(ctx: WorkflowNodeLaunchContext): QuestionWithAttempt[] {
-  const attempts = new Map(
-    ctx.db.listWorkflowAttempts(ctx.recorder.runId).map((attempt) => [attempt.id, attempt])
-  )
-  return ctx.db
-    .listWorkflowQuestions(ctx.recorder.runId)
-    .filter(isAgentQuestion)
-    .flatMap((question) => {
-      const attempt = attempts.get(question.attemptId)
-      return attempt ? [{ question, attempt }] : []
-    })
-}
+import { ensureTaskStatus } from './workflow-worker-done'
 
 /**
- * A question expired by its deadline leaves its attempt Waiting (every other expiry moves it on),
- * so a Waiting attempt with an expired question is one whose node still has to fail. Its Task is
- * left to the stop, as on a Join's stopped branches: orchestration refuses to fail a Task whose
- * worker an unconfirmed stop may have left running.
+ * A Waiting attempt whose latest question expired by its deadline still has to fail: every other
+ * expiry either moves the attempt on or (superseded) is never the latest. Only after a confirmed
+ * stop is its Task failed; orchestration refuses while the worker may still be running.
  */
 async function failTimedOutQuestions(ctx: WorkflowNodeLaunchContext): Promise<boolean> {
-  const timedOut = agentQuestionsWithAttempts(ctx).filter(
-    ({ question, attempt }) => question.state === 'expired' && attempt.state === 'waiting'
-  )
-  const failed = new Set<string>()
+  const timedOut = latestAgentQuestions(ctx).filter(({ question }) => question.state === 'expired')
   for (const { question, attempt } of timedOut) {
-    if (failed.has(attempt.id)) {
-      continue
-    }
-    failed.add(attempt.id)
     const stopped = await requestWorkerStop(ctx, attempt, {
       eventPrefix: 'agent_question_stop',
       reason: AGENT_QUESTION_TIMED_OUT_REASON,
       subject: { questionId: question.id }
     })
+    if (stopped) {
+      await failStoppedTask(ctx, attempt, question.id)
+    }
     atomically(ctx.db, () => {
-      for (const open of openAgentQuestions(ctx.db, ctx.recorder.runId, attempt.id)) {
-        expireQuestion(ctx.db, ctx.recorder, open, { reason: 'node_failed' })
-      }
       ctx.db.updateWorkflowAttempt(attempt.id, { failureReason: AGENT_QUESTION_TIMED_OUT_REASON })
       ctx.recorder.transitionAttempt(attempt.id, 'running')
       ctx.recorder.transitionAttempt(attempt.id, 'failed', {
@@ -67,66 +46,43 @@ async function failTimedOutQuestions(ctx: WorkflowNodeLaunchContext): Promise<bo
       })
     })
   }
-  return failed.size > 0
+  return timedOut.length > 0
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
-/**
- * Sends each recorded answer the orchestration thread still awaits through `orchestration.reply`
- * (engine consumer generation, `dispatch:<id>` wake, federated relay), then returns the attempt
- * to Running once none of its questions is open.
- */
-async function deliverAnswers(ctx: WorkflowNodeLaunchContext): Promise<boolean> {
-  let changed = false
-  const resumed = new Set<string>()
-  for (const { question, attempt } of agentQuestionsWithAttempts(ctx)) {
-    if (question.state !== 'answered' || question.answer === undefined) {
-      continue
-    }
-    const messageId = question.questionMessageId
-    const thread = messageId ? ctx.db.getQuestion(messageId) : undefined
-    if (messageId && thread?.status === 'pending') {
-      const subject = { questionId: question.id, messageId }
-      const options = { attemptId: attempt.id, reason: 'question' as const }
-      try {
-        await ctx.client.call('orchestration.reply', { id: messageId, body: question.answer })
-        ctx.recorder.event('agent_question_delivered', subject, options)
-      } catch (error) {
-        const failure = { ...subject, error: errorMessage(error) }
-        ctx.recorder.event('agent_question_delivery_failed', failure, options)
-      }
-      changed = true
-    }
-    if (
-      attempt.state === 'waiting' &&
-      attempt.dispatchId &&
-      !resumed.has(attempt.id) &&
-      openAgentQuestions(ctx.db, ctx.recorder.runId, attempt.id).length === 0
-    ) {
-      resumed.add(attempt.id)
-      ctx.recorder.transitionAttempt(attempt.id, 'running', { questionId: question.id })
-      changed = true
-    }
+async function failStoppedTask(
+  ctx: WorkflowNodeLaunchContext,
+  attempt: NodeAttemptView,
+  questionId: string
+): Promise<void> {
+  try {
+    await ensureTaskStatus(ctx, attempt.taskId, 'failed')
+  } catch (error) {
+    ctx.recorder.event(
+      'agent_question_task_update_failed',
+      { questionId, error: error instanceof Error ? error.message : String(error) },
+      { attemptId: attempt.id, reason: 'attempt' }
+    )
   }
-  return changed
 }
 
 /** `true` when anything changed, so the caller advances the frontier. */
 export async function settleAgentQuestions(
   ctx: WorkflowNodeLaunchContext,
-  options: { now?: number; onEscalated?: WorkflowQuestionListener } = {}
+  options: {
+    now?: number
+    onEscalated?: WorkflowQuestionListener
+    deliveryBackoff: AgentAnswerDeliveryBackoff
+  }
 ): Promise<boolean> {
-  const timed = applyDueQuestionDeadlines(ctx, 'agent-question', options.now ?? Date.now(), {
+  const now = options.now ?? Date.now()
+  const timed = applyDueQuestionDeadlines(ctx, 'agent-question', now, {
     ...(options.onEscalated ? { onEscalated: options.onEscalated } : {}),
     timeOut: (question) => {
       expireQuestion(ctx.db, ctx.recorder, question)
     }
   })
   const failed = await failTimedOutQuestions(ctx)
-  const delivered = await deliverAnswers(ctx)
+  const delivered = await deliverAgentAnswers(ctx, options.deliveryBackoff, now)
   const changed = timed || failed || delivered
   if (changed) {
     leaveRunWaitIfClear(ctx.db, ctx.recorder)

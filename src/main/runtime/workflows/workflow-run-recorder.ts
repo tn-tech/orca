@@ -12,7 +12,7 @@ import type {
 } from '../../../shared/workflows/workflow-node-states'
 import type { NodeAttemptView, RunSnapshot } from '../../../shared/workflows/workflow-run-types'
 import type { OrchestrationDb } from '../orchestration/db'
-import { closeOpenQuestions } from './workflow-question-deadlines'
+import { closeAttemptAgentQuestions, closeOpenQuestions } from './workflow-question-deadlines'
 import type { WorkflowAttemptDispatchStore } from './workflow-node-dispatch'
 
 export type WorkflowRunChangeNotifier = {
@@ -24,6 +24,13 @@ export type WorkflowEventPayload = Record<string, JsonValue>
 const TERMINAL_RUN_STATES: ReadonlySet<WorkflowRunState> = new Set([
   'completed',
   'failed',
+  'cancelled'
+])
+
+const TERMINAL_ATTEMPT_STATES: ReadonlySet<WorkflowAttemptState> = new Set([
+  'completed',
+  'failed',
+  'skipped',
   'cancelled'
 ])
 
@@ -83,6 +90,9 @@ export class WorkflowRunRecorder {
     const attempt = this.db.transitionWorkflowAttempt(attemptId, toState)
     if (attempt) {
       this.attemptEvent(`attempt_${toState}`, attempt, payload)
+      if (TERMINAL_ATTEMPT_STATES.has(toState)) {
+        closeAttemptAgentQuestions(this.db, this, attemptId, `attempt_${toState}`)
+      }
     }
     return attempt
   }

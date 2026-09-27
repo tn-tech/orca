@@ -66,15 +66,20 @@ export function nextQuestionDeadline(db: OrchestrationDb, runId: string): number
 }
 
 /**
- * Calls `wake` at the run's next question deadline; returns the disarm function. Re-armed from
- * the DB on every controller pass, so nothing depends on a timer surviving a restart.
+ * Calls `wake` at the run's next question deadline (or `alsoAt`, e.g. a delivery retry, if
+ * sooner); returns the disarm function. Re-armed from the DB on every controller pass, so nothing
+ * depends on a timer surviving a restart.
  */
 export function armQuestionDeadlineTimer(
   db: OrchestrationDb,
   runId: string,
-  wake: () => void
+  wake: () => void,
+  alsoAt?: number
 ): () => void {
-  const deadline = nextQuestionDeadline(db, runId)
+  const deadlines = [nextQuestionDeadline(db, runId), alsoAt].filter(
+    (at): at is number => at !== undefined
+  )
+  const deadline = deadlines.length > 0 ? Math.min(...deadlines) : undefined
   if (deadline === undefined) {
     return () => {}
   }
@@ -149,6 +154,20 @@ export function expireQuestion(
 export function closeOpenQuestions(db: OrchestrationDb, recorder: WorkflowRunRecorder): void {
   for (const question of openDeadlineQuestions(db, recorder.runId)) {
     expireQuestion(db, recorder, question, { reason: 'run_ended' })
+  }
+}
+
+/** An ended attempt's agent questions can no longer reach its agent; close them with it. */
+export function closeAttemptAgentQuestions(
+  db: OrchestrationDb,
+  recorder: WorkflowRunRecorder,
+  attemptId: string,
+  reason: string
+): void {
+  for (const question of openDeadlineQuestions(db, recorder.runId, 'agent-question')) {
+    if (question.attemptId === attemptId) {
+      expireQuestion(db, recorder, question, { reason })
+    }
   }
 }
 
