@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type {
   AgentNode,
+  ApprovalNode,
   JoinNode,
   LoopNode,
   Role,
@@ -86,6 +87,19 @@ function routerNode(patch: Partial<RouterNode> = {}): RouterNode {
     title: 'Router',
     prompt: 'Decide.',
     choices: ['bugfix', 'feature'],
+    ...patch
+  }
+}
+
+function approvalNode(patch: Partial<ApprovalNode> = {}): ApprovalNode {
+  return {
+    id: 'approval',
+    type: 'approval',
+    title: 'Approve the plan',
+    question: 'Approve the plan?',
+    options: ['Approve', 'Reject'],
+    timeoutMs: 3_600_000,
+    escalationGraceMs: 1_800_000,
     ...patch
   }
 }
@@ -247,6 +261,22 @@ describe('NodeInspector', () => {
     expect(screen.getByRole('combobox', { name: 'Model' })).toBeInTheDocument()
     expect(screen.getByDisplayValue('bugfix')).toBeInTheDocument()
     expect(screen.getByDisplayValue('feature')).toBeInTheDocument()
+  })
+
+  it('renders ApprovalNodeFields for a selected approval node', () => {
+    render(
+      <NodeInspector
+        definition={workflow({ nodes: [startNode(), approvalNode()] })}
+        selectedNodeId="approval"
+        onNodeChange={vi.fn()}
+        onEdgeConditionChange={vi.fn()}
+        onSetRole={vi.fn()}
+        onRemoveRole={vi.fn()}
+      />
+    )
+    expect(screen.getByLabelText('Question')).toHaveValue('Approve the plan?')
+    expect(screen.getByDisplayValue('Approve')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Reject')).toBeInTheDocument()
   })
 
   it('renders ConditionBuilder for a selected edge', () => {

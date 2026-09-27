@@ -17360,6 +17360,25 @@
           "RouterNode": {
             "noAgent": "No agent selected",
             "workspace": "Workspace: {{name}}"
+          },
+          "ApprovalNodeFields": {
+            "questionLabel": "Question",
+            "optionsLabel": "Options",
+            "optionsHelp": "Each option gets exactly one outgoing edge on the canvas; the answer must match one of these exactly.",
+            "optionPlaceholder": "e.g. Approve",
+            "optionLabel": "Option",
+            "removeOption": "Remove option",
+            "invalidOptions": "Options must be non-empty and unique — a blank or repeated option gets no outgoing edge.",
+            "addOption": "Add option",
+            "defaultOptionLabel": "Default answer",
+            "noDefault": "No default (the node fails on timeout)",
+            "timeoutLabel": "Timeout (minutes)",
+            "durationInvalid": "Enter a whole number of minutes, 1 or more.",
+            "escalationLabel": "Escalation grace (minutes)"
+          },
+          "ApprovalNode": {
+            "timeout": "Timeout: {{minutes}}m",
+            "default": "(default)"
           }
         },
         "run-view": {
@@ -17415,7 +17434,26 @@
           "QuestionCard": {
             "trustTitle": "Trust required",
             "review": "Review",
-            "pendingTitle": "Waiting on you"
+            "pendingTitle": "Waiting on you",
+            "timedOutUnanswered": "Timed out with no answer.",
+            "answeredBy": "Answered by {{who}} at {{when}}",
+            "approvalTitle": "Approval needed",
+            "escalated": "Escalated",
+            "agentQuestionTitle": "The agent has a question",
+            "answerPlaceholder": "Type your answer…",
+            "answer": "Answer"
+          },
+          "FollowUpComposer": {
+            "stateQueued": "Undelivered",
+            "stateDelivered": "Delivered",
+            "stateFailed": "Failed",
+            "modeInterrupt": "Interrupt",
+            "modeQueued": "Queued",
+            "sentAt": "Sent {{when}} · {{state}}",
+            "label": "Send a follow-up",
+            "placeholder": "Message the running agent…",
+            "send": "Send",
+            "interruptNow": "Interrupt now"
           }
         },
         "use-workflow-editor-session": {

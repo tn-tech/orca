@@ -154,7 +154,8 @@ function snapshot(
   attempts: NodeAttemptView[],
   workflowSnapshot: Workflow = workflow(),
   events: WorkflowRunSnapshotView['events'] = [],
-  questions: WorkflowRunSnapshotView['questions'] = []
+  questions: WorkflowRunSnapshotView['questions'] = [],
+  messages: WorkflowRunSnapshotView['messages'] = []
 ): WorkflowRunSnapshotView {
   return {
     id: 'run-1',
@@ -169,7 +170,7 @@ function snapshot(
     createdAt: '2026-01-01T00:00:00.000Z',
     attempts,
     questions,
-    messages: [],
+    messages,
     events
   }
 }
@@ -664,6 +665,111 @@ describe('AttemptPanel', () => {
 
       expect(screen.queryByText('Choice')).not.toBeInTheDocument()
       expect(screen.getByText(/"unexpected": true/)).toBeInTheDocument()
+    })
+  })
+
+  describe('follow-up messages and settled questions (FR-033/FR-033a/FR-036a)', () => {
+    it('shows the follow-up composer for a running attempt with a dispatched task', () => {
+      render(
+        <AttemptPanel
+          definition={workflow()}
+          snapshot={snapshot([attempt({ state: 'running', taskId: 'task-1' })])}
+          nodeId="implement"
+          runtimeEnvironmentId={null}
+          settings={settings}
+        />
+      )
+
+      expect(screen.getByLabelText('Send a follow-up')).toBeInTheDocument()
+    })
+
+    it('hides the follow-up composer once the attempt is no longer running', () => {
+      render(
+        <AttemptPanel
+          definition={workflow()}
+          snapshot={snapshot([attempt({ state: 'completed', taskId: 'task-1' })])}
+          nodeId="implement"
+          runtimeEnvironmentId={null}
+          settings={settings}
+        />
+      )
+
+      expect(screen.queryByLabelText('Send a follow-up')).not.toBeInTheDocument()
+    })
+
+    it('scopes shown follow-up messages to the current attempt', () => {
+      render(
+        <AttemptPanel
+          definition={workflow()}
+          snapshot={snapshot(
+            [attempt({ state: 'running', taskId: 'task-1' })],
+            workflow(),
+            [],
+            [],
+            [
+              {
+                id: 'm1',
+                runId: 'run-1',
+                attemptId: 'attempt-1',
+                sender: 'rami',
+                text: 'Check the config too.',
+                mode: 'queued',
+                state: 'queued',
+                createdAt: '2026-01-01T00:00:00.000Z'
+              },
+              {
+                id: 'm2',
+                runId: 'run-1',
+                attemptId: 'other-attempt',
+                sender: 'rami',
+                text: 'Not for this attempt.',
+                mode: 'queued',
+                state: 'queued',
+                createdAt: '2026-01-01T00:00:00.000Z'
+              }
+            ]
+          )}
+          nodeId="implement"
+          runtimeEnvironmentId={null}
+          settings={settings}
+        />
+      )
+
+      expect(screen.getByText('Check the config too.')).toBeInTheDocument()
+      expect(screen.queryByText('Not for this attempt.')).not.toBeInTheDocument()
+    })
+
+    it('still shows an answered approval question, with who answered and when', () => {
+      render(
+        <AttemptPanel
+          definition={workflow()}
+          snapshot={snapshot(
+            [attempt({ state: 'waiting' })],
+            workflow(),
+            [],
+            [
+              {
+                id: 'question-1',
+                runId: 'run-1',
+                attemptId: 'attempt-1',
+                kind: 'approval',
+                prompt: 'Approve the plan?',
+                optionsJson: { choices: [{ id: 'Approve', label: 'Approve' }] },
+                state: 'answered',
+                answer: 'Approve',
+                answeredBy: 'rami',
+                answeredAt: '2026-01-01T00:00:00.000Z'
+              }
+            ]
+          )}
+          nodeId="implement"
+          runtimeEnvironmentId={null}
+          settings={settings}
+        />
+      )
+
+      expect(screen.getByText('Approve the plan?')).toBeInTheDocument()
+      expect(screen.getByText(/Answered by rami/)).toBeInTheDocument()
     })
   })
 })

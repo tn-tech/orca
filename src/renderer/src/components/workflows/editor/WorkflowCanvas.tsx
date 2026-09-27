@@ -22,6 +22,7 @@ import type {
 import type { WorkflowAttemptState } from '../../../../../shared/workflows/workflow-node-states'
 import { computeLoopContainerBounds } from './workflow-auto-layout'
 import AgentNode, { type WorkflowAgentFlowNode } from './nodes/AgentNode'
+import ApprovalNode, { type WorkflowApprovalFlowNode } from './nodes/ApprovalNode'
 import EndNode, { type WorkflowEndFlowNode } from './nodes/EndNode'
 import JoinNode, { type WorkflowJoinFlowNode } from './nodes/JoinNode'
 import LoopNode, { type WorkflowLoopFlowNode } from './nodes/LoopNode'
@@ -35,6 +36,7 @@ type WorkflowFlowNode =
   | WorkflowLoopFlowNode
   | WorkflowJoinFlowNode
   | WorkflowRouterFlowNode
+  | WorkflowApprovalFlowNode
 
 const NODE_TYPES: NodeTypes = {
   agent: AgentNode,
@@ -42,7 +44,8 @@ const NODE_TYPES: NodeTypes = {
   end: EndNode,
   loop: LoopNode,
   join: JoinNode,
-  router: RouterNode
+  router: RouterNode,
+  approval: ApprovalNode
 }
 
 export type WorkflowCanvasNodeStatuses = Readonly<Record<string, WorkflowAttemptState>>
@@ -220,8 +223,17 @@ function toFlowNodes(
           ...bounds
         }
       })
+    } else if (node.type === 'approval') {
+      flowNodes.push({
+        id: node.id,
+        type: 'approval',
+        position,
+        selected,
+        ...nesting,
+        data: { definitionNode: node, attemptState }
+      })
     }
-    // Approval/Reflection node components land in later units (T111, T120).
+    // Reflection node component lands in a later unit (T120).
   }
   return flowNodes
 }

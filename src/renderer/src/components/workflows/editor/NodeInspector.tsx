@@ -12,6 +12,7 @@ import type {
 } from '../../../../../shared/workflows/workflow-definition-types'
 import RolesPanel, { type RoleEditorWorkflowContext } from '../roles/RolesPanel'
 import AgentNodeFields from './AgentNodeFields'
+import ApprovalNodeFields from './ApprovalNodeFields'
 import ConditionBuilder from './ConditionBuilder'
 import { InspectorField } from './InspectorField'
 import JoinNodeFields from './JoinNodeFields'
@@ -188,6 +189,8 @@ export default function NodeInspector({
         />
       ) : node.type === 'router' ? (
         <RouterNodeFields node={node} roles={definition.roles} onChange={onNodeChange} />
+      ) : node.type === 'approval' ? (
+        <ApprovalNodeFields node={node} onChange={onNodeChange} />
       ) : (
         <p className="text-xs text-muted-foreground">
           {translate(

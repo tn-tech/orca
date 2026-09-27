@@ -13,13 +13,14 @@ import type {
 import { useAppStore } from '@/store'
 import { useWorktreeById } from '@/store/selectors'
 import type { Workflow } from '../../../../../shared/workflows/workflow-definition-types'
-import type { WorkflowAttemptState } from '../../../../../shared/workflows/workflow-node-states'
 import type {
   NodeAttemptView,
   WorkflowLaunchReceipt
 } from '../../../../../shared/workflows/workflow-run-types'
-import { workflowNodeStatusDotClassName } from '../editor/nodes/workflow-node-run-status-style'
 import { InspectorField } from '../editor/InspectorField'
+import AttemptIterationHistory from './AttemptIterationHistory'
+import AttemptStateBadge, { attemptReasonClassName, attemptReasonLabel } from './AttemptStateBadge'
+import FollowUpComposer from './FollowUpComposer'
 import JoinBranchOutcomes, { readJoinBranches } from './JoinBranchOutcomes'
 import QuestionCard from './QuestionCard'
 import RouterChoiceSummary, { readRouterChoice } from './RouterChoiceSummary'
@@ -37,72 +38,6 @@ export type AttemptPanelProps = {
   /** The workflow feature's active runtime target (see `getActiveRuntimeTarget`); `null` is desktop. */
   runtimeEnvironmentId: string | null
   settings: RuntimeWorkflowSettings
-}
-
-/** A cancelled attempt (including a Join settled `join_skipped`) isn't a failure (review note):
- *  only `failed` gets the destructive treatment. */
-function attemptReasonClassName(state: WorkflowAttemptState): string {
-  return state === 'failed' ? 'text-destructive' : 'text-muted-foreground'
-}
-
-/** `join_skipped` (workflow-join-settlement.ts's `JOIN_SKIPPED_REASON`) is a machine reason code,
- *  not copy meant to be read as-is (review note) — every other `failureReason` is already a
- *  free-text message from the engine. */
-function attemptReasonLabel(failureReason: string): string {
-  return failureReason === 'join_skipped'
-    ? translate(
-        'auto.components.workflows.run-view.AttemptPanel.reasonJoinSkipped',
-        'Every branch was skipped.'
-      )
-    : failureReason
-}
-
-/** FR-032's exact vocabulary; every `WorkflowAttemptState` gets a case. */
-function attemptStateLabel(state: WorkflowAttemptState): string {
-  switch (state) {
-    case 'pending':
-      return translate('auto.components.workflows.run-view.AttemptPanel.statePending', 'Pending')
-    case 'provisioning':
-      return translate(
-        'auto.components.workflows.run-view.AttemptPanel.stateProvisioning',
-        'Provisioning'
-      )
-    case 'running':
-      return translate('auto.components.workflows.run-view.AttemptPanel.stateRunning', 'Running')
-    case 'waiting':
-      return translate('auto.components.workflows.run-view.AttemptPanel.stateWaiting', 'Waiting')
-    case 'completed':
-      return translate(
-        'auto.components.workflows.run-view.AttemptPanel.stateCompleted',
-        'Completed'
-      )
-    case 'failed':
-      return translate('auto.components.workflows.run-view.AttemptPanel.stateFailed', 'Failed')
-    case 'skipped':
-      return translate('auto.components.workflows.run-view.AttemptPanel.stateSkipped', 'Skipped')
-    case 'cancelled':
-      return translate(
-        'auto.components.workflows.run-view.AttemptPanel.stateCancelled',
-        'Cancelled'
-      )
-    case 'unverifiable':
-      return translate(
-        'auto.components.workflows.run-view.AttemptPanel.stateUnverifiable',
-        'Unverifiable'
-      )
-  }
-}
-
-function AttemptStateBadge({ state }: { state: WorkflowAttemptState }): React.JSX.Element {
-  const dotClassName = workflowNodeStatusDotClassName(state)
-  return (
-    <span className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-foreground">
-      {dotClassName ? (
-        <span className={cn('size-2 rounded-full', dotClassName)} aria-hidden="true" />
-      ) : null}
-      {attemptStateLabel(state)}
-    </span>
-  )
 }
 
 function LaunchSummary({
@@ -128,36 +63,6 @@ function LaunchSummary({
         <div className="text-xs text-muted-foreground">—</div>
       )}
     </div>
-  )
-}
-
-/** One row per completed/attempted loop iteration (FR-035, US2 AS1/AS3): state plus a compact
- *  result/failure summary, so a rejected-then-approved review loop's history stays visible after
- *  the panel moves on to showing the latest attempt above. */
-function IterationRow({ attempt }: { attempt: NodeAttemptView }): React.JSX.Element {
-  return (
-    <li className="rounded-md border border-border p-2">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-medium text-foreground">
-          {translate(
-            'auto.components.workflows.run-view.AttemptPanel.iterationLabel',
-            'Iteration {{n}}',
-            { n: attempt.iteration }
-          )}
-        </span>
-        <AttemptStateBadge state={attempt.state} />
-      </div>
-      {attempt.resultJson !== undefined ? (
-        <pre className="mt-1.5 max-h-24 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-muted/20 p-2 font-mono text-[11px] text-muted-foreground scrollbar-sleek">
-          {JSON.stringify(attempt.resultJson, null, 2)}
-        </pre>
-      ) : null}
-      {attempt.failureReason ? (
-        <p className={cn('mt-1.5 text-[11px]', attemptReasonClassName(attempt.state))}>
-          {attemptReasonLabel(attempt.failureReason)}
-        </p>
-      ) : null}
-    </li>
   )
 }
 
@@ -221,9 +126,13 @@ export default function AttemptPanel({
     )
   }
 
-  const pendingQuestions = snapshot.questions.filter(
-    (question) => question.attemptId === attempt.id && question.state === 'pending'
+  // `escalated` is still answerable (FR-033/FR-033a: the notification fired, the default/failure
+  // hasn't) so it stays alongside `pending`; `answered`/`expired` also show here once settled, so
+  // "who answered and when" (AS2/AS6) stays visible rather than vanishing on the next refresh.
+  const attemptQuestions = snapshot.questions.filter(
+    (question) => question.attemptId === attempt.id
   )
+  const attemptMessages = snapshot.messages.filter((message) => message.attemptId === attempt.id)
   const provisioning = provisioningRecordFor(snapshot.events, attempt.id)
 
   const handleOpenTranscript = (): void => {
@@ -260,12 +169,21 @@ export default function AttemptPanel({
         <AttemptStateBadge state={attempt.state} />
       </div>
 
-      {pendingQuestions.length > 0 ? (
+      {attemptQuestions.length > 0 ? (
         <div className="space-y-2">
-          {pendingQuestions.map((question) => (
+          {attemptQuestions.map((question) => (
             <QuestionCard key={question.id} question={question} settings={settings} />
           ))}
         </div>
+      ) : null}
+
+      {attempt.taskId && attempt.state === 'running' ? (
+        <FollowUpComposer
+          runId={snapshot.id}
+          attemptId={attempt.id}
+          messages={attemptMessages}
+          settings={settings}
+        />
       ) : null}
 
       {provisioning &&
@@ -299,20 +217,7 @@ export default function AttemptPanel({
         </InspectorField>
       ) : null}
 
-      {iterations.length > 1 ? (
-        <InspectorField
-          label={translate(
-            'auto.components.workflows.run-view.AttemptPanel.iterations',
-            'Iterations'
-          )}
-        >
-          <ul className="space-y-1.5">
-            {iterations.map((iterationAttempt) => (
-              <IterationRow key={iterationAttempt.id} attempt={iterationAttempt} />
-            ))}
-          </ul>
-        </InspectorField>
-      ) : null}
+      {iterations.length > 1 ? <AttemptIterationHistory iterations={iterations} /> : null}
 
       <div className="grid grid-cols-2 gap-3">
         <LaunchSummary
