@@ -10,13 +10,20 @@ import type {
   WorkflowAttemptState,
   WorkflowRunState
 } from '../../../shared/workflows/workflow-node-states'
-import type { NodeAttemptView, RunSnapshot } from '../../../shared/workflows/workflow-run-types'
+import type {
+  NodeAttemptView,
+  RunQuestionView,
+  RunSnapshot
+} from '../../../shared/workflows/workflow-run-types'
 import type { OrchestrationDb } from '../orchestration/db'
+import type { WorkflowAttention } from './workflow-notifications'
 import { closeAttemptAgentQuestions, closeOpenQuestions } from './workflow-question-deadlines'
 import type { WorkflowAttemptDispatchStore } from './workflow-node-dispatch'
 
 export type WorkflowRunChangeNotifier = {
   notifyWorkflowRunChanged(payload: WorkflowRunChangedPayload): void
+  /** The `workflow-attention` notification (workflow-notifications.ts); absent on test fakes. */
+  notifyWorkflowAttention?(attention: WorkflowAttention): void
 }
 
 export type WorkflowEventPayload = Record<string, JsonValue>
@@ -68,7 +75,22 @@ export class WorkflowRunRecorder {
     if (TERMINAL_RUN_STATES.has(toState)) {
       closeOpenQuestions(this.db, this)
     }
+    // A person cancelling a run needs no notification about it.
+    if (run && (toState === 'failed' || toState === 'completed')) {
+      this.attention({ kind: `run-${toState}`, run })
+    }
     return run
+  }
+
+  /** Call only once the question change is persisted, so a rollback never notifies. */
+  questionAttention(
+    kind: 'question-raised' | 'question-escalated',
+    question: RunQuestionView
+  ): void {
+    const run = this.db.getWorkflowRun(this.runId)
+    if (run) {
+      this.attention({ kind, run, question })
+    }
   }
 
   createAttempt(node: Pick<Node, 'id' | 'type'>, iteration = 0): NodeAttemptView {
@@ -109,6 +131,15 @@ export class WorkflowRunRecorder {
     return {
       transitionWorkflowAttempt: (id, toState) => this.transitionAttempt(id, toState),
       updateWorkflowAttempt: (id, patch) => this.db.updateWorkflowAttempt(id, patch)
+    }
+  }
+
+  private attention(attention: WorkflowAttention): void {
+    try {
+      this.notifier.notifyWorkflowAttention?.(attention)
+    } catch (error) {
+      // A notification must never break the state change it reports.
+      console.warn('[workflows] workflow-attention notification failed:', error)
     }
   }
 

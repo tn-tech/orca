@@ -54,7 +54,7 @@ export type WorkflowRunControllerDeps = {
   runtime: WorkflowRunControllerRuntime
   dispatcher: WorkflowOrchestrationDispatcher
   resolveWorkspace(run: RunSnapshot): Promise<WorkflowRunWorkspaceAccess>
-  /** `workflow-attention` notification seams; run and change events always fire. */
+  /** Override the default `workflow-attention` notification (the recorder's notifier). */
   onApprovalEscalated?: WorkflowQuestionListener
   onAgentQuestionRaised?: WorkflowQuestionListener
   onAgentQuestionEscalated?: WorkflowQuestionListener
@@ -217,12 +217,14 @@ export class WorkflowRunController {
   }
 
   private async settleQuestions(launch: WorkflowNodeLaunchContext): Promise<boolean> {
-    const { onApprovalEscalated, onAgentQuestionEscalated } = this.deps
+    const escalated = this.attention('question-escalated')
     return (
       (await resumeAnsweredTrustWaits(launch)) ||
-      (await settleApprovals(launch, { onEscalated: onApprovalEscalated })) ||
+      (await settleApprovals(launch, {
+        onEscalated: this.deps.onApprovalEscalated ?? escalated
+      })) ||
       (await settleAgentQuestions(launch, {
-        onEscalated: onAgentQuestionEscalated,
+        onEscalated: this.deps.onAgentQuestionEscalated ?? escalated,
         deliveryBackoff: this.answerBackoff
       }))
     )
@@ -247,13 +249,22 @@ export class WorkflowRunController {
         return
       case 'question':
         // Stored before the delivery is acknowledged; a replay finds it already stored.
-        raiseAgentQuestion(session.launch, message, mail, this.deps.onAgentQuestionRaised)
+        raiseAgentQuestion(
+          session.launch,
+          message,
+          mail,
+          this.deps.onAgentQuestionRaised ?? this.attention('question-raised')
+        )
         return
       case 'worker_done':
         if (await handleWorkerDone(session.launch, message, mail)) {
           await this.advance(session)
         }
     }
+  }
+
+  private attention(kind: 'question-raised' | 'question-escalated'): WorkflowQuestionListener {
+    return (question) => this.recorder.questionAttention(kind, question)
   }
 
   /** Advances the run until the frontier is quiet, then settles it. */

@@ -8,7 +8,12 @@ import type { NodeAttemptView } from '../../../shared/workflows/workflow-run-typ
 import type { OrchestrationDb } from '../orchestration/db'
 import type { WorkflowRunRecorder } from './workflow-run-recorder'
 import type { WorkflowSkillTrustQuestion } from './workflow-skill-provisioning'
-import { LOCAL_TRUST_HOST, raiseTrustQuestion, trustQuestionSubject } from './workflow-source-trust'
+import {
+  findPendingTrustQuestion,
+  LOCAL_TRUST_HOST,
+  raiseTrustQuestion,
+  trustQuestionSubject
+} from './workflow-source-trust'
 
 export function enterTrustWait(
   db: OrchestrationDb,
@@ -16,11 +21,13 @@ export function enterTrustWait(
   attemptId: string,
   question: WorkflowSkillTrustQuestion
 ): NodeAttemptView | undefined {
-  const asked = raiseTrustQuestion(db, {
+  const args = {
     runId: recorder.runId,
     attemptId,
     question: { ...question, host: question.host ?? LOCAL_TRUST_HOST }
-  })
+  }
+  const alreadyAsked = findPendingTrustQuestion(db, args)
+  const asked = alreadyAsked ?? raiseTrustQuestion(db, args)
   const attempt = recorder.transitionAttempt(attemptId, 'waiting', {
     reason: 'trust',
     questionId: asked.id,
@@ -33,6 +40,9 @@ export function enterTrustWait(
   )
   if (db.getWorkflowRun(recorder.runId)?.state === 'running') {
     recorder.transitionRun('waiting', 'run_waiting', { reason: 'trust' })
+  }
+  if (!alreadyAsked) {
+    recorder.questionAttention('question-raised', asked)
   }
   return attempt
 }

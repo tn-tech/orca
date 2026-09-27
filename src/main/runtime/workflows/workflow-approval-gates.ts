@@ -108,6 +108,10 @@ async function raiseApproval(
   if (ctx.db.getWorkflowRun(ctx.recorder.runId)?.state === 'running') {
     ctx.recorder.transitionRun('waiting', 'run_waiting', { reason: 'approval' })
   }
+  // A reopened attempt reuses its question, which was announced when first asked.
+  if (!asked) {
+    ctx.recorder.questionAttention('question-raised', question)
+  }
 }
 
 async function openAttempt(

@@ -155,6 +155,31 @@ describe('PushDispatcher', () => {
     expect(scheduled).toHaveLength(1)
   })
 
+  it('pushes a workflow-attention notification without an agent state', async () => {
+    const harness = createHarness({
+      devices: [{ deviceId: 'a', pushRegistration: registration() }]
+    })
+
+    harness.dispatcher.enqueue(
+      notification({
+        source: 'workflow-attention',
+        title: 'ship-it: Approval needed',
+        body: 'Approve the plan?',
+        worktreeId: undefined,
+        notificationId: 'workflow:wfr_1:wfq_1:question-raised',
+        agentState: undefined
+      })
+    )
+    await flush()
+
+    expect(harness.sends[0]?.notification).toMatchObject({
+      source: 'workflow-attention',
+      agentState: null,
+      title: 'ship-it: Approval needed',
+      notificationId: 'workflow:wfr_1:wfq_1:question-raised'
+    })
+  })
+
   it('never throws into the caller when the client rejects', async () => {
     const harness = createHarness({
       devices: [{ deviceId: 'a', pushRegistration: registration() }],

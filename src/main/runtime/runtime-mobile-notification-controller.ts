@@ -19,7 +19,8 @@ export type MobileNotificationDispatchEvent = {
   desktopAllowed?: boolean
   desktopAway?: boolean
   emittedAt?: number
-  source: 'agent-task-complete' | 'terminal-bell' | 'test' | 'plugin'
+  // `workflow-attention`: a run needs a person (workflow-notifications.ts).
+  source: 'agent-task-complete' | 'terminal-bell' | 'test' | 'plugin' | 'workflow-attention'
   title: string
   body: string
   worktreeId?: string

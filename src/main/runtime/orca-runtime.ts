@@ -7,6 +7,10 @@ import { ORCHESTRATION_METHODS } from './rpc/methods/orchestration'
 import { RpcDispatcher } from './rpc/dispatcher'
 import { WORKFLOW_ENGINE_WORKER_INPUT_METHODS } from './rpc/methods/workflows/workflow-engine-worker-input-methods'
 import { WorkflowEngine } from './workflows/workflow-engine'
+import {
+  dispatchWorkflowAttention,
+  type WorkflowAttention
+} from './workflows/workflow-notifications'
 
 class OrcaRuntimeService extends OrcaRuntimeWithResolveWaiter {
   private workflowEngine: WorkflowEngine | null = null
@@ -56,6 +60,11 @@ class OrcaRuntimeService extends OrcaRuntimeWithResolveWaiter {
       this.workflowEngine.rehydrateActiveRuns()
     }
     return this.workflowEngine
+  }
+
+  /** Every WorkflowRunRecorder reaches this through its notifier, wherever it was built. */
+  notifyWorkflowAttention(attention: WorkflowAttention): void {
+    dispatchWorkflowAttention(this.mobileNotifications, attention)
   }
 
   /** Stops every active run controller; called on shutdown so a worker's mailbox is left quiet. */

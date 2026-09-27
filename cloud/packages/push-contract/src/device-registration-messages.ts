@@ -6,7 +6,8 @@ export const ApnsEnvironmentSchema = z.enum(['sandbox', 'production'])
 export const PushNotificationSourceSchema = z.enum([
   'agent-task-complete',
   'terminal-bell',
-  'plugin'
+  'plugin',
+  'workflow-attention'
 ])
 export const PushAgentStateSchema = z.enum(['needs-input', 'finished'])
 

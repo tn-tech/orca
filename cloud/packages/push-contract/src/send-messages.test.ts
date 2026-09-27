@@ -35,6 +35,17 @@ describe('send schemas', () => {
     ).toBe(true)
   })
 
+  it('accepts a workflow-attention notification from a desktop that raises one', () => {
+    const { worktreeId: _dropped, ...workflow } = notification()
+    expect(
+      PushSendRequestSchema.safeParse({
+        v: 1,
+        registrationIds: ['reg-1'],
+        notification: { ...workflow, source: 'workflow-attention', agentState: null }
+      }).success
+    ).toBe(true)
+  })
+
   it('rejects an oversized batch, over-long copy, and unknown notification keys', () => {
     const ids = Array.from(
       { length: PUSH_LIMITS.maxRegistrationIdsPerSend + 1 },

@@ -82,13 +82,14 @@ export const TRUST_QUESTION_CHOICES = [
   { id: 'refused', label: 'Refuse' }
 ] as const
 
-/** Reuses the attempt's pending trust question for the same source rather than asking twice. */
-export function raiseTrustQuestion(
+type TrustQuestionArgs = { runId: string; attemptId: string; question: TrustQuestionSubject }
+
+/** The attempt's pending trust question for the same source on the same host, if any. */
+export function findPendingTrustQuestion(
   db: OrchestrationDb,
-  args: { runId: string; attemptId: string; question: TrustQuestionSubject }
-): RunQuestionView {
-  const { runId, attemptId, question } = args
-  const existing = db
+  { runId, attemptId, question }: TrustQuestionArgs
+): RunQuestionView | undefined {
+  return db
     .listPendingWorkflowQuestions(runId)
     .find(
       (candidate) =>
@@ -96,6 +97,12 @@ export function raiseTrustQuestion(
         trustQuestionSubject(candidate)?.source === question.source &&
         trustQuestionSubject(candidate)?.host === question.host
     )
+}
+
+/** Reuses the attempt's pending trust question for the same source rather than asking twice. */
+export function raiseTrustQuestion(db: OrchestrationDb, args: TrustQuestionArgs): RunQuestionView {
+  const { runId, attemptId, question } = args
+  const existing = findPendingTrustQuestion(db, args)
   if (existing) {
     return existing
   }
