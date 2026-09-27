@@ -5,6 +5,7 @@ import { registerWorktreeChangeInvalidator } from '../ipc/worktree-change-invali
 import { registerDetectedWorktreeScanInvalidation } from '../ipc/worktrees/listing/register-detected-worktree-scan-invalidation'
 import { ORCHESTRATION_METHODS } from './rpc/methods/orchestration'
 import { RpcDispatcher } from './rpc/dispatcher'
+import { WORKFLOW_ENGINE_WORKER_INPUT_METHODS } from './rpc/methods/workflows/workflow-engine-worker-input-methods'
 import { WorkflowEngine } from './workflows/workflow-engine'
 
 class OrcaRuntimeService extends OrcaRuntimeWithResolveWaiter {
@@ -46,7 +47,10 @@ class OrcaRuntimeService extends OrcaRuntimeWithResolveWaiter {
       this.workflowEngine = new WorkflowEngine({
         db: this.getOrchestrationDb(),
         runtime: this,
-        dispatcher: new RpcDispatcher({ runtime: this, methods: ORCHESTRATION_METHODS }),
+        dispatcher: new RpcDispatcher({
+          runtime: this,
+          methods: [...ORCHESTRATION_METHODS, ...WORKFLOW_ENGINE_WORKER_INPUT_METHODS]
+        }),
         getRepo: (repoId) => this.store?.getRepo(repoId)
       })
       this.workflowEngine.rehydrateActiveRuns()

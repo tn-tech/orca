@@ -372,6 +372,22 @@ describe('QuestionCard', () => {
       expect(screen.getByText('Closed with no answer.')).toBeInTheDocument()
     })
 
+    it.each(['superseded', 'ask_wait_ended', 'worker_finished', 'attempt_failed'])(
+      'shows the neutral closed note, not a timeout, for a question closed as %s',
+      (reason) => {
+        render(
+          <QuestionCard
+            question={agentQuestion({ state: 'expired' })}
+            settings={settings}
+            expiredReason={reason}
+          />
+        )
+
+        expect(screen.getByText('Closed with no answer.')).toBeInTheDocument()
+        expect(screen.queryByText('Timed out with no answer.')).not.toBeInTheDocument()
+      }
+    )
+
     it('shows friendly copy and disables answering after a method_not_found answer', async () => {
       workflowRunAnswerMock.mockRejectedValue(methodNotFoundError())
       render(<QuestionCard question={agentQuestion()} settings={settings} />)

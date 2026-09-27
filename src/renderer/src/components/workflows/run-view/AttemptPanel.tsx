@@ -23,9 +23,9 @@ import AttemptStateBadge, { attemptReasonClassName, attemptReasonLabel } from '.
 import FollowUpComposer from './FollowUpComposer'
 import JoinBranchOutcomes, { readJoinBranches } from './JoinBranchOutcomes'
 import QuestionCard from './QuestionCard'
+import { questionExpiryReason } from './question-expiry-reason'
 import RouterChoiceSummary, { readRouterChoice } from './RouterChoiceSummary'
 import {
-  approvalExpiryReason,
   attemptsByIteration,
   latestNodeAttempt,
   loopActiveIteration,
@@ -179,7 +179,7 @@ export default function AttemptPanel({
               settings={settings}
               expiredReason={
                 question.state === 'expired'
-                  ? approvalExpiryReason(snapshot.events, question.id)
+                  ? questionExpiryReason(snapshot.events, question.id)
                   : undefined
               }
             />

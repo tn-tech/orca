@@ -163,6 +163,10 @@ const STRUCTURED_RUNTIME_PASSTHROUGH_CODES: ReadonlySet<string> = new Set([
   'workflow_invalid',
   'workflow_file_version_unsupported',
   'workflow_source_not_allowed',
+  // workflow.run.answer/sendMessage: a client drops a question someone else answered first, or
+  // stops offering actions on a finished run, rather than reading a generic failure.
+  'workflow_question_not_pending',
+  'workflow_run_not_active',
   ARTIFACT_SHARING_DISABLED_CODE,
   AGENT_SKILL_SHARING_DISABLED_CODE,
   AGENT_SKILL_NOT_SHAREABLE_CODE,

@@ -248,34 +248,6 @@ export function provisioningRecordFor(
   }
 }
 
-/** Why a settled `approval` question with no answer reads as "Closed" instead of "Timed out"
- *  (`workflow-approval-deadlines.ts`'s `closeOpenApprovals`, U45): the run ended before the
- *  escalation grace elapsed, so the question was never actually overdue. `undefined` for a
- *  genuine timeout (no `reason` on the event) or when no `approval_expired` event matches. */
-export function approvalExpiryReason(
-  events: readonly RunEventView[],
-  questionId: string
-): string | undefined {
-  const event = events.find((candidate) => {
-    if (candidate.kind !== 'approval_expired') {
-      return false
-    }
-    const payload = candidate.payloadJson
-    return (
-      !!payload &&
-      typeof payload === 'object' &&
-      !Array.isArray(payload) &&
-      payload.questionId === questionId
-    )
-  })
-  const payload = event?.payloadJson
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-    return undefined
-  }
-  const reason = payload.reason
-  return typeof reason === 'string' ? reason : undefined
-}
-
 /** One `workspaceWorktreeId` per node with a latest attempt that recorded one (FR-035, "the run
  *  view shows which workspace each node used") — raw worktree ids; `RunCanvasOverlay` resolves
  *  them to display names, since that needs the worktree store this pure hook file doesn't touch. */

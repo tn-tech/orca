@@ -3,8 +3,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RpcDispatcher } from '../rpc/dispatcher'
-import { approvalQuestionOptions } from '../../../shared/workflows/workflow-approval-question-subject'
-import { APPROVAL_DEFAULT_ANSWERER, APPROVAL_TIMED_OUT_REASON } from './workflow-approval-deadlines'
+import {
+  APPROVAL_DEFAULT_ANSWERER,
+  approvalQuestionOptions
+} from '../../../shared/workflows/workflow-approval-question-subject'
+import { APPROVAL_TIMED_OUT_REASON } from './workflow-approval-deadlines'
 import { resolveApproval } from './workflow-approval-gates'
 import { approvalDriver, approvalNode, approvalWorkflow } from './workflow-approval-test-fixtures'
 import { createControllerHarness, waitUntil } from './workflow-run-controller-test-harness'

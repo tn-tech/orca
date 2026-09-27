@@ -1,7 +1,10 @@
 // Approval timeouts (FR-033, spec US5 AS3), on the shared question deadline scheduler
 // (workflow-question-deadlines.ts): at `timeoutAt` an approval answers with the node's
 // `defaultOption`, or expires and fails the node when there is none.
-import { approvalQuestionSubject } from '../../../shared/workflows/workflow-approval-question-subject'
+import {
+  APPROVAL_DEFAULT_ANSWERER,
+  approvalQuestionSubject
+} from '../../../shared/workflows/workflow-approval-question-subject'
 import type { RunQuestionView } from '../../../shared/workflows/workflow-run-types'
 import {
   applyDueQuestionDeadlines,
@@ -12,8 +15,6 @@ import {
 import type { WorkflowNodeLaunchContext } from './workflow-run-node-launch'
 
 export const APPROVAL_TIMED_OUT_REASON = 'approval_timed_out'
-/** `answered_by` for an answer the engine applied from `defaultOption`, not a person. */
-export const APPROVAL_DEFAULT_ANSWERER = 'workflow-engine:default-option'
 
 export type WorkflowApprovalEscalationListener = WorkflowQuestionListener
 

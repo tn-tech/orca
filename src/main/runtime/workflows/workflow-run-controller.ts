@@ -11,7 +11,14 @@ import { settleAgentQuestions } from './workflow-agent-question-settlement'
 import { raiseAgentQuestion } from './workflow-agent-questions'
 import { settleApprovals } from './workflow-approval-gates'
 import {
+  deliverFollowUps,
+  failUndeliveredFollowUps,
+  resolveFollowUpWorker,
+  type FollowUpDeliveryContext
+} from './workflow-follow-up-delivery'
+import {
   createWorkflowOrchestrationClient,
+  createWorkflowWorkerInputClient,
   type WorkflowOrchestrationClient,
   type WorkflowOrchestrationDispatcher
 } from './workflow-orchestration-client'
@@ -57,6 +64,7 @@ type ControllerSession = {
   consumerGeneration: number
   client: WorkflowOrchestrationClient
   launch: WorkflowNodeLaunchContext
+  followUps: FollowUpDeliveryContext
 }
 
 export class WorkflowRunController {
@@ -64,6 +72,7 @@ export class WorkflowRunController {
   private wakeSignal = new AbortController()
   private readonly recorder: WorkflowRunRecorder
   private readonly answerBackoff = new AgentAnswerDeliveryBackoff()
+  private readonly followUpBackoff = new AgentAnswerDeliveryBackoff()
 
   constructor(private readonly deps: WorkflowRunControllerDeps) {
     this.recorder = new WorkflowRunRecorder(deps.db, deps.runtime, deps.workflowRunId)
@@ -99,6 +108,7 @@ export class WorkflowRunController {
     } finally {
       unregisterWaker()
       if (TERMINAL_RUN_STATES.has(this.readRun().state)) {
+        failUndeliveredFollowUps(this.deps.db, this.recorder)
         await releaseRunSkills(run.id, async () => session.launch.workspace)
       }
     }
@@ -119,14 +129,15 @@ export class WorkflowRunController {
       db.createWorkflowEngineRun({ workflowRunId: run.id, objective: run.objective })
     const workspace = await this.deps.resolveWorkspace(run)
     const placementWorktreeId = workspace.worktreeId ?? run.worktreeId
-    const client = createWorkflowOrchestrationClient({
+    const engine = {
       dispatcher: this.deps.dispatcher,
       principal: {
-        kind: 'workflow-engine',
+        kind: 'workflow-engine' as const,
         workflowRunId: run.id,
         ...(placementWorktreeId ? { worktreeId: placementWorktreeId } : {})
       }
-    })
+    }
+    const client = createWorkflowOrchestrationClient(engine)
     return {
       engineRunId: engineRun.id,
       consumerGeneration: engineRun.consumer_generation,
@@ -140,6 +151,14 @@ export class WorkflowRunController {
         definition: run.workflowSnapshot,
         workspace,
         placementWorktreeId
+      },
+      followUps: {
+        db,
+        recorder: this.recorder,
+        client,
+        workerInput: createWorkflowWorkerInputClient(engine),
+        resolveWorker: (dispatchId) => resolveFollowUpWorker(db, dispatchId),
+        backoff: this.followUpBackoff
       }
     }
   }
@@ -152,6 +171,7 @@ export class WorkflowRunController {
       if (TERMINAL_RUN_STATES.has(state)) {
         return state
       }
+      await deliverFollowUps(session.followUps)
       // Also on rehydrate: an answer recorded while no controller ran resumes here.
       if (await this.settleQuestions(session.launch)) {
         await this.advance(session)
@@ -167,11 +187,13 @@ export class WorkflowRunController {
         continue
       }
       const wake = this.wakeSignal
+      const retries = [this.answerBackoff.nextRetryAt(), this.followUpBackoff.nextRetryAt()]
+      const nextRetryAt = retries.filter((at): at is number => at !== undefined)
       const disarm = armQuestionDeadlineTimer(
         db,
         this.deps.workflowRunId,
         () => wake.abort(),
-        this.answerBackoff.nextRetryAt()
+        nextRetryAt.length > 0 ? Math.min(...nextRetryAt) : undefined
       )
       const woke = await runtime
         .waitForMessage(`run:${session.engineRunId}`, {

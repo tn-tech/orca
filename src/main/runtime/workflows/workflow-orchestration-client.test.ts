@@ -1,12 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ORCHESTRATION_CONTRACT_VERSION } from '../../../shared/protocol-version'
+import {
+  ORCHESTRATION_CONTRACT_VERSION,
+  STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY
+} from '../../../shared/protocol-version'
 import { OrcaRuntimeService } from '../orca-runtime'
 import { OrchestrationDb } from '../orchestration/db'
 import type { RpcRequest, RpcResponse } from '../rpc/core'
 import { RpcDispatcher } from '../rpc/dispatcher'
 import { ORCHESTRATION_METHODS } from '../rpc/methods/orchestration'
 import type { WorkflowEnginePrincipal } from './workflow-engine-principal'
-import { createWorkflowOrchestrationClient } from './workflow-orchestration-client'
+import {
+  createWorkflowOrchestrationClient,
+  createWorkflowWorkerInputClient
+} from './workflow-orchestration-client'
 
 const WORKFLOW_RUN_ID = 'wfr_00000000c001'
 const PRINCIPAL: WorkflowEnginePrincipal = {
@@ -62,6 +68,58 @@ describe('workflow orchestration client', () => {
       name: 'OrchestrationError',
       code: 'consumer_fenced',
       data: { effectsApplied: false }
+    })
+  })
+
+  it('sends worker input under the engine principal as an in-process structured-capable runtime', async () => {
+    const calls: {
+      request: RpcRequest
+      principal: WorkflowEnginePrincipal
+      options?: { clientId?: string; clientKind?: string; clientCapabilities?: readonly string[] }
+    }[] = []
+    const dispatcher = {
+      dispatchAsWorkflowEngine: vi.fn(
+        async (
+          request: RpcRequest,
+          principal: WorkflowEnginePrincipal,
+          options?: { clientId?: string; clientKind?: 'mobile' | 'runtime' }
+        ): Promise<RpcResponse> => {
+          calls.push({ request, principal, options })
+          return { id: request.id, ok: true, result: { send: {} }, _meta: { runtimeId: 'rt' } }
+        }
+      )
+    }
+    const client = createWorkflowWorkerInputClient({ dispatcher, principal: PRINCIPAL })
+
+    await client.call('terminal.send', { terminal: 'term_1', text: 'hi', enter: true })
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.principal).toEqual(PRINCIPAL)
+    expect(calls[0]?.request).toMatchObject({
+      method: 'terminal.send',
+      params: { terminal: 'term_1', text: 'hi', enter: true }
+    })
+    expect(calls[0]?.request.orchestrationRequestId).toBeUndefined()
+    expect(calls[0]?.options).toMatchObject({
+      clientId: `workflow-engine:${WORKFLOW_RUN_ID}`,
+      clientKind: 'runtime',
+      clientCapabilities: [STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY]
+    })
+  })
+
+  it('surfaces a worker input RPC failure as OrchestrationError', async () => {
+    const dispatcher = {
+      dispatchAsWorkflowEngine: async (request: RpcRequest): Promise<RpcResponse> => ({
+        id: request.id,
+        ok: false,
+        error: { code: 'terminal_handle_stale', message: 'stale' },
+        _meta: { runtimeId: 'rt' }
+      })
+    }
+    const client = createWorkflowWorkerInputClient({ dispatcher, principal: PRINCIPAL })
+    await expect(client.call('terminal.send', { terminal: 'term_1' })).rejects.toMatchObject({
+      name: 'OrchestrationError',
+      code: 'terminal_handle_stale'
     })
   })
 

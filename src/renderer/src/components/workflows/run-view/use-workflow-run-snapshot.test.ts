@@ -15,7 +15,6 @@ vi.mock('@/runtime/runtime-workflow-client', () => ({
 }))
 
 import {
-  approvalExpiryReason,
   attemptsByIteration,
   latestNodeAttempt,
   loopActiveIteration,
@@ -420,41 +419,5 @@ describe('provisioningRecordFor', () => {
     expect(
       provisioningRecordFor([skillsProvisionedEvent({ payloadJson: null })], 'attempt-1')
     ).toBeUndefined()
-  })
-})
-
-describe('approvalExpiryReason', () => {
-  function approvalExpiredEvent(patch: Partial<RunEventView> = {}): RunEventView {
-    return {
-      id: `event-${Math.random()}`,
-      runId: 'run-1',
-      attemptId: 'attempt-1',
-      kind: 'approval_expired',
-      payloadJson: { questionId: 'question-1' },
-      createdAt: '2026-01-01T00:00:00.000Z',
-      ...patch
-    }
-  }
-
-  it('reads the reason recorded on the matching approval_expired event (workflow-approval-deadlines.ts closeOpenApprovals)', () => {
-    const events = [
-      approvalExpiredEvent({ payloadJson: { questionId: 'question-1', reason: 'run_ended' } })
-    ]
-
-    expect(approvalExpiryReason(events, 'question-1')).toBe('run_ended')
-  })
-
-  it('returns undefined for a genuine timeout with no recorded reason', () => {
-    const events = [approvalExpiredEvent({ payloadJson: { questionId: 'question-1' } })]
-
-    expect(approvalExpiryReason(events, 'question-1')).toBeUndefined()
-  })
-
-  it('returns undefined when no approval_expired event matches this question', () => {
-    const events = [
-      approvalExpiredEvent({ payloadJson: { questionId: 'other-question', reason: 'run_ended' } })
-    ]
-
-    expect(approvalExpiryReason(events, 'question-1')).toBeUndefined()
   })
 })

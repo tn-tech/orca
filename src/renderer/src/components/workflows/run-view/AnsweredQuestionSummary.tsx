@@ -6,8 +6,8 @@ import { APPROVAL_DEFAULT_ANSWERER } from '../../../../../shared/workflows/workf
 export type AnsweredQuestionSummaryProps = {
   question: RunQuestionView
   answerText: string | undefined
-  /** `approvalExpiryReason`'s result for this question: `'run_ended'` reads as "Closed" instead
-   *  of "Timed out" when `answerText` is absent. */
+  /** `questionExpiryReason`'s result for this question: any reason (the run or attempt ended,
+   *  a newer question superseded it, …) reads as "Closed"; absent means a real deadline timeout. */
   noAnswerReason?: string
 }
 
@@ -15,7 +15,7 @@ export type AnsweredQuestionSummaryProps = {
  *  the prompt, the recorded answer, and who answered it and when. `answeredBy` equal to the
  *  engine's `APPROVAL_DEFAULT_ANSWERER` isn't a person, so it reads as "Default applied…" instead
  *  of "Answered by…". `answerText` absent means no one (and no default) ever answered — shown as
- *  "Closed" when `noAnswerReason` is `run_ended` (the run finished first), else "Timed out". */
+ *  "Timed out" only for a deadline timeout (no `noAnswerReason`), else the neutral "Closed". */
 export default function AnsweredQuestionSummary({
   question,
   answerText,
@@ -29,7 +29,7 @@ export default function AnsweredQuestionSummary({
         <p className="text-sm text-foreground">{answerText}</p>
       ) : (
         <p className="text-xs text-muted-foreground">
-          {noAnswerReason === 'run_ended'
+          {noAnswerReason
             ? translate(
                 'auto.components.workflows.run-view.QuestionCard.closedUnanswered',
                 'Closed with no answer.'

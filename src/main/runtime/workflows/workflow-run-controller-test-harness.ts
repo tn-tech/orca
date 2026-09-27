@@ -10,6 +10,7 @@ import { OrchestrationDb } from '../orchestration/db'
 import type { RpcResponse } from '../rpc/core'
 import { RpcDispatcher } from '../rpc/dispatcher'
 import { ORCHESTRATION_METHODS } from '../rpc/methods/orchestration'
+import { WORKFLOW_ENGINE_WORKER_INPUT_METHODS } from '../rpc/methods/workflows/workflow-engine-worker-input-methods'
 import { localWorkflowFilesystem } from './workflow-file-store-filesystem'
 import { WorkflowRunController, type WorkflowRunControllerDeps } from './workflow-run-controller'
 
@@ -77,7 +78,11 @@ export function createControllerHarness(workspaceRoot: string) {
   const db = new OrchestrationDb(':memory:')
   const runtime = new OrcaRuntimeService()
   runtime.setOrchestrationDb(db)
-  const dispatcher = new RpcDispatcher({ runtime, methods: ORCHESTRATION_METHODS })
+  // Same method set as the runtime's workflow engine dispatcher (orca-runtime.ts).
+  const dispatcher = new RpcDispatcher({
+    runtime,
+    methods: [...ORCHESTRATION_METHODS, ...WORKFLOW_ENGINE_WORKER_INPUT_METHODS]
+  })
   const workerHandles: string[] = []
   const prompts = new Map<string, string>()
   const workerStartedAt: number[] = []

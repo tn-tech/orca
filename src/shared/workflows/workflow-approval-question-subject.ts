@@ -12,10 +12,8 @@ export type ApprovalQuestionSubject = {
   defaultOption?: string
 }
 
-/** `answeredBy` for an answer the engine applied from `defaultOption` on timeout, not a person
- *  (`workflow-approval-deadlines.ts`'s `APPROVAL_DEFAULT_ANSWERER` — same value, shared here so
- *  clients can recognize it without importing main-process code; that module switches to this
- *  constant in a later unit). */
+/** `answeredBy` for an answer the engine applied from `defaultOption` on timeout, not a person.
+ *  Shared so clients recognize it without importing main-process code. */
 export const APPROVAL_DEFAULT_ANSWERER = 'workflow-engine:default-option'
 
 export function approvalQuestionOptions(subject: ApprovalQuestionSubject): JsonValue {

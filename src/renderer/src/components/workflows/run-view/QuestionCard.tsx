@@ -16,7 +16,7 @@ import TrustSourceDialog from '../roles/TrustSourceDialog'
 export type QuestionCardProps = {
   question: RunQuestionView
   settings: RuntimeWorkflowSettings
-  /** Why an `expired` question had no answer (`approvalExpiryReason`): `'run_ended'` shows
+  /** Why an `expired` question had no answer (`questionExpiryReason`): any reason shows
    *  "Closed" instead of "Timed out". Only meaningful once `question.state === 'expired'`. */
   expiredReason?: string
 }
