@@ -180,7 +180,7 @@ export const WORKFLOW_DEFINITION_METHODS = [
         {
           engine: runtime.getWorkflowEngine(),
           db: runtime.getOrchestrationDb(),
-          worktrees: runtime,
+          tearDown: (runId, reason) => runtime.tearDownWorkflowDraftRun(runId, reason),
           validation: { agentSupportsModel, isKnownAgent }
         },
         {

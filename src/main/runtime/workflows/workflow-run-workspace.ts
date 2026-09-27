@@ -15,6 +15,7 @@ export type RunWorkspaceCreatePort = {
     name: string
     baseBranch?: string
     runHooks?: boolean
+    setupDecision?: 'run' | 'skip' | 'inherit'
   }): Promise<{ worktree: { id: string; path: string; branch: string } }>
 }
 
@@ -46,12 +47,14 @@ function isWorktreeCreateHostUnreachable(error: unknown): boolean {
  */
 export async function createRunWorkspace(
   run: Pick<RunSnapshot, 'id' | 'workflowName' | 'repoId'>,
-  port: RunWorkspaceCreatePort
+  port: RunWorkspaceCreatePort,
+  options: { skipSetup?: boolean } = {}
 ): Promise<RunWorkspace> {
   try {
     const { worktree } = await port.createManagedWorktree({
       repoSelector: `id:${run.repoId}`,
-      name: `${run.workflowName}-${run.id}`
+      name: `${run.workflowName}-${run.id}`,
+      ...(options.skipSetup ? { setupDecision: 'skip' as const } : {})
     })
     return { worktreeId: worktree.id, workspaceRoot: worktree.path, branch: worktree.branch }
   } catch (error) {

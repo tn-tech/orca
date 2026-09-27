@@ -1,13 +1,18 @@
-import { mkdtemp, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 import type { Repo } from '../../../shared/repo-types'
-import { listWorkflows } from './workflow-file-store'
+import type { RpcDispatcher } from '../rpc/dispatcher'
+import { listWorkflows, writeWorkflow } from './workflow-file-store'
+import { tearDownDraftRun } from './workflow-draft-teardown'
+import { storeFor } from './workflow-placement-test-fixtures'
 import { WorkflowEngine } from './workflow-engine'
 import { draftWorkflow, type WorkflowDraftResult } from './workflow-draft'
 import {
+  DRAFT_DEADLINE_MS,
   DRAFT_PLANNER_NODE_ID,
+  DRAFT_PLANNER_WORKFLOW_NAME,
   workflowDefinitionResultContract,
   resolveWorkflowPlannerAgent
 } from './workflow-draft-planner'
@@ -76,16 +81,18 @@ describe('draftWorkflow', () => {
   let repo: Repo
   let engine: WorkflowEngine
   let removeManagedWorktree: ReturnType<typeof vi.fn>
+  let createManagedWorktree: ReturnType<typeof vi.fn>
+  let workerCalls: MockInstance<RpcDispatcher['dispatchAsWorkflowEngine']>
 
-  beforeEach(async () => {
-    workspaceRoot = await mkdtemp(join(tmpdir(), 'workflow-draft-'))
-    h = createControllerHarness(workspaceRoot)
-    repo = { id: 'repo', path: workspaceRoot, displayName: 'Repo', badgeColor: '#000', addedAt: 0 }
+  /** `realStore`: placement resolves through the runtime's own selectors (in-place drafts). */
+  function setUp(realStore: boolean): void {
+    h = createControllerHarness(workspaceRoot, realStore ? { store: storeFor(repo) } : {})
     removeManagedWorktree = vi.fn(async () => ({}))
+    createManagedWorktree = vi.fn(async () => ({
+      worktree: { id: RUN_WORKTREE_ID, path: workspaceRoot, branch: 'wf-branch' }
+    }))
     Object.assign(h.runtime, {
-      createManagedWorktree: vi.fn(async () => ({
-        worktree: { id: RUN_WORKTREE_ID, path: workspaceRoot, branch: 'wf-branch' }
-      })),
+      createManagedWorktree,
       showManagedWorktree: vi.fn(async () => ({ id: RUN_WORKTREE_ID, path: workspaceRoot })),
       removeManagedWorktree
     })
@@ -95,6 +102,13 @@ describe('draftWorkflow', () => {
       dispatcher: h.dispatcher,
       getRepo: (repoId) => (repoId === repo.id ? repo : undefined)
     })
+    workerCalls = vi.spyOn(h.dispatcher, 'dispatchAsWorkflowEngine')
+  }
+
+  beforeEach(async () => {
+    workspaceRoot = await realpath(await mkdtemp(join(tmpdir(), 'workflow-draft-')))
+    repo = { id: 'repo', path: workspaceRoot, displayName: 'Repo', badgeColor: '#000', addedAt: 0 }
+    setUp(false)
     vi.useFakeTimers({
       toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval']
     })
@@ -116,7 +130,12 @@ describe('draftWorkflow', () => {
         {
           engine,
           db: h.db,
-          worktrees: h.runtime,
+          tearDown: (runId, reason) =>
+            tearDownDraftRun(
+              { db: h.db, runtime: h.runtime, dispatcher: h.dispatcher },
+              runId,
+              reason
+            ),
           validation: VALIDATION,
           pollIntervalMs: 200,
           ...(overrides.timeoutMs ? { timeoutMs: overrides.timeoutMs } : {})
@@ -308,7 +327,30 @@ describe('draftWorkflow', () => {
     ])
   })
 
-  it('runs a git repo draft in its own run workspace and removes it once the planner settles', async () => {
+  function workerMethods(): string[] {
+    return workerCalls.mock.calls.map(([request]) => request.method)
+  }
+
+  function onlyRun() {
+    const [run] = h.db.listWorkflowRuns().runs
+    if (!run) {
+      throw new Error('no planner run')
+    }
+    return run
+  }
+
+  it('records the planner run under a name no project workflow can take', async () => {
+    const tracked = startDraft()
+    await stubAgentReports(draftedDefinition())
+    const result = await settled(tracked)
+
+    expect(h.db.getWorkflowRun(result.runId)?.workflowName).toBe(DRAFT_PLANNER_WORKFLOW_NAME)
+    await expect(
+      writeWorkflow(repo, 'project', DRAFT_PLANNER_WORKFLOW_NAME, 'version: 1', null)
+    ).rejects.toThrow('workflow_name_invalid')
+  })
+
+  it('runs a git repo draft in a setup-free run workspace, then releases its worker and removes it', async () => {
     const tracked = startDraft()
     await stubAgentReports(draftedDefinition())
     const result = await settled(tracked)
@@ -316,19 +358,30 @@ describe('draftWorkflow', () => {
     expect(h.db.getWorkflowRun(result.runId)?.workflowSnapshot.workspacePolicy).toBe(
       'run-workspace'
     )
+    expect(createManagedWorktree).toHaveBeenCalledWith(
+      expect.objectContaining({ setupDecision: 'skip' })
+    )
+    expect(workerMethods()).toContain('orchestration.workerRelease')
+    expect(removeManagedWorktree).toHaveBeenCalledTimes(1)
     expect(removeManagedWorktree).toHaveBeenCalledWith(`id:${RUN_WORKTREE_ID}`)
+    expect(h.db.listWorkflowEventsOfKind(result.runId, 'draft_run_torn_down')).toHaveLength(1)
+    expect(h.db.listWorkflowEventsOfKind(result.runId, 'draft_worker_cleanup_failed')).toEqual([])
   })
 
-  it('runs a folder repo draft in place and creates no worktree', async () => {
+  it('runs a folder repo draft in place through real placement and removes no worktree', async () => {
+    await engine.stop()
+    h.db.close()
     repo = { ...repo, kind: 'folder' }
+    setUp(true)
     const tracked = startDraft()
     await stubAgentReports(draftedDefinition({ workspacePolicy: 'in-place' }))
     const result = await settled(tracked)
 
-    expect(result.definition?.workspacePolicy).toBe('in-place')
+    expect(result.problems).toEqual([])
     expect(h.db.getWorkflowRun(result.runId)?.workflowSnapshot.workspacePolicy).toBe('in-place')
-    expect(h.runtime.createManagedWorktree).not.toHaveBeenCalled()
+    expect(createManagedWorktree).not.toHaveBeenCalled()
     expect(removeManagedWorktree).not.toHaveBeenCalled()
+    expect(workerMethods()).toContain('orchestration.workerRelease')
   })
 
   it('refuses an SSH repo whose host is unreachable, starting nothing', async () => {
@@ -343,7 +396,8 @@ describe('draftWorkflow', () => {
     expect(h.db.listWorkflowRuns().runs).toHaveLength(0)
   })
 
-  it('gives up waiting after its deadline and leaves the still-running planner alone', async () => {
+  it('gives up before the planner question window closes, stopping the planner and removing its workspace', async () => {
+    expect(DRAFT_DEADLINE_MS).toBeLessThan(600_000 + 300_000)
     const tracked = startDraft({ timeoutMs: 2_000 })
     await waitUntil(() => plannerAttempt()?.state === 'running')
     const result = await settled(tracked)
@@ -352,10 +406,15 @@ describe('draftWorkflow', () => {
     expect(result.problems).toEqual([
       expect.objectContaining({ code: 'workflow_draft_timeout', severity: 'error' })
     ])
-    expect(removeManagedWorktree).not.toHaveBeenCalled()
+    expect(onlyRun().state).toBe('cancelled')
+    expect(plannerAttempt()?.state).toBe('cancelled')
+    expect(workerMethods()).toEqual(
+      expect.arrayContaining(['orchestration.workerStop', 'orchestration.workerRelease'])
+    )
+    expect(removeManagedWorktree).toHaveBeenCalledWith(`id:${RUN_WORKTREE_ID}`)
   })
 
-  it('stops waiting when the caller aborts', async () => {
+  it('stops the planner and removes its workspace when the caller aborts', async () => {
     const abort = new AbortController()
     const tracked = startDraft({ signal: abort.signal })
     await waitUntil(() => plannerAttempt()?.state === 'running')
@@ -363,6 +422,10 @@ describe('draftWorkflow', () => {
     await waitUntil(() => tracked.done)
 
     expect(tracked.error instanceof Error && tracked.error.message).toBe('request_aborted')
+    expect(onlyRun().state).toBe('cancelled')
+    expect(plannerAttempt()?.state).toBe('cancelled')
+    expect(workerMethods()).toContain('orchestration.workerStop')
+    expect(removeManagedWorktree).toHaveBeenCalledWith(`id:${RUN_WORKTREE_ID}`)
   })
 })
 
@@ -373,5 +436,21 @@ describe('resolveWorkflowPlannerAgent', () => {
     expect(resolveWorkflowPlannerAgent({ defaultTuiAgent: 'blank' })).toBe('claude')
     expect(resolveWorkflowPlannerAgent({ defaultTuiAgent: null })).toBe('claude')
     expect(resolveWorkflowPlannerAgent(undefined)).toBe('claude')
+  })
+
+  it('never picks a disabled agent', () => {
+    expect(
+      resolveWorkflowPlannerAgent({
+        workflowPlannerAgent: 'codex',
+        defaultTuiAgent: 'gemini',
+        disabledTuiAgents: ['codex']
+      })
+    ).toBe('gemini')
+    expect(
+      resolveWorkflowPlannerAgent({
+        defaultTuiAgent: 'claude',
+        disabledTuiAgents: ['claude', 'claude-agent-teams']
+      })
+    ).toBe('openclaude')
   })
 })

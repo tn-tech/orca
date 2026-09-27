@@ -8,6 +8,7 @@ import type { Workflow } from '../../shared/workflows/workflow-definition-types'
 import { OrchestrationDb } from './orchestration/db'
 import { OrcaRuntimeService } from './orca-runtime'
 import type { RuntimeStore } from './runtime-store-contract'
+import { DRAFT_PLANNER_WORKFLOW_NAME } from './workflows/workflow-draft-planner'
 import { WorkflowEngine } from './workflows/workflow-engine'
 
 const REPO: Repo = {
@@ -131,6 +132,40 @@ describe('OrcaRuntimeService.startWorkflowEngine', () => {
     db.close()
   })
 })
+
+describe('OrcaRuntimeService workflow draft boot sweep', () => {
+  it('cancels a planner run a prior process left active instead of rehydrating it', async () => {
+    const db = new OrchestrationDb(':memory:')
+    const runtime = new OrcaRuntimeService(storeFixture())
+    runtime.setOrchestrationDb(db)
+    const run = db.createWorkflowRun({
+      workflowName: DRAFT_PLANNER_WORKFLOW_NAME,
+      workflowSource: 'project',
+      workflowSnapshot: { ...TRIVIAL_WORKFLOW, name: DRAFT_PLANNER_WORKFLOW_NAME },
+      workflowVersion: DRAFT_PLANNER_WORKFLOW_NAME,
+      objective: 'orphaned draft',
+      repoId: REPO.id,
+      worktreeId: REPO.id
+    })
+
+    runtime.startWorkflowEngine()
+
+    expect(db.getWorkflowRun(run.id)?.state).toBe('cancelled')
+    await waitForEvent(db, run.id, 'draft_run_torn_down')
+    await runtime.stopWorkflowEngine()
+    db.close()
+  })
+})
+
+async function waitForEvent(db: OrchestrationDb, runId: string, kind: string): Promise<void> {
+  for (let tick = 0; tick < 200; tick += 1) {
+    if (db.listWorkflowEventsOfKind(runId, kind).length > 0) {
+      return
+    }
+    await new Promise<void>((resolve) => setImmediate(resolve))
+  }
+  throw new Error(`workflow run ${runId} never recorded ${kind}`)
+}
 
 const MAIN_ROOT = join(import.meta.dirname, '..')
 

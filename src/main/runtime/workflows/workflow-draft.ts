@@ -14,27 +14,24 @@ import type { OrchestrationDb } from '../orchestration/db'
 import { OrchestrationError } from '../orchestration/orchestration-error'
 import {
   buildDraftPlannerWorkflow,
+  DRAFT_DEADLINE_MS,
   DRAFT_PLANNER_NODE_ID,
   DRAFT_PLANNER_WORKFLOW_NAME
 } from './workflow-draft-planner'
 import { plannerRawDraft } from './workflow-draft-result'
-import {
-  WorkflowGraphValidationError,
-  type WorkflowEngine,
-  type WorkflowEngineWorktreeCleanup
-} from './workflow-engine'
+import type { DraftRunTeardownReason } from './workflow-draft-teardown'
+import { WorkflowGraphValidationError, type WorkflowEngine } from './workflow-engine'
 import { WORKFLOW_HOST_UNREACHABLE_CODE } from './workflow-run-workspace'
 import { getRepoWorkflowSourceAllowlist } from './workflow-source-allowlist'
 
 const TERMINAL_RUN_STATES = new Set<RunSnapshot['state']>(['completed', 'failed', 'cancelled'])
 const DEFAULT_POLL_INTERVAL_MS = 1_000
-// Why bounded: a planner parked on an unanswered question must not pin the request forever.
-const DEFAULT_TIMEOUT_MS = 15 * 60_000
 
 export type WorkflowDraftDeps = {
   engine: Pick<WorkflowEngine, 'startRun' | 'getSnapshot'>
   db: OrchestrationDb
-  worktrees: WorkflowEngineWorktreeCleanup
+  /** Stops the planner's worker and removes its workspace (workflow-draft-teardown.ts). */
+  tearDown(runId: string, reason: DraftRunTeardownReason): Promise<void>
   validation: Pick<GraphValidationContext, 'agentSupportsModel' | 'isKnownAgent'>
   /** Overridable for tests; production keeps the defaults. */
   pollIntervalMs?: number
@@ -100,7 +97,7 @@ async function waitForTerminalRun(
   runId: string,
   signal: AbortSignal | undefined
 ): Promise<RunSnapshot | undefined> {
-  const deadline = Date.now() + (deps.timeoutMs ?? DEFAULT_TIMEOUT_MS)
+  const deadline = Date.now() + (deps.timeoutMs ?? DRAFT_DEADLINE_MS)
   for (;;) {
     const run = deps.engine.getSnapshot(runId)
     if (run && TERMINAL_RUN_STATES.has(run.state)) {
@@ -122,6 +119,7 @@ async function startPlannerRun(deps: WorkflowDraftDeps, input: WorkflowDraftInpu
       objective: input.objective,
       repo: input.repo,
       ...(input.startedByClient ? { startedByClient: input.startedByClient } : {}),
+      skipSetup: true,
       validation: deps.validation
     })
   } catch (error) {
@@ -132,20 +130,6 @@ async function startPlannerRun(deps: WorkflowDraftDeps, input: WorkflowDraftInpu
     }
     throw error
   }
-}
-
-async function removeRunWorkspace(
-  deps: WorkflowDraftDeps,
-  run: RunSnapshot,
-  repo: Repo
-): Promise<void> {
-  // An in-place run records the repo id as its worktree; there is nothing to remove.
-  if (!run.worktreeId || run.worktreeId === repo.id) {
-    return
-  }
-  await deps.worktrees.removeManagedWorktree(`id:${run.worktreeId}`).catch((error: unknown) => {
-    console.warn(`[workflow-draft] failed to remove planner workspace ${run.worktreeId}:`, error)
-  })
 }
 
 async function validateDraft(
@@ -176,13 +160,21 @@ export async function draftWorkflow(
     throw new Error(WORKFLOW_HOST_UNREACHABLE_CODE)
   }
   const started = await startPlannerRun(deps, input)
-  const run = await waitForTerminalRun(deps, started.id, input.signal)
+  let run: RunSnapshot | undefined
+  try {
+    run = await waitForTerminalRun(deps, started.id, input.signal)
+  } catch (error) {
+    // Nobody is left to receive this draft; the planner must not outlive the request.
+    await deps.tearDown(started.id, 'aborted')
+    throw error
+  }
   if (!run) {
+    await deps.tearDown(started.id, 'timeout')
     return {
       problems: [
         draftProblem(
           'workflow_draft_timeout',
-          'The planner did not finish in time; its run keeps going and can be followed there.'
+          'The planner did not finish in time and was stopped.'
         )
       ],
       draft: true,
@@ -193,7 +185,7 @@ export async function draftWorkflow(
     .listWorkflowAttempts(run.id)
     .findLast((candidate) => candidate.nodeId === DRAFT_PLANNER_NODE_ID)
   const raw = plannerRawDraft(deps.db, run, attempt)
-  await removeRunWorkspace(deps, run, input.repo)
+  await deps.tearDown(run.id, 'settled')
   if (!raw.ok) {
     return { problems: [draftProblem(raw.code, raw.message)], draft: true, runId: run.id }
   }

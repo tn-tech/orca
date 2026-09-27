@@ -29,22 +29,24 @@ function dispatcherFor(repo: Repo) {
     workflowName: input.workflow.name,
     state: 'queued'
   }))
+  const tearDownWorkflowDraftRun = vi.fn(async () => {})
   const engine = {
     startRun,
     getSnapshot: vi.fn(() => ({ id: 'wfr_draft', repoId: repo.id, state: 'failed' }))
   }
-  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: workflow.draft only reaches showRepo, getWorkflowEngine, getOrchestrationDb, getWorkflowPlannerAgent and removeManagedWorktree.
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: workflow.draft only reaches showRepo, getWorkflowEngine, getOrchestrationDb, getWorkflowPlannerAgent and tearDownWorkflowDraftRun.
   const runtime = {
     getRuntimeId: () => 'test-runtime',
     showRepo: vi.fn().mockResolvedValue(repo),
     getWorkflowEngine: () => engine,
     getOrchestrationDb: () => ({ listWorkflowAttempts: () => [] }),
     getWorkflowPlannerAgent: () => 'codex',
-    removeManagedWorktree: vi.fn(async () => ({}))
+    tearDownWorkflowDraftRun
   } as unknown as OrcaRuntimeService
   return {
     dispatcher: new RpcDispatcher({ runtime, methods: WORKFLOW_DEFINITION_METHODS }),
-    startRun
+    startRun,
+    tearDownWorkflowDraftRun
   }
 }
 
@@ -64,7 +66,7 @@ describe('workflow.draft', () => {
   })
 
   it('plans with the settings planner agent and records the paired device, never its token', async () => {
-    const { dispatcher, startRun } = dispatcherFor(REPO)
+    const { dispatcher, startRun, tearDownWorkflowDraftRun } = dispatcherFor(REPO)
     let response: unknown
     // The WebSocket transport's entry point, which carries the paired device identity.
     await dispatcher.dispatchStreaming(
@@ -87,5 +89,7 @@ describe('workflow.draft', () => {
     expect(input?.startedByClient).toBe('device-7')
     expect(input?.objective).toBe('Add a greeting')
     expect(Object.values(input?.workflow.roles ?? {}).map((role) => role.agent)).toEqual(['codex'])
+    expect(input?.skipSetup).toBe(true)
+    expect(tearDownWorkflowDraftRun).toHaveBeenCalledWith('wfr_draft', 'settled')
   })
 })

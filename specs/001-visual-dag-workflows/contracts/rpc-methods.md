@@ -8,53 +8,59 @@ Host capability: `workflow.engine.v1` (`WORKFLOW_ENGINE_RUNTIME_CAPABILITY`).
 `worktree` below is the existing worktree selector; `repo` selects a repository or folder root.
 
 ## Definitions
-| Method | Params | Result |
-|---|---|---|
-| `workflow.list` | `{ repo }` | `{ workflows: { name, source: 'project'\|'personal', path, description?, valid: boolean }[] }` |
-| `workflow.read` | `{ repo, name, source? }` | `{ definition, raw, revision, problems: Problem[] }` |
-| `workflow.write` | `{ repo, name, source?, definition, expectedRevision? }` | `{ revision }` (error `workflow_file_conflict` when revision mismatches) |
-| `workflow.validate` | `{ repo, definition }` | `{ problems: Problem[] }` |
-| `workflow.delete` | `{ repo, name, source? }` | `{}` |
-| `workflow.duplicate` | `{ repo, name, source?, newName }` | `{ name, revision }` (error `workflow_name_taken`) |
+
+| Method                | Params                                                                                                 | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `workflow.list`       | `{ repo }`                                                                                             | `{ workflows: { name, source: 'project'\|'personal', path, description?, valid: boolean }[] }`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `workflow.read`       | `{ repo, name, source? }`                                                                              | `{ definition, raw, revision, problems: Problem[] }`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `workflow.write`      | `{ repo, name, source?, definition, expectedRevision? }`                                               | `{ revision }` (error `workflow_file_conflict` when revision mismatches)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `workflow.validate`   | `{ repo, definition }`                                                                                 | `{ problems: Problem[] }`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `workflow.delete`     | `{ repo, name, source? }`                                                                              | `{}`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `workflow.duplicate`  | `{ repo, name, source?, newName }`                                                                     | `{ name, revision }` (error `workflow_name_taken`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `workflow.importRole` | `{ repo, source, roleName, version?, overwriteLocal?, workflow?, workflowSource?, expectedRevision? }` | `{ role, revision?, availableVersion? }` (errors `workflow_source_not_allowed`, `workflow_role_not_found`, `workflow_role_invalid`, `workflow_role_version_not_found`, `workflow_role_version_unsupported`); reads `roles/<roleName>.role.yaml` from the source cloned on the execution host. `version` is a branch or tag name (not supported for SSH repositories, whose relay only allows a plain clone). With `workflow`, copies the role into that file and returns its new revision. A local copy whose content no longer matches `origin.contentHash` (or has no hash) is kept and flagged `localModified` with its old origin, and `availableVersion` names the upstream commit not applied; `overwriteLocal: true` takes upstream instead |
-| `workflow.draft` (P3) | `{ repo, objective }` | `{ definition, problems }` |
+| `workflow.draft` (P3) | `{ repo, objective }`                                                                                  | `{ definition?, problems, draft: true, runId }`. A one-off planner run (name `orca/workflow-draft`, which no workflow file can take) drafts the definition; `definition` is absent when nothing parsed, and every draft, schema, planner-failure, size-cap (256 K chars) or deadline problem is in `problems`. Nothing is written until the user saves. The planner's run workspace and worker are torn down once the draft settles, times out, or the request aborts, and by a boot sweep after a restart. Errors: `invalid_argument` (empty objective), `workflow_host_unreachable`, `request_aborted`                                                                                                                                           |
 
 `Problem = { code, message, nodeId?, edgeId?, roleId?, severity: 'error'|'warning' }`.
 
 ## Runs
-| Method | Params | Result |
-|---|---|---|
-| `workflow.run.start` | `{ repo, name, source?, objective, overrides?: { concurrencyLimit? } }` | `{ runId }` |
-| `workflow.run.list` | `{ repo?, name?, state?, cursor?, limit? }` | `{ runs: RunSummary[], nextCursor? }` |
-| `workflow.run.show` | `{ runId }` | `RunSnapshot` (run, attempts, questions, messages, events tail) |
-| `workflow.run.pause` / `resume` / `cancel` | `{ runId }` | `{ state }` |
-| `workflow.run.rerun` | `{ runId, fromNodeId }` | `{ runId }` |
-| `workflow.run.answer` | `{ runId, questionId, answer?: string, optionId?: string }` | `{ state }` |
-| `workflow.run.sendMessage` | `{ runId, attemptId, text, mode: 'queued'\|'interrupt' }` | `{ messageId }` |
-| `workflow.run.readNodeOutput` | `{ runId, attemptId, cursor?, limit? }` | same shape as `orchestration.workerRead` result |
-| `workflow.run.events` | `{ runId, afterSeq?, limit? }` | `{ events, nextSeq }` |
+
+| Method                                     | Params                                                                  | Result                                                          |
+| ------------------------------------------ | ----------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `workflow.run.start`                       | `{ repo, name, source?, objective, overrides?: { concurrencyLimit? } }` | `{ runId }`                                                     |
+| `workflow.run.list`                        | `{ repo?, name?, state?, cursor?, limit? }`                             | `{ runs: RunSummary[], nextCursor? }`                           |
+| `workflow.run.show`                        | `{ runId }`                                                             | `RunSnapshot` (run, attempts, questions, messages, events tail) |
+| `workflow.run.pause` / `resume` / `cancel` | `{ runId }`                                                             | `{ state }`                                                     |
+| `workflow.run.rerun`                       | `{ runId, fromNodeId }`                                                 | `{ runId }`                                                     |
+| `workflow.run.answer`                      | `{ runId, questionId, answer?: string, optionId?: string }`             | `{ state }`                                                     |
+| `workflow.run.sendMessage`                 | `{ runId, attemptId, text, mode: 'queued'\|'interrupt' }`               | `{ messageId }`                                                 |
+| `workflow.run.readNodeOutput`              | `{ runId, attemptId, cursor?, limit? }`                                 | same shape as `orchestration.workerRead` result                 |
+| `workflow.run.events`                      | `{ runId, afterSeq?, limit? }`                                          | `{ events, nextSeq }`                                           |
 
 ## Trust and proposals
-| Method | Params | Result |
-|---|---|---|
-| `workflow.trust.list` | `{}` | `{ decisions: { source, host, decision, decidedBy, decidedAt }[] }` |
-| `workflow.trust.decide` | `{ source, host?, decision: 'trusted'\|'refused' }` | `{}` (`host` defaults to `local`; deciding again replaces an earlier decision) |
-| `workflow.trust.revoke` | `{ source, host? }` | `{}` (forgets the decision — the next run asks again — rather than recording `refused`; a no-op if nothing was recorded; a host predating this method answers `method_not_found`) |
-| `workflow.proposal.accept` (P3) | `{ runId, proposalId }` | `{ revision }` |
-| `workflow.proposal.export` (P3) | `{ runId, proposalId }` | `{ exportPath }` |
+
+| Method                          | Params                                              | Result                                                                                                                                                                            |
+| ------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `workflow.trust.list`           | `{}`                                                | `{ decisions: { source, host, decision, decidedBy, decidedAt }[] }`                                                                                                               |
+| `workflow.trust.decide`         | `{ source, host?, decision: 'trusted'\|'refused' }` | `{}` (`host` defaults to `local`; deciding again replaces an earlier decision)                                                                                                    |
+| `workflow.trust.revoke`         | `{ source, host? }`                                 | `{}` (forgets the decision — the next run asks again — rather than recording `refused`; a no-op if nothing was recorded; a host predating this method answers `method_not_found`) |
+| `workflow.proposal.accept` (P3) | `{ runId, proposalId }`                             | `{ revision }`                                                                                                                                                                    |
+| `workflow.proposal.export` (P3) | `{ runId, proposalId }`                             | `{ exportPath }`                                                                                                                                                                  |
 
 ## Events
+
 - `runtime.clientEvents.subscribe` gains `{ type: 'workflowRunChanged', runId, reason:
-  'state'|'attempt'|'question'|'message' }`. Old clients drop it.
+'state'|'attempt'|'question'|'message' }`. Old clients drop it.
 - Local IPC `workflows:changed` with the same payload, bridged to a window event like
   `AUTOMATIONS_CHANGED_EVENT`.
 - Notification source `workflow-attention` (approval, agent question, trust prompt, run failed,
   run completed), added to `MOBILE_PUSH_SOURCES`.
 
 ## Mobile allowlist additions
+
 `workflow.run.list`, `workflow.run.show`, `workflow.run.answer`, `workflow.run.events`.
 
 ## Error codes
+
 `workflow_not_found`, `workflow_invalid` (with problems), `workflow_file_conflict`,
 `workflow_file_version_unsupported`, `workflow_source_not_allowed`, `workflow_owned_run`
 (terminal caller on an engine-owned orchestration Run), `workflow_run_not_active`,

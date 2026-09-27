@@ -7,6 +7,7 @@ import { ORCHESTRATION_CONTRACT_VERSION } from '../../../shared/protocol-version
 import type { Node, Workflow } from '../../../shared/workflows/workflow-definition-types'
 import { OrcaRuntimeService } from '../orca-runtime'
 import { OrchestrationDb } from '../orchestration/db'
+import type { RuntimeStore } from '../runtime-store-contract'
 import type { RpcResponse } from '../rpc/core'
 import { RpcDispatcher } from '../rpc/dispatcher'
 import { ORCHESTRATION_METHODS } from '../rpc/methods/orchestration'
@@ -74,9 +75,17 @@ function paneKeyFor(handle: string): string {
   return `tab_${handle}:bbbbbbbb-bbbb-4bbb-8bbb-${suffix}`
 }
 
-export function createControllerHarness(workspaceRoot: string) {
+export type ControllerHarnessOptions = {
+  /** With a store, worker placement resolves through the runtime's real workspace selectors. */
+  store?: RuntimeStore
+}
+
+export function createControllerHarness(
+  workspaceRoot: string,
+  options: ControllerHarnessOptions = {}
+) {
   const db = new OrchestrationDb(':memory:')
-  const runtime = new OrcaRuntimeService()
+  const runtime = new OrcaRuntimeService(options.store)
   runtime.setOrchestrationDb(db)
   // Same method set as the runtime's workflow engine dispatcher (orca-runtime.ts).
   const dispatcher = new RpcDispatcher({
@@ -98,10 +107,12 @@ export function createControllerHarness(workspaceRoot: string) {
     handle.startsWith('term_') ? `runtime_test:${handle}:1` : null
   )
   vi.spyOn(runtime, 'validateOrchestrationAgentLauncher').mockImplementation(() => {})
-  // Partial fake: worker-start reads only the id of the run workspace.
-  Object.assign(runtime, {
-    showManagedTerminalWorkspace: vi.fn(async () => ({ id: RUN_WORKTREE_ID }))
-  })
+  if (!options.store) {
+    // Partial fake: worker-start reads only the id of the run workspace.
+    Object.assign(runtime, {
+      showManagedTerminalWorkspace: vi.fn(async () => ({ id: RUN_WORKTREE_ID }))
+    })
+  }
   vi.spyOn(runtime, 'createTerminal').mockImplementation(async () => {
     const handle = `term_worker_${workerHandles.length + 1}`
     workerHandles.push(handle)

@@ -7,6 +7,12 @@ import { ORCHESTRATION_METHODS } from './rpc/methods/orchestration'
 import { RpcDispatcher } from './rpc/dispatcher'
 import { WORKFLOW_ENGINE_WORKER_INPUT_METHODS } from './rpc/methods/workflows/workflow-engine-worker-input-methods'
 import { resolveWorkflowPlannerAgent } from './workflows/workflow-draft-planner'
+import {
+  sweepDraftRunsAtBoot,
+  tearDownDraftRun,
+  type DraftRunTeardownDeps,
+  type DraftRunTeardownReason
+} from './workflows/workflow-draft-teardown'
 import { WorkflowEngine } from './workflows/workflow-engine'
 import {
   dispatchWorkflowAttention,
@@ -15,6 +21,7 @@ import {
 
 class OrcaRuntimeService extends OrcaRuntimeWithResolveWaiter {
   private workflowEngine: WorkflowEngine | null = null
+  private workflowDraftTeardown: DraftRunTeardownDeps | null = null
 
   constructor(...args: ConstructorParameters<typeof OrcaRuntimeWithResolveWaiter>) {
     super(...args)
@@ -49,18 +56,37 @@ class OrcaRuntimeService extends OrcaRuntimeWithResolveWaiter {
    */
   getWorkflowEngine(this: OrcaRuntimeServiceExport): WorkflowEngine {
     if (!this.workflowEngine) {
-      this.workflowEngine = new WorkflowEngine({
-        db: this.getOrchestrationDb(),
+      const db = this.getOrchestrationDb()
+      const dispatcher = new RpcDispatcher({
         runtime: this,
-        dispatcher: new RpcDispatcher({
-          runtime: this,
-          methods: [...ORCHESTRATION_METHODS, ...WORKFLOW_ENGINE_WORKER_INPUT_METHODS]
-        }),
+        methods: [...ORCHESTRATION_METHODS, ...WORKFLOW_ENGINE_WORKER_INPUT_METHODS]
+      })
+      this.workflowEngine = new WorkflowEngine({
+        db,
+        runtime: this,
+        dispatcher,
         getRepo: (repoId) => this.store?.getRepo(repoId)
+      })
+      this.workflowDraftTeardown = { db, runtime: this, dispatcher }
+      // Before rehydrate: its synchronous part cancels orphaned planner runs so none relaunches.
+      void sweepDraftRunsAtBoot(this.workflowDraftTeardown).catch((error: unknown) => {
+        console.warn('[workflow-draft] boot sweep failed:', error)
       })
       this.workflowEngine.rehydrateActiveRuns()
     }
     return this.workflowEngine
+  }
+
+  /** Cleans up after a `workflow.draft` planner run (workflow-draft-teardown.ts). */
+  async tearDownWorkflowDraftRun(
+    this: OrcaRuntimeServiceExport,
+    runId: string,
+    reason: DraftRunTeardownReason
+  ): Promise<void> {
+    this.getWorkflowEngine()
+    if (this.workflowDraftTeardown) {
+      await tearDownDraftRun(this.workflowDraftTeardown, runId, reason)
+    }
   }
 
   /** Every WorkflowRunRecorder reaches this through its notifier, wherever it was built. */

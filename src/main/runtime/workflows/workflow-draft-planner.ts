@@ -5,24 +5,42 @@ import { z } from 'zod'
 import type { GlobalSettings } from '../../../shared/global-settings-types'
 import type { Repo } from '../../../shared/repo-types'
 import { isFolderRepo } from '../../../shared/repo-kind'
+import type { TuiAgent } from '../../../shared/tui-agent'
+import { isTuiAgentEnabled, TUI_AGENT_AUTO_PICK_ORDER } from '../../../shared/tui-agent-selection'
 import { WorkflowFileSchema } from '../../../shared/workflows/workflow-definition-schema'
 import type { ResultContract, Workflow } from '../../../shared/workflows/workflow-definition-types'
 import { ResultContractSchema } from '../../../shared/workflows/workflow-node-schemas'
 
 export const DRAFT_PLANNER_NODE_ID = 'plan'
-export const DRAFT_PLANNER_WORKFLOW_NAME = 'workflow-draft'
+/** Contains `/`, which the workflow file store refuses: no project workflow can share this name,
+ *  so a planner run can never be listed or started as one. */
+export const DRAFT_PLANNER_WORKFLOW_NAME = 'orca/workflow-draft'
 const DRAFT_PLANNER_ROLE_ID = 'planner'
-const DEFAULT_PLANNER_AGENT = 'claude'
+const DRAFT_PLANNER_QUESTION = { timeoutMs: 600_000, escalationGraceMs: 300_000 }
+/** Strictly inside the planner's question window: the draft request gives up (and tears the
+ *  planner down) before an unanswered question could expire on its own. */
+export const DRAFT_DEADLINE_MS =
+  DRAFT_PLANNER_QUESTION.timeoutMs + DRAFT_PLANNER_QUESTION.escalationGraceMs - 60_000
 
-/** Settings default (FR: planner role from settings), then the user's default agent, then claude. */
+export function isDraftPlannerRun(run: { workflowName: string }): boolean {
+  return run.workflowName === DRAFT_PLANNER_WORKFLOW_NAME
+}
+
+/** The planner setting, then the default agent, then the app's auto-pick order; disabled agents never plan. */
 export function resolveWorkflowPlannerAgent(
-  settings: Partial<Pick<GlobalSettings, 'workflowPlannerAgent' | 'defaultTuiAgent'>> | undefined
+  settings:
+    | Partial<
+        Pick<GlobalSettings, 'workflowPlannerAgent' | 'defaultTuiAgent' | 'disabledTuiAgents'>
+      >
+    | undefined
 ): string {
-  if (settings?.workflowPlannerAgent) {
-    return settings.workflowPlannerAgent
-  }
-  const defaultAgent = settings?.defaultTuiAgent
-  return defaultAgent && defaultAgent !== 'blank' ? defaultAgent : DEFAULT_PLANNER_AGENT
+  const defaultAgent = settings?.defaultTuiAgent === 'blank' ? null : settings?.defaultTuiAgent
+  const candidates = [settings?.workflowPlannerAgent, defaultAgent, ...TUI_AGENT_AUTO_PICK_ORDER]
+  return (
+    candidates.find(
+      (agent): agent is TuiAgent => !!agent && isTuiAgentEnabled(agent, settings?.disabledTuiAgents)
+    ) ?? 'claude'
+  )
 }
 
 let cachedResultContract: ResultContract | undefined
@@ -88,7 +106,7 @@ export function buildDraftPlannerWorkflow(
         workspace: 'run',
         resultContract: workflowDefinitionResultContract(),
         artifacts: [],
-        question: { timeoutMs: 600_000, escalationGraceMs: 300_000 }
+        question: DRAFT_PLANNER_QUESTION
       },
       { id: 'end', type: 'end', title: 'End' }
     ],

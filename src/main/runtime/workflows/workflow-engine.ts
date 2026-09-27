@@ -7,27 +7,19 @@ import { validateWorkflowGraph } from '../../../shared/workflows/workflow-graph-
 import type { Workflow } from '../../../shared/workflows/workflow-definition-types'
 import type { WorkflowProblem } from '../../../shared/workflows/workflow-problem'
 import type { RunSnapshot, WorkflowRunSource } from '../../../shared/workflows/workflow-run-types'
-import {
-  getSshFilesystemProvider,
-  onSshFilesystemProviderRegistered,
-  SSH_FILESYSTEM_PROVIDER_UNAVAILABLE_MESSAGE
-} from '../../providers/ssh-filesystem-dispatch'
+import { getRepoMainWorktreeId } from '../../../shared/worktree/id'
+import { onSshFilesystemProviderRegistered } from '../../providers/ssh-filesystem-dispatch'
 import type { OrchestrationDb } from '../orchestration/db'
 import { generateId } from '../orchestration/db/generated-id'
-import type { OrcaIgnoreTarget } from './workflow-brief-builder'
 import { resolveConcurrencyLimit } from './workflow-concurrency'
-import {
-  getProjectWorkflowFilesystem,
-  type WorkflowFilesystem
-} from './workflow-file-store-filesystem'
 import type { WorkflowRunWorkspaceAccess } from './workflow-run-node-launch'
 import type { WorkflowOrchestrationDispatcher } from './workflow-orchestration-client'
 import { WorkflowRunController, type WorkflowRunControllerRuntime } from './workflow-run-controller'
+import { isHostUnreachableError, resolveRunWorkspaceAccess } from './workflow-run-host-access'
 import { WorkflowRunRecorder } from './workflow-run-recorder'
 import {
   createRunWorkspace,
   resolveInPlaceWorkspace,
-  WORKFLOW_HOST_UNREACHABLE_CODE,
   type RunWorkspaceCreatePort
 } from './workflow-run-workspace'
 import { getRepoWorkflowSourceAllowlist } from './workflow-source-allowlist'
@@ -88,35 +80,9 @@ export type WorkflowStartRunInput = {
   concurrencyLimit?: number
   rerunOfRunId?: string
   rerunFromNodeId?: string
+  /** Skips the repo's setup hook in a created run workspace (throwaway planner runs). */
+  skipSetup?: boolean
   validation: Pick<GraphValidationContext, 'agentSupportsModel' | 'isKnownAgent'>
-}
-
-/** Normalizes the file store's own SSH-unavailable error to the one `isHostUnreachableError` and
- *  the rehydrate-retry path key on, so both fs resolution and ignore-target resolution agree. */
-function projectWorkflowFilesystemOrUnreachable(repo: Repo): WorkflowFilesystem {
-  try {
-    return getProjectWorkflowFilesystem(repo)
-  } catch (error) {
-    if (error instanceof Error && error.message === SSH_FILESYSTEM_PROVIDER_UNAVAILABLE_MESSAGE) {
-      throw new Error(WORKFLOW_HOST_UNREACHABLE_CODE)
-    }
-    throw error
-  }
-}
-
-function orcaIgnoreTargetFor(repo: Repo): OrcaIgnoreTarget {
-  if (!repo.connectionId) {
-    return { host: 'local', repoPath: repo.path }
-  }
-  const fsProvider = getSshFilesystemProvider(repo.connectionId)
-  if (!fsProvider) {
-    throw new Error(WORKFLOW_HOST_UNREACHABLE_CODE)
-  }
-  return { host: 'remote', fsProvider, repoPath: repo.path, connectionId: repo.connectionId }
-}
-
-function isHostUnreachableError(error: unknown): boolean {
-  return error instanceof Error && error.message === WORKFLOW_HOST_UNREACHABLE_CODE
 }
 
 type ActiveRun = { controller: WorkflowRunController; done: Promise<void> }
@@ -151,7 +117,8 @@ export class WorkflowEngine {
         ? resolveInPlaceWorkspace(input.repo)
         : await createRunWorkspace(
             { id, workflowName: input.workflow.name, repoId: input.repo.id },
-            this.deps.runtime
+            this.deps.runtime,
+            { skipSetup: input.skipSetup === true }
           )
     const run = await this.insertRunRow(input, id, workspace.worktreeId)
     this.launch(run)
@@ -173,8 +140,8 @@ export class WorkflowEngine {
         workflowVersion: input.workflowVersion,
         objective: input.objective,
         repoId: input.repo.id,
-        // Why repo.id: an in-place run has no worktree, but the column disallows NULL.
-        worktreeId: worktreeId ?? input.repo.id,
+        // In-place: the repo's own checkout (placement re-derives it; see workflow-run-host-access).
+        worktreeId: worktreeId ?? getRepoMainWorktreeId(input.repo),
         // FR-031: an explicit override wins; otherwise honor the workflow file's own default
         // rather than letting the DB's hardcoded default silently override it.
         concurrencyLimit: resolveConcurrencyLimit(input.workflow, input.concurrencyLimit),
@@ -328,12 +295,8 @@ export class WorkflowEngine {
     if (!repo) {
       throw new Error(`Repo ${run.repoId} was not found for workflow run ${run.id}.`)
     }
-    const fs = projectWorkflowFilesystemOrUnreachable(repo)
-    const orcaIgnoreTarget = orcaIgnoreTargetFor(repo)
-    if (run.workflowSnapshot.workspacePolicy === 'in-place') {
-      return { workspaceRoot: repo.path, fs, orcaIgnoreTarget }
-    }
-    const worktree = await this.deps.runtime.showManagedWorktree(`id:${run.worktreeId}`)
-    return { worktreeId: worktree.id, workspaceRoot: worktree.path, fs, orcaIgnoreTarget }
+    return resolveRunWorkspaceAccess(run, repo, (selector) =>
+      this.deps.runtime.showManagedWorktree(selector)
+    )
   }
 }
