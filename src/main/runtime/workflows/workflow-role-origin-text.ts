@@ -9,6 +9,9 @@ import { findAllowedWorkflowSource } from './workflow-source-allowlist'
 
 type RoleOrigin = NonNullable<Role['origin']>
 
+/** The role file's text and the commit it was read at. */
+export type OriginRoleText = { text: string; version: string }
+
 // Why: `origin.version` comes from an editable workflow file and lands in git argv.
 const COMMIT_ID_PATTERN = /^[0-9a-f]{7,64}$/i
 
@@ -43,7 +46,7 @@ export async function fetchOriginRoleText(
   roleId: string,
   origin: RoleOrigin,
   deps: { getHost: () => RoleFetchHost; allowlist: readonly string[] }
-): Promise<string | undefined> {
+): Promise<OriginRoleText | undefined> {
   const source = findAllowedWorkflowSource(origin.source, deps.allowlist)
   if (source === undefined) {
     return undefined
@@ -54,11 +57,13 @@ export async function fetchOriginRoleText(
       const head = (await host.runGit(['rev-parse', 'HEAD'], checkoutDir)).trim()
       const tip = await readRoleFileFromCheckout(host, checkoutDir, roleId)
       if (head === origin.version || holdsImportedContent(tip, roleId, origin)) {
-        return tip
+        return { text: tip, version: head }
       }
-      return (await checkoutCommit(host, checkoutDir, origin.version))
-        ? readRoleFileFromCheckout(host, checkoutDir, roleId)
-        : undefined
+      if (!(await checkoutCommit(host, checkoutDir, origin.version))) {
+        return undefined
+      }
+      const text = await readRoleFileFromCheckout(host, checkoutDir, roleId)
+      return { text, version: origin.version }
     })
   } catch (error) {
     console.warn(`[workflow-role-proposals] could not read role ${roleId} from ${source}:`, error)

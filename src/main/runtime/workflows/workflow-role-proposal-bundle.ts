@@ -8,6 +8,7 @@ import type {
 } from '../../../shared/workflows/workflow-run-types'
 import { ROLE_FILE_DIRECTORY, ROLE_FILE_SUFFIX } from './workflow-role-import'
 import { roleContentOf } from './workflow-role-import-merge'
+import type { OriginRoleText } from './workflow-role-origin-text'
 import { applyRoleProposalChange } from './workflow-role-proposal-apply'
 
 const CONTEXT_LINES = 3
@@ -83,15 +84,21 @@ function applyChangeToRoleText(text: string, change: RoleProposalChange): string
   if (change.skills !== undefined) {
     doc.set('skills', doc.createNode(change.skills))
   }
-  return doc.toString()
+  // Why lineWidth 0: the default (80) re-folds every long flow scalar, changing untouched fields.
+  return doc.toString({ lineWidth: 0 })
 }
 
 /** `origin`: diffed against the origin's own file; `orca-format`: against Orca's serialization. */
 type PatchBase = 'origin' | 'orca-format'
 
-function baseLines(base: PatchBase, origin: RoleOrigin, roleFilePath: string): string[] {
+function baseLines(
+  base: PatchBase,
+  origin: RoleOrigin,
+  roleFilePath: string,
+  baseVersion: string
+): string[] {
   if (base === 'origin') {
-    return [`The patch is against \`${roleFilePath}\` as it is at ${origin.version}.`]
+    return [`The patch is against \`${roleFilePath}\` as it is at ${baseVersion}.`]
   }
   return [
     'The origin repository could not be read, so this patch assumes the role file is formatted ' +
@@ -117,6 +124,7 @@ function readmeText(args: {
   evidence: string
   proposedFile: string
   base: PatchBase
+  baseVersion: string
 }): string {
   const { origin, roleId } = args
   const fence = codeFence(args.proposedFile)
@@ -126,7 +134,7 @@ function readmeText(args: {
     `A Reflection node in workflow "${args.workflowName}" (run ${args.runId}) proposed this ` +
       `change to the role "${args.role.name}", imported from ${origin.source} at ${origin.version}.`,
     '',
-    ...baseLines(args.base, origin, args.roleFilePath),
+    ...baseLines(args.base, origin, args.roleFilePath, args.baseVersion),
     '',
     '## Evidence',
     '',
@@ -153,8 +161,9 @@ function readmeText(args: {
 }
 
 /**
- * `originText` is the role file as the origin holds it (workflow-role-origin-text.ts); without
- * it, or when it does not parse, the patch is against Orca's serialization of `role`.
+ * `originText` is the role file as the origin holds it, and the commit it was read at
+ * (workflow-role-origin-text.ts); without it, or when it does not parse, the patch is against
+ * Orca's serialization of `role`.
  */
 export function buildRoleProposalBundle(args: {
   workflowName: string
@@ -162,17 +171,17 @@ export function buildRoleProposalBundle(args: {
   role: Role
   origin: RoleOrigin
   proposal: Pick<RoleProposalView, 'roleId' | 'change' | 'evidence'>
-  originText?: string
+  originText?: OriginRoleText
 }): RoleProposalBundle {
   const { proposal, role } = args
   const roleFilePath = `${ROLE_FILE_DIRECTORY}/${proposal.roleId}${ROLE_FILE_SUFFIX}`
   const fromOrigin =
     args.originText === undefined
       ? undefined
-      : applyChangeToRoleText(args.originText, proposal.change)
+      : applyChangeToRoleText(args.originText.text, proposal.change)
   const [base, before, after]: [PatchBase, string, string] =
     args.originText !== undefined && fromOrigin !== undefined
-      ? ['origin', args.originText, fromOrigin]
+      ? ['origin', args.originText.text, fromOrigin]
       : [
           'orca-format',
           roleFileText(role),
@@ -189,7 +198,9 @@ export function buildRoleProposalBundle(args: {
       roleFilePath,
       evidence: proposal.evidence,
       proposedFile: after,
-      base
+      base,
+      baseVersion:
+        base === 'origin' && args.originText ? args.originText.version : args.origin.version
     })
   }
 }

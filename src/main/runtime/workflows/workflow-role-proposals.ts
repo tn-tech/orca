@@ -14,6 +14,7 @@ import type { WorkflowFilesystem } from './workflow-file-store-filesystem'
 import { assertValidRoleName } from './workflow-role-import'
 import { acceptedRole, roleChangedSinceRun } from './workflow-role-proposal-apply'
 import { buildRoleProposalBundle } from './workflow-role-proposal-bundle'
+import type { OriginRoleText } from './workflow-role-origin-text'
 import { WorkflowRunRecorder, type WorkflowRunChangeNotifier } from './workflow-run-recorder'
 
 type RoleProposalPorts = { db: OrchestrationDb; notifier: WorkflowRunChangeNotifier }
@@ -39,7 +40,7 @@ export type RoleProposalExportPorts = RoleProposalPorts & {
     run: RunSnapshot,
     roleId: string,
     origin: NonNullable<Role['origin']>
-  ): Promise<string | undefined>
+  ): Promise<OriginRoleText | undefined>
 }
 
 export type RoleProposalAction = { runId: string; proposalId: string; actor: string }
