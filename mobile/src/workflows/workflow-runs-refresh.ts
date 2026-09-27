@@ -8,7 +8,8 @@ const WORKFLOW_ATTENTION_SOURCE = 'workflow-attention'
 type WorkflowRunsRefreshArgs = {
   client: Pick<RpcClient, 'subscribe'>
   hostId: string
-  refetch: () => void
+  /** A run id narrows the refetch to that run; without one, reload the whole list. */
+  refetch: (runId: string | undefined) => void
 }
 
 function streamMessageType(payload: unknown): unknown {
@@ -24,9 +25,9 @@ export function startWorkflowRunsRefresh({
 }: WorkflowRunsRefreshArgs): () => void {
   let stopped = false
   let streamReady = false
-  const cue = (): void => {
+  const cue = (runId?: string): void => {
     if (!stopped) {
-      refetch()
+      refetch(runId)
     }
   }
 
@@ -47,8 +48,9 @@ export function startWorkflowRunsRefresh({
         streamReady = false
         return
       }
-      if (admitWorkflowRunChangedEvent(payload)) {
-        cue()
+      const changed = admitWorkflowRunChangedEvent(payload)
+      if (changed) {
+        cue(changed.runId)
       }
     }
   )
@@ -71,27 +73,42 @@ export function startWorkflowRunsRefresh({
   }
 }
 
-/** One load at a time; cues that land mid-load fold into a single follow-up load. */
-export function createCoalescedRefetch(load: () => Promise<void>): () => Promise<void> {
-  let inFlight: Promise<void> | null = null
-  let queued = false
-  const run = async (): Promise<void> => {
+/** One pass at a time. Cues landing mid-pass fold into the next: named runs are re-read alone,
+ *  and any cue without a run id widens the next pass to a full reload. */
+export function createWorkflowRunsRefetcher({
+  loadAll,
+  loadRuns
+}: {
+  loadAll: () => Promise<void>
+  loadRuns: (runIds: readonly string[]) => Promise<void>
+}): (runId?: string) => Promise<void> {
+  let reloadAll = false
+  const pendingRunIds = new Set<string>()
+  let draining: Promise<void> | null = null
+  const drain = async (): Promise<void> => {
     try {
-      await load()
-    } finally {
-      inFlight = null
-      if (queued) {
-        queued = false
-        inFlight = run()
+      while (reloadAll || pendingRunIds.size > 0) {
+        if (reloadAll) {
+          reloadAll = false
+          pendingRunIds.clear()
+          await loadAll()
+        } else {
+          const runIds = [...pendingRunIds]
+          pendingRunIds.clear()
+          await loadRuns(runIds)
+        }
       }
+    } finally {
+      draining = null
     }
   }
-  return () => {
-    if (inFlight) {
-      queued = true
-      return inFlight
+  return (runId) => {
+    if (runId === undefined) {
+      reloadAll = true
+    } else {
+      pendingRunIds.add(runId)
     }
-    inFlight = run()
-    return inFlight
+    draining ??= drain()
+    return draining
   }
 }

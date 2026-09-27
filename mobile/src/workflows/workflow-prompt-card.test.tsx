@@ -58,10 +58,13 @@ afterEach(() => {
 
 function render(
   subject: MobileWorkflowQuestion,
-  onAnswer: (answer: WorkflowQuestionAnswer) => Promise<WorkflowAnswerOutcome>
+  onAnswer: (answer: WorkflowQuestionAnswer) => Promise<WorkflowAnswerOutcome>,
+  expiredReason?: string
 ): ReactTestRenderer {
   act(() => {
-    renderer = create(createElement(WorkflowPromptCard, { question: subject, onAnswer }))
+    renderer = create(
+      createElement(WorkflowPromptCard, { question: subject, onAnswer, expiredReason })
+    )
   })
   if (!renderer) {
     throw new Error('renderer did not mount')
@@ -198,10 +201,17 @@ describe('WorkflowPromptCard', () => {
     expect(text(root)).toContain('Default applied after timeout')
   })
 
-  it('shows an unanswered expired question as closed', () => {
+  it('shows a question that expired on its deadline as timed out', () => {
     const root = render({ ...agentQuestion, state: 'expired' }, vi.fn())
-    expect(text(root)).toContain('Closed with no answer.')
+    expect(text(root)).toContain('Timed out with no answer.')
+    expect(text(root)).not.toContain('Closed with no answer.')
     expect(buttons(root)).toHaveLength(0)
+  })
+
+  it('shows a question closed for another reason as closed, not timed out', () => {
+    const root = render({ ...agentQuestion, state: 'expired' }, vi.fn(), 'run_ended')
+    expect(text(root)).toContain('Closed with no answer.')
+    expect(text(root)).not.toContain('Timed out')
   })
 
   it('shows a question kind this app does not know as its prompt only', () => {

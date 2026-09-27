@@ -76,8 +76,23 @@ export function isAnswerableWorkflowQuestion(question: MobileWorkflowQuestion): 
   return question.state === 'pending' || question.state === 'escalated'
 }
 
+const workflowRunEventSchema = z.object({
+  id: z.string().min(1),
+  runId: z.string(),
+  attemptId: optionalText,
+  kind: z.string(),
+  payloadJson: JsonValueSchema.catch(null),
+  createdAt: z.string()
+})
+
+export type MobileWorkflowRunEvent = z.output<typeof workflowRunEventSchema>
+
 export const workflowRunShowSchema = workflowRunSummarySchema.extend({
-  questions: salvagingArray(workflowQuestionSchema)
+  questions: salvagingArray(workflowQuestionSchema),
+  // Why optional: only the expiry wording reads it, and that degrades to "Closed" without it.
+  events: salvagingArray(workflowRunEventSchema)
+    .optional()
+    .transform((events) => events ?? [])
 })
 
 export type MobileWorkflowRunSnapshot = z.output<typeof workflowRunShowSchema>

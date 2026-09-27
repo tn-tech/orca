@@ -1,12 +1,12 @@
 import { Fragment } from 'react'
 import { Text, View } from 'react-native'
 import type { WorkflowRunState } from '../../../src/shared/workflows/workflow-node-states'
+import { questionExpiryReason } from '../../../src/shared/workflows/workflow-question-expiry-reason'
 import { colors } from '../theme/mobile-theme'
 import { WorkflowPromptCard } from './WorkflowPromptCard'
 import {
   isAnswerableWorkflowQuestion,
-  type MobileWorkflowQuestion,
-  type MobileWorkflowRunSummary
+  type MobileWorkflowQuestion
 } from './workflow-run-reply-schema'
 import type {
   MobileWorkflowRunEntry,
@@ -23,6 +23,9 @@ export type WorkflowRunListProps = {
   ) => Promise<WorkflowAnswerOutcome>
 }
 
+/** Enough settled answers to show what just happened on a phone without burying the list. */
+const RECENT_SETTLED_LIMIT = 3
+
 const RUN_STATE_LABELS: Record<WorkflowRunState, { label: string; color: string }> = {
   queued: { label: 'Queued', color: colors.textSecondary },
   running: { label: 'Running', color: colors.accentBlue },
@@ -33,11 +36,20 @@ const RUN_STATE_LABELS: Record<WorkflowRunState, { label: string; color: string 
   cancelled: { label: 'Cancelled', color: colors.textMuted }
 }
 
-function RunRow({ run }: { run: MobileWorkflowRunSummary }) {
+function RunRow({
+  entry: { run, questions, events },
+  onAnswer
+}: {
+  entry: MobileWorkflowRunEntry
+  onAnswer: WorkflowRunListProps['onAnswer']
+}) {
   const state = run.state
     ? RUN_STATE_LABELS[run.state]
     : { label: 'Unknown', color: colors.textMuted }
   const when = run.startedAt ?? run.createdAt
+  const settled = questions
+    .filter((question) => !isAnswerableWorkflowQuestion(question))
+    .slice(-RECENT_SETTLED_LIMIT)
   return (
     <View style={styles.runRow}>
       <View style={styles.runRowHeader}>
@@ -52,11 +64,22 @@ function RunRow({ run }: { run: MobileWorkflowRunSummary }) {
         </Text>
       ) : null}
       {when ? <Text style={styles.meta}>{new Date(when).toLocaleString()}</Text> : null}
+      {settled.map((question) => (
+        <WorkflowPromptCard
+          key={question.id}
+          question={question}
+          onAnswer={(answer) => onAnswer(question, answer)}
+          expiredReason={
+            question.state === 'expired' ? questionExpiryReason(events, question.id) : undefined
+          }
+        />
+      ))}
     </View>
   )
 }
 
-/** Open workflow prompts across runs (answerable here), then every recent run and its state. */
+/** Open workflow prompts across runs (answerable here), then every recent run with its state and
+ *  its latest settled questions (FR-040: who answered, what, or why it closed unanswered). */
 export function WorkflowRunList({ runs, onAnswer }: WorkflowRunListProps) {
   const waiting = runs.flatMap(({ run, questions }) =>
     questions.filter(isAnswerableWorkflowQuestion).map((question) => ({ run, question }))
@@ -85,10 +108,10 @@ export function WorkflowRunList({ runs, onAnswer }: WorkflowRunListProps) {
           <Text style={styles.meta}>No workflow runs yet. Start one from the desktop app.</Text>
         ) : (
           <View style={styles.runCard}>
-            {runs.map(({ run }, index) => (
-              <Fragment key={run.id}>
+            {runs.map((entry, index) => (
+              <Fragment key={entry.run.id}>
                 {index > 0 ? <View style={styles.separator} /> : null}
-                <RunRow run={run} />
+                <RunRow entry={entry} onAnswer={onAnswer} />
               </Fragment>
             ))}
           </View>

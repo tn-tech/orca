@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { RunEventView } from '../../../../../shared/workflows/workflow-run-types'
-import { questionExpiryReason } from './question-expiry-reason'
+import type { RunEventView } from './workflow-run-types'
+import { questionExpiryReason } from './workflow-question-expiry-reason'
 
 function expiredEvent(patch: Partial<RunEventView> = {}): RunEventView {
   return {

@@ -1,4 +1,4 @@
-import type { RunEventView } from '../../../../../shared/workflows/workflow-run-types'
+import type { RunEventView } from './workflow-run-types'
 
 const EXPIRY_EVENT_KINDS = new Set(['approval_expired', 'agent_question_expired'])
 

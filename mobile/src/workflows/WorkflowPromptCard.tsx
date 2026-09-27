@@ -19,6 +19,8 @@ import { workflowStyles as styles } from './workflow-run-styles'
 export type WorkflowPromptCardProps = {
   question: MobileWorkflowQuestion
   onAnswer: (answer: WorkflowQuestionAnswer) => Promise<WorkflowAnswerOutcome>
+  /** `questionExpiryReason` for an expired question: any reason reads "Closed", none "Timed out". */
+  expiredReason?: string
 }
 
 type Submission = {
@@ -218,7 +220,13 @@ function answerLabel(question: RunQuestionView): string | undefined {
 }
 
 /** An answered or expired question: the answer and who gave it, or that it closed unanswered. */
-function SettledSummary({ question }: { question: RunQuestionView }) {
+function SettledSummary({
+  question,
+  expiredReason
+}: {
+  question: RunQuestionView
+  expiredReason: string | undefined
+}) {
   const answer = answerLabel(question)
   const when = question.answeredAt ? ` at ${new Date(question.answeredAt).toLocaleString()}` : ''
   return (
@@ -227,7 +235,9 @@ function SettledSummary({ question }: { question: RunQuestionView }) {
       {answer ? (
         <Text style={styles.prompt}>{answer}</Text>
       ) : (
-        <Text style={styles.meta}>Closed with no answer.</Text>
+        <Text style={styles.meta}>
+          {expiredReason ? 'Closed with no answer.' : 'Timed out with no answer.'}
+        </Text>
       )}
       {question.answeredBy === APPROVAL_DEFAULT_ANSWERER ? (
         <Text style={styles.meta}>{`Default applied after timeout${when}`}</Text>
@@ -240,12 +250,12 @@ function SettledSummary({ question }: { question: RunQuestionView }) {
 
 /** One workflow question, switched by kind: approvals and agent questions are answerable here,
  *  trust and unknown kinds are shown read-only, settled questions show their outcome. */
-export function WorkflowPromptCard({ question, onAnswer }: WorkflowPromptCardProps) {
+export function WorkflowPromptCard({ question, onAnswer, expiredReason }: WorkflowPromptCardProps) {
   if (!isKnownWorkflowQuestion(question)) {
     return <PromptOnly prompt={question.prompt} />
   }
   if (!isAnswerableWorkflowQuestion(question)) {
-    return <SettledSummary question={question} />
+    return <SettledSummary question={question} expiredReason={expiredReason} />
   }
   switch (question.kind) {
     case 'approval':

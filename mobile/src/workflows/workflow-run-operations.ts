@@ -9,6 +9,7 @@ import {
   workflowRunListSchema,
   workflowRunShowSchema,
   type MobileWorkflowQuestion,
+  type MobileWorkflowRunEvent,
   type MobileWorkflowRunSummary
 } from './workflow-run-reply-schema'
 
@@ -50,11 +51,18 @@ export type MobileWorkflowRunEntry = {
   run: MobileWorkflowRunSummary
   /** Fetched only for runs that can still ask something; empty for finished runs. */
   questions: MobileWorkflowQuestion[]
+  /** The run's events tail, for telling a deadline timeout from a closure. */
+  events: MobileWorkflowRunEvent[]
 }
 
 export type WorkflowRunsLoad =
   | { kind: 'unsupported' }
   | { kind: 'loaded'; runs: MobileWorkflowRunEntry[] }
+
+export type WorkflowRunLoad =
+  | { kind: 'unsupported' }
+  | { kind: 'missing' }
+  | { kind: 'loaded'; entry: MobileWorkflowRunEntry }
 
 export type WorkflowQuestionAnswer = { optionId: string } | { answer: string }
 
@@ -73,16 +81,24 @@ function refusalCode(reply: RpcResponse): string | undefined {
   return reply.ok ? undefined : reply.error.code
 }
 
-async function loadRunQuestions(
+/** One run's snapshot. Throws the host's message on a refusal other than "gone" or "not
+ *  available", so a failed read never passes for a run with nothing to ask. */
+export async function loadWorkflowRun(
   client: RpcOperationSender,
   runId: string
-): Promise<MobileWorkflowQuestion[]> {
+): Promise<WorkflowRunLoad> {
   const reply = await workflowRunShowRead.request(client, { runId })
-  // Why: a run removed between list and show just has nothing to ask; keep the rest of the list.
-  if (!reply.ok) {
-    return []
+  if (isWorkflowRpcUnavailable(reply)) {
+    return { kind: 'unsupported' }
   }
-  return workflowRunShowRead.interpret(reply).questions
+  if (refusalCode(reply) === 'workflow_not_found') {
+    return { kind: 'missing' }
+  }
+  const { questions, events, ...run } = interpretOrThrowRefusalMessage(
+    () => workflowRunShowRead.interpret(reply),
+    'Unable to load the workflow run'
+  )
+  return { kind: 'loaded', entry: { run, questions, events } }
 }
 
 /** Recent runs with the questions of every run still in flight. Throws the host's message on a
@@ -96,12 +112,22 @@ export async function loadWorkflowRuns(client: RpcOperationSender): Promise<Work
     () => workflowRunListRead.interpret(listReply),
     'Unable to load workflow runs'
   )
-  const entries = await Promise.all(
-    runs.map(async (run): Promise<MobileWorkflowRunEntry> => {
+  const loads = await Promise.all(
+    runs.map(async (run): Promise<WorkflowRunLoad> => {
       const active = run.state === undefined || !TERMINAL_RUN_STATES.has(run.state)
-      return { run, questions: active ? await loadRunQuestions(client, run.id) : [] }
+      return active
+        ? loadWorkflowRun(client, run.id)
+        : { kind: 'loaded', entry: { run, questions: [], events: [] } }
     })
   )
+  if (loads.some((load) => load.kind === 'unsupported')) {
+    return { kind: 'unsupported' }
+  }
+  const entries = runs.map((run, index): MobileWorkflowRunEntry => {
+    const load = loads[index]
+    // Why keep the list's summary: a run removed between list and show just has nothing to ask.
+    return load?.kind === 'loaded' ? load.entry : { run, questions: [], events: [] }
+  })
   return { kind: 'loaded', runs: entries }
 }
 

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { RpcResponse } from '../transport/types'
-import { answerWorkflowQuestion, loadWorkflowRuns } from './workflow-run-operations'
+import {
+  answerWorkflowQuestion,
+  loadWorkflowRun,
+  loadWorkflowRuns
+} from './workflow-run-operations'
 
 type Sent = { method: string; params: unknown }
 
@@ -99,6 +103,45 @@ describe('loadWorkflowRuns', () => {
     })
   })
 
+  it('carries the run events tail so a client can tell a timeout from a closure', async () => {
+    const expired = {
+      id: 'e-1',
+      runId: 'run-1',
+      attemptId: 'att-1',
+      kind: 'approval_expired',
+      payloadJson: { questionId: 'q-1', reason: 'run_ended' },
+      createdAt: '2026-09-27T10:00:00.000Z'
+    }
+    const { client } = fakeClient((method) =>
+      method === 'workflow.run.list'
+        ? ok({ runs: [summary('run-1', 'running')] })
+        : ok({ ...summary('run-1', 'running'), questions: [], events: [expired] })
+    )
+    await expect(loadWorkflowRuns(client)).resolves.toMatchObject({
+      kind: 'loaded',
+      runs: [{ events: [{ id: 'e-1', kind: 'approval_expired' }] }]
+    })
+  })
+
+  it.each(['forbidden', 'method_not_found'])(
+    'treats a %s show refusal as a host without workflows',
+    async (code) => {
+      const { client } = fakeClient((method) =>
+        method === 'workflow.run.list' ? ok({ runs: [summary('run-1', 'waiting')] }) : refused(code)
+      )
+      await expect(loadWorkflowRuns(client)).resolves.toEqual({ kind: 'unsupported' })
+    }
+  )
+
+  it("throws any other show refusal rather than hiding the run's prompts", async () => {
+    const { client } = fakeClient((method) =>
+      method === 'workflow.run.list'
+        ? ok({ runs: [summary('run-1', 'waiting')] })
+        : refused('internal_error', 'db locked')
+    )
+    await expect(loadWorkflowRuns(client)).rejects.toThrow('db locked')
+  })
+
   it('keeps runs and questions whose state or kind a newer host added, as unknown', async () => {
     const { client } = fakeClient((method) =>
       method === 'workflow.run.list'
@@ -113,6 +156,34 @@ describe('loadWorkflowRuns', () => {
       kind: 'loaded',
       runs: [{ run: { state: undefined }, questions: [{ kind: undefined, state: undefined }] }]
     })
+  })
+})
+
+describe('loadWorkflowRun', () => {
+  it('reads one run by id', async () => {
+    const { client, sent } = fakeClient(() =>
+      ok({ ...summary('run-1', 'waiting'), questions: [pendingApproval], events: [] })
+    )
+    await expect(loadWorkflowRun(client, 'run-1')).resolves.toMatchObject({
+      kind: 'loaded',
+      entry: { run: { id: 'run-1', state: 'waiting' }, questions: [{ id: 'q-1' }], events: [] }
+    })
+    expect(sent).toEqual([{ method: 'workflow.run.show', params: { runId: 'run-1' } }])
+  })
+
+  it('reports a run that no longer exists as missing', async () => {
+    const { client } = fakeClient(() => refused('workflow_not_found'))
+    await expect(loadWorkflowRun(client, 'run-1')).resolves.toEqual({ kind: 'missing' })
+  })
+
+  it.each(['forbidden', 'method_not_found'])('reports %s as unsupported', async (code) => {
+    const { client } = fakeClient(() => refused(code))
+    await expect(loadWorkflowRun(client, 'run-1')).resolves.toEqual({ kind: 'unsupported' })
+  })
+
+  it("throws any other refusal's message", async () => {
+    const { client } = fakeClient(() => refused('internal_error', 'db locked'))
+    await expect(loadWorkflowRun(client, 'run-1')).rejects.toThrow('db locked')
   })
 })
 

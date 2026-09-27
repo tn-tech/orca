@@ -23,7 +23,7 @@ import AttemptStateBadge, { attemptReasonClassName, attemptReasonLabel } from '.
 import FollowUpComposer from './FollowUpComposer'
 import JoinBranchOutcomes, { readJoinBranches } from './JoinBranchOutcomes'
 import QuestionCard from './QuestionCard'
-import { questionExpiryReason } from './question-expiry-reason'
+import { questionExpiryReason } from '../../../../../shared/workflows/workflow-question-expiry-reason'
 import RouterChoiceSummary, { readRouterChoice } from './RouterChoiceSummary'
 import {
   attemptsByIteration,

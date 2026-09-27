@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { publishDesktopNotification } from '../notifications/desktop-notification-listeners'
-import { createCoalescedRefetch, startWorkflowRunsRefresh } from './workflow-runs-refresh'
+import { createWorkflowRunsRefetcher, startWorkflowRunsRefresh } from './workflow-runs-refresh'
 
 const appState = vi.hoisted(() => {
   const listeners: ((state: string) => void)[] = []
@@ -62,7 +62,7 @@ describe('startWorkflowRunsRefresh', () => {
     expect(refetch).not.toHaveBeenCalled()
 
     emit({ type: 'workflowRunChanged', runId: 'run-1', reason: 'question' })
-    expect(refetch).toHaveBeenCalledTimes(1)
+    expect(refetch.mock.calls).toEqual([['run-1']])
   })
 
   it('refetches after the stream replays on reconnect, since events are not queued offline', () => {
@@ -85,7 +85,7 @@ describe('startWorkflowRunsRefresh', () => {
     expect(refetch).not.toHaveBeenCalled()
 
     publishDesktopNotification({ hostId: 'host-a', source: 'workflow-attention' })
-    expect(refetch).toHaveBeenCalledTimes(1)
+    expect(refetch.mock.calls).toEqual([[undefined]])
   })
 
   it('refetches when the app returns to the foreground', () => {
@@ -108,26 +108,57 @@ describe('startWorkflowRunsRefresh', () => {
   })
 })
 
-describe('createCoalescedRefetch', () => {
-  it('runs one load at a time and folds requests made meanwhile into one more', async () => {
-    const releases: (() => void)[] = []
-    const load = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          releases.push(resolve)
-        })
-    )
-    const refetch = createCoalescedRefetch(load)
+function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
 
-    void refetch()
-    void refetch()
-    void refetch()
-    expect(load).toHaveBeenCalledTimes(1)
+describe('createWorkflowRunsRefetcher', () => {
+  it('refreshes a named run alone, and folds cues made meanwhile into one more pass', async () => {
+    const gates: ReturnType<typeof deferred>[] = []
+    const loadAll = vi.fn(async () => {})
+    const loadRuns = vi.fn((_runIds: readonly string[]) => {
+      const gate = deferred()
+      gates.push(gate)
+      return gate.promise
+    })
+    const refetch = createWorkflowRunsRefetcher({ loadAll, loadRuns })
 
-    releases[0]?.()
-    await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2))
-    releases[1]?.()
-    await Promise.resolve()
-    expect(load).toHaveBeenCalledTimes(2)
+    void refetch('run-1')
+    void refetch('run-2')
+    void refetch('run-3')
+    expect(loadRuns.mock.calls).toEqual([[['run-1']]])
+
+    gates[0]?.resolve()
+    await vi.waitFor(() => expect(loadRuns).toHaveBeenCalledTimes(2))
+    expect(loadRuns.mock.calls[1]).toEqual([['run-2', 'run-3']])
+    gates[1]?.resolve()
+    await vi.waitFor(() => expect(loadAll).not.toHaveBeenCalled())
+  })
+
+  it('lets a cue without a run id widen pending work to a full reload', async () => {
+    const gate = deferred()
+    const loadAll = vi.fn(async () => {})
+    const loadRuns = vi.fn(() => gate.promise)
+    const refetch = createWorkflowRunsRefetcher({ loadAll, loadRuns })
+
+    void refetch('run-1')
+    void refetch('run-2')
+    const settled = refetch()
+    gate.resolve()
+    await settled
+    await vi.waitFor(() => expect(loadAll).toHaveBeenCalledTimes(1))
+    expect(loadRuns).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps going after a failed pass', async () => {
+    const loadAll = vi.fn().mockRejectedValueOnce(new Error('boom')).mockResolvedValue(undefined)
+    const refetch = createWorkflowRunsRefetcher({ loadAll, loadRuns: vi.fn(async () => {}) })
+    await expect(refetch()).rejects.toThrow('boom')
+    await refetch()
+    expect(loadAll).toHaveBeenCalledTimes(2)
   })
 })
