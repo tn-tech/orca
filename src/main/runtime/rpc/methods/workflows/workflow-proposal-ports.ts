@@ -7,6 +7,9 @@ import type {
   RoleProposalAcceptPorts,
   RoleProposalExportPorts
 } from '../../../workflows/workflow-role-proposals'
+import { getRoleFetchHost } from '../../../workflows/workflow-role-fetch-host'
+import { fetchOriginRoleText } from '../../../workflows/workflow-role-origin-text'
+import { getRepoWorkflowSourceAllowlist } from '../../../workflows/workflow-source-allowlist'
 import { saveWorkflowDefinition } from './workflow-definition-save'
 import { readNamedWorkflow } from './workflow-source-resolution'
 
@@ -35,6 +38,14 @@ export function roleProposalPorts(
     resolveWorkspace: async (run) =>
       resolveRunWorkspaceAccess(run, await runRepo(runtime, run), (selector) =>
         runtime.showManagedWorktree(selector)
-      )
+      ),
+    fetchOriginRoleText: async (run, roleId, origin) => {
+      const repo = await runRepo(runtime, run)
+      const allowlist = await getRepoWorkflowSourceAllowlist(repo).catch(() => [])
+      return fetchOriginRoleText(roleId, origin, {
+        getHost: () => getRoleFetchHost(repo),
+        allowlist
+      })
+    }
   }
 }

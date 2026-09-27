@@ -173,6 +173,7 @@ const STRUCTURED_RUNTIME_PASSTHROUGH_CODES: ReadonlySet<string> = new Set([
   'workflow_proposal_not_pending',
   'workflow_role_not_found',
   'workflow_role_not_imported',
+  'workflow_role_name_invalid',
   ARTIFACT_SHARING_DISABLED_CODE,
   AGENT_SKILL_SHARING_DISABLED_CODE,
   AGENT_SKILL_NOT_SHAREABLE_CODE,

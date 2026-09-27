@@ -60,6 +60,22 @@ describe('role proposal bundle', () => {
     expect(applied).toContain('name: lint')
   })
 
+  it('fences the proposed file with more backticks than any run inside it', () => {
+    const { readme } = buildRoleProposalBundle({
+      workflowName: 'wf',
+      runId: 'wfr_1',
+      role,
+      origin: role.origin ?? { source: '', version: '', importedAt: '', localModified: false },
+      proposal: {
+        roleId: 'developer',
+        change: { systemPrompt: 'Quote code in ```` fences.' },
+        evidence: 'Seen in the run.'
+      }
+    })
+    const fences = readme.split('\n').filter((line) => /^`{3,}/.test(line))
+    expect(fences).toEqual(['`````yaml', '`````'])
+  })
+
   it('writes context lines around a single changed line', () => {
     const diff = unifiedFileDiff('f.txt', 'a\nb\nc\nd\ne\nf\ng\nh\n', 'a\nb\nc\nd\nX\nf\ng\nh\n')
     expect(diff.split('\n').slice(3)).toEqual([

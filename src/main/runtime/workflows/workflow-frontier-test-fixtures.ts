@@ -39,6 +39,7 @@ export function attempt(
 /**
  * A Loop nested in another Loop's body. The engine never runs one, so a branch through it never
  * settles — the stand-in for "a branch nothing can settle".
+ * Relies on these tests bypassing graph validation, which may reject a nested Loop.
  */
 export function nestedLoop(id: string): Node {
   return {

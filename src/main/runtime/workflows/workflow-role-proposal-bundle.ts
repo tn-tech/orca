@@ -1,8 +1,11 @@
 // The change bundle a role proposal exports toward its origin repository (US7 AS3): a patch to the
 // origin's `roles/<roleId>.role.yaml` plus a README describing the contribution flow.
-import { stringify } from 'yaml'
+import { isMap, parseDocument, stringify } from 'yaml'
 import type { Role } from '../../../shared/workflows/workflow-definition-types'
-import type { RoleProposalView } from '../../../shared/workflows/workflow-run-types'
+import type {
+  RoleProposalChange,
+  RoleProposalView
+} from '../../../shared/workflows/workflow-run-types'
 import { ROLE_FILE_DIRECTORY, ROLE_FILE_SUFFIX } from './workflow-role-import'
 import { roleContentOf } from './workflow-role-import-merge'
 import { applyRoleProposalChange } from './workflow-role-proposal-apply'
@@ -62,6 +65,48 @@ export function unifiedFileDiff(path: string, before: string, after: string): st
   ].join('\n')
 }
 
+/** A fence longer than any backtick run in `text`, so the text cannot close it early. */
+function codeFence(text: string): string {
+  const longestRun = Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length))
+  return '`'.repeat(Math.max(3, longestRun + 1))
+}
+
+/** Replaces only the changed keys, keeping the file's comments, key order and scalar styles. */
+function applyChangeToRoleText(text: string, change: RoleProposalChange): string | undefined {
+  const doc = parseDocument(text)
+  if (doc.errors.length > 0 || !isMap(doc.contents)) {
+    return undefined
+  }
+  if (change.systemPrompt !== undefined) {
+    doc.set('systemPrompt', change.systemPrompt)
+  }
+  if (change.skills !== undefined) {
+    doc.set('skills', doc.createNode(change.skills))
+  }
+  return doc.toString()
+}
+
+/** `origin`: diffed against the origin's own file; `orca-format`: against Orca's serialization. */
+type PatchBase = 'origin' | 'orca-format'
+
+function baseLines(base: PatchBase, origin: RoleOrigin, roleFilePath: string): string[] {
+  if (base === 'origin') {
+    return [`The patch is against \`${roleFilePath}\` as it is at ${origin.version}.`]
+  }
+  return [
+    'The origin repository could not be read, so this patch assumes the role file is formatted ' +
+      `exactly as Orca writes it. If \`git apply\` refuses it, edit \`${roleFilePath}\` to ` +
+      'match the proposed role file below.',
+    ...(origin.localModified
+      ? [
+          '',
+          "This workflow's copy of the role was changed locally after it was imported, so the " +
+            `patch is against that copy and may not apply to ${origin.version} as is.`
+        ]
+      : [])
+  ]
+}
+
 function readmeText(args: {
   workflowName: string
   runId: string
@@ -71,20 +116,17 @@ function readmeText(args: {
   roleFilePath: string
   evidence: string
   proposedFile: string
+  base: PatchBase
 }): string {
   const { origin, roleId } = args
+  const fence = codeFence(args.proposedFile)
   return [
     `# Proposed change to role "${roleId}"`,
     '',
     `A Reflection node in workflow "${args.workflowName}" (run ${args.runId}) proposed this ` +
       `change to the role "${args.role.name}", imported from ${origin.source} at ${origin.version}.`,
-    ...(origin.localModified
-      ? [
-          '',
-          "This workflow's copy of the role was changed locally after it was imported, so the " +
-            `patch is against that copy and may not apply to ${origin.version} as is.`
-        ]
-      : []),
+    '',
+    ...baseLines(args.base, origin, args.roleFilePath),
     '',
     '## Evidence',
     '',
@@ -103,25 +145,39 @@ function readmeText(args: {
     '',
     '## Proposed role file',
     '',
-    '```yaml',
+    `${fence}yaml`,
     args.proposedFile.trimEnd(),
-    '```',
+    fence,
     ''
   ].join('\n')
 }
 
-/** `role` is the imported role as the run saw it; the patch applies the proposal on top of it. */
+/**
+ * `originText` is the role file as the origin holds it (workflow-role-origin-text.ts); without
+ * it, or when it does not parse, the patch is against Orca's serialization of `role`.
+ */
 export function buildRoleProposalBundle(args: {
   workflowName: string
   runId: string
   role: Role
   origin: RoleOrigin
   proposal: Pick<RoleProposalView, 'roleId' | 'change' | 'evidence'>
+  originText?: string
 }): RoleProposalBundle {
   const { proposal, role } = args
   const roleFilePath = `${ROLE_FILE_DIRECTORY}/${proposal.roleId}${ROLE_FILE_SUFFIX}`
-  const before = roleFileText(role)
-  const after = roleFileText(applyRoleProposalChange(role, proposal.change))
+  const fromOrigin =
+    args.originText === undefined
+      ? undefined
+      : applyChangeToRoleText(args.originText, proposal.change)
+  const [base, before, after]: [PatchBase, string, string] =
+    args.originText !== undefined && fromOrigin !== undefined
+      ? ['origin', args.originText, fromOrigin]
+      : [
+          'orca-format',
+          roleFileText(role),
+          roleFileText(applyRoleProposalChange(role, proposal.change))
+        ]
   return {
     patch: unifiedFileDiff(roleFilePath, before, after),
     readme: readmeText({
@@ -132,7 +188,8 @@ export function buildRoleProposalBundle(args: {
       origin: args.origin,
       roleFilePath,
       evidence: proposal.evidence,
-      proposedFile: after
+      proposedFile: after,
+      base
     })
   }
 }

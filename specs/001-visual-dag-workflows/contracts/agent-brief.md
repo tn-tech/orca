@@ -40,7 +40,10 @@ Write your result to .orca/workflow-runs/<runId>/<attemptId>/result.json and pas
 - Router nodes: `{ "choice": "<one of choices>", "reason": "..." }`.
 - Reflection nodes: `{ "proposals": [{ "roleId", "change": { "systemPrompt"?: string, "skills"?: SkillReference[] }, "evidence": string }] }`.
   Each set `change` field replaces the role's value whole; a proposal for a role the workflow
-  lacks, or one that sets neither field, fails the node `result_invalid`.
+  lacks, or one that sets neither field, fails the node `result_invalid`, as does exceeding a cap:
+  20 proposals, `roleId` 200 chars, `systemPrompt` 32,000 chars, `evidence` 4,000 chars, 50
+  skills, 500 chars per skill field. Fields equal to the role's current value are dropped. The
+  run record lists each node's latest 3 attempts.
 - Optional top-level `artifacts: string[]` adds declared artifact paths beyond the node's list.
 
 ## Engine validation on `worker_done`

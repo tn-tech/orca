@@ -1,6 +1,6 @@
 // Acting on a Reflection's role proposals (US7 AS2/AS3, FR-034): accept one into the workflow file
 // through the shared save gate, or export it as a change bundle toward the role's origin repository.
-import type { Workflow } from '../../../shared/workflows/workflow-definition-types'
+import type { Role, Workflow } from '../../../shared/workflows/workflow-definition-types'
 import type { WorkflowProblem } from '../../../shared/workflows/workflow-problem'
 import type {
   RoleProposalState,
@@ -34,6 +34,12 @@ export type RoleProposalAcceptPorts = RoleProposalPorts & {
 export type RoleProposalExportPorts = RoleProposalPorts & {
   /** The run's workspace on its execution host; no local fallback for a remote one. */
   resolveWorkspace(run: RunSnapshot): Promise<{ workspaceRoot: string; fs: WorkflowFilesystem }>
+  /** The role file's text in its origin at the imported version; `undefined` when unreadable. */
+  fetchOriginRoleText(
+    run: RunSnapshot,
+    roleId: string,
+    origin: NonNullable<Role['origin']>
+  ): Promise<string | undefined>
 }
 
 export type RoleProposalAction = { runId: string; proposalId: string; actor: string }
@@ -136,16 +142,19 @@ export async function exportRoleProposal(
   }
   // The role id names the exported files, and an imported role's id is its origin role name.
   assertValidRoleName(proposal.roleId)
+  // Why first: an unreachable run host refuses before anything is cloned for the patch base.
+  const { workspaceRoot, fs } = await ports.resolveWorkspace(run)
+  const originText = await ports.fetchOriginRoleText(run, proposal.roleId, role.origin)
   const bundle = buildRoleProposalBundle({
     workflowName: run.workflowName,
     runId: run.id,
     role,
     origin: role.origin,
-    proposal
+    proposal,
+    ...(originText === undefined ? {} : { originText })
   })
   const dir = `.orca/workflow-runs/${run.id}/proposals`
   const exportPath = `${dir}/${proposal.roleId}.patch`
-  const { workspaceRoot, fs } = await ports.resolveWorkspace(run)
   await fs.createDir(joinWorktreeRelativePath(workspaceRoot, dir))
   await fs.writeFile(joinWorktreeRelativePath(workspaceRoot, exportPath), bundle.patch)
   await fs.writeFile(

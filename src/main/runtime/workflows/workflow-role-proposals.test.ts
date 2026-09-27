@@ -1,10 +1,14 @@
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Repo } from '../../../shared/repo-types'
 import type { Workflow } from '../../../shared/workflows/workflow-definition-types'
-import type { RoleProposalInput } from '../../../shared/workflows/workflow-role-proposal-schema'
+import {
+  ROLE_PROPOSAL_LIMITS,
+  type RoleProposalInput
+} from '../../../shared/workflows/workflow-role-proposal-schema'
 import type { RoleProposalView } from '../../../shared/workflows/workflow-run-types'
 import { OrcaRuntimeService } from '../orca-runtime'
 import { OrchestrationDb } from '../orchestration/db'
@@ -16,9 +20,13 @@ import { readWorkflow, writeWorkflow } from './workflow-file-store'
 import { joinDriver } from './workflow-run-controller-join-fixtures'
 import { createControllerHarness, RUN_WORKTREE_ID } from './workflow-run-controller-test-harness'
 import { WorkflowRunRecorder } from './workflow-run-recorder'
+import { recordReflectionProposals, REFLECTION_RESULT_CONTRACT } from './workflow-reflection'
+import { createResultSchemaValidator } from './workflow-result-schema'
+import { gitExecFileAsync } from '../../git/runner'
 import { applyImportedRole } from './workflow-role-import-merge'
 import {
   importedDeveloper,
+  originRole,
   reflectionWorkflow,
   ROLE_ORIGIN_SOURCE,
   writeProjectWorkflow
@@ -147,12 +155,131 @@ describe('Reflection nodes', () => {
     expect(d.attempt(run.id, 'reflect')?.failureReason).toBe('result_invalid')
   })
 
-  it('records a replayed report for the same attempt only once', () => {
+  it('records a replayed report for the same attempt only once, announcing it once', () => {
     const run = h.createRun(reflectionWorkflow())
     const first = h.db.recordWorkflowRoleProposals(run.id, 'wfa_1', PROPOSALS.slice(0, 1))
     const replay = h.db.recordWorkflowRoleProposals(run.id, 'wfa_1', PROPOSALS.slice(0, 1))
     expect(replay).toEqual(first)
     expect(h.db.listWorkflowRoleProposals(run.id)).toHaveLength(1)
+
+    const recorder = new WorkflowRunRecorder(h.db, h.runtime, run.id)
+    const roles = reflectionWorkflow().roles
+    for (let replays = 0; replays < 2; replays += 1) {
+      recordReflectionProposals(h.db, recorder, { id: 'wfa_2' }, { proposals: PROPOSALS }, roles)
+    }
+    const recorded = h.db
+      .listWorkflowEvents(run.id, 0)
+      .filter((event) => event.kind === 'role_proposals_recorded')
+    expect(recorded).toHaveLength(1)
+  })
+
+  it('stores nothing and announces nothing for no proposals or a change to the current value', async () => {
+    const run = h.createRun(reflectionWorkflow())
+    const finished = h.createController(run.id).run()
+    await d.report(run.id, 'implement', 'succeeded')
+    await d.report(run.id, 'reflect', 'succeeded', {
+      proposals: [
+        { roleId: 'developer', change: { systemPrompt: 'Implement it.' }, evidence: 'Fine.' },
+        { roleId: 'coach', change: { skills: [] }, evidence: 'Fine.' }
+      ]
+    })
+    await expect(finished).resolves.toBe('completed')
+    expect(h.db.listWorkflowRoleProposals(run.id)).toEqual([])
+    const kinds = h.db.listWorkflowEvents(run.id, 0).map((event) => event.kind)
+    expect(kinds).not.toContain('role_proposals_recorded')
+  })
+
+  it('keeps only the fields that differ from the role', async () => {
+    const run = h.createRun(reflectionWorkflow())
+    const recorder = new WorkflowRunRecorder(h.db, h.runtime, run.id)
+    const change = {
+      systemPrompt: 'Implement it.',
+      skills: [{ name: 'deck-review', source: { kind: 'plugin', plugin: 'consulting' } }]
+    }
+    recordReflectionProposals(
+      h.db,
+      recorder,
+      { id: 'wfa_1' },
+      { proposals: [{ roleId: 'developer', change, evidence: 'Needs a skill.' }] },
+      reflectionWorkflow().roles
+    )
+    expect(h.db.listWorkflowRoleProposals(run.id)).toEqual([
+      expect.objectContaining({
+        change: { skills: [expect.objectContaining({ name: 'deck-review' })] }
+      })
+    ])
+  })
+
+  const skill = { name: 'lint', source: { kind: 'plugin', plugin: 'tools' } }
+  const oversized: [string, unknown][] = [
+    [
+      'evidence',
+      [
+        {
+          roleId: 'developer',
+          change: { systemPrompt: 'x' },
+          evidence: 'e'.repeat(ROLE_PROPOSAL_LIMITS.evidenceChars + 1)
+        }
+      ]
+    ],
+    [
+      'systemPrompt',
+      [
+        {
+          roleId: 'developer',
+          change: { systemPrompt: 'p'.repeat(ROLE_PROPOSAL_LIMITS.systemPromptChars + 1) },
+          evidence: 'e'
+        }
+      ]
+    ],
+    [
+      'skills',
+      [
+        {
+          roleId: 'developer',
+          change: {
+            skills: Array.from({ length: ROLE_PROPOSAL_LIMITS.skills + 1 }, (_, i) => ({
+              ...skill,
+              name: `s${i}`
+            }))
+          },
+          evidence: 'e'
+        }
+      ]
+    ],
+    [
+      'skill name',
+      [
+        {
+          roleId: 'developer',
+          change: {
+            skills: [{ ...skill, name: 'n'.repeat(ROLE_PROPOSAL_LIMITS.skillFieldChars + 1) }]
+          },
+          evidence: 'e'
+        }
+      ]
+    ],
+    [
+      'proposal count',
+      Array.from({ length: ROLE_PROPOSAL_LIMITS.proposals + 1 }, (_, i) => ({
+        roleId: 'developer',
+        change: { systemPrompt: `p${i}` },
+        evidence: 'e'
+      }))
+    ]
+  ]
+
+  it.each(oversized)('fails a Reflection whose %s is over its cap', async (_label, proposals) => {
+    expect(createResultSchemaValidator(REFLECTION_RESULT_CONTRACT).validate({ proposals }).ok).toBe(
+      false
+    )
+    const run = h.createRun(reflectionWorkflow())
+    const finished = h.createController(run.id).run()
+    await d.report(run.id, 'implement', 'succeeded')
+    await d.report(run.id, 'reflect', 'succeeded', { proposals })
+    await expect(finished).resolves.toBe('failed')
+    expect(d.attempt(run.id, 'reflect')?.failureReason).toBe('result_invalid')
+    expect(h.db.listWorkflowRoleProposals(run.id)).toEqual([])
   })
 })
 
@@ -375,6 +502,89 @@ describe('workflow.proposal.accept / workflow.proposal.export', () => {
       ).toMatchObject({
         payloadJson: { proposalId: proposals[0].id, exportPath, exportedBy: 'device_phone_1' }
       })
+    })
+
+    const HAND_WRITTEN = [
+      '# Developer role, maintained by the platform team.',
+      'name: Developer',
+      "systemPrompt: 'Implement it.'",
+      'agent: codex # the default agent',
+      'skills:',
+      '  - name: lint # always lint',
+      '    source: { kind: plugin, plugin: tools }',
+      ''
+    ].join('\n')
+
+    /** An origin role repository holding `text` as its developer role; returns its file URL. */
+    async function originRepository(text: string): Promise<{ dir: string; source: string }> {
+      const dir = join(root, 'roles-origin')
+      await mkdir(join(dir, 'roles'), { recursive: true })
+      await writeFile(join(dir, 'roles', 'developer.role.yaml'), text)
+      const git = (args: string[]) => gitExecFileAsync(args, { cwd: dir })
+      await git(['init', '--quiet'])
+      await git(['add', '.'])
+      await git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'roles'])
+      return { dir, source: pathToFileURL(dir).href }
+    }
+
+    async function allowlist(repo: Repo, source: string): Promise<void> {
+      await writeFile(
+        join(repo.path, 'orca.yaml'),
+        `workflows:\n  allowedSources:\n    - "${source}"\n`
+      )
+    }
+
+    it('patches the origin file as written, keeping its comments, order and defaults', async () => {
+      const origin = await originRepository(HAND_WRITTEN)
+      const version = (
+        await gitExecFileAsync(['rev-parse', 'HEAD'], { cwd: origin.dir })
+      ).stdout.trim()
+      const role = originRole(HAND_WRITTEN, origin.source, version)
+      const { repo, runId, proposals } = await reflectedRun(reflectionWorkflow(role))
+      await allowlist(repo, origin.source)
+
+      const reply = await call('workflow.proposal.export', { runId, proposalId: proposals[0].id })
+      expect(reply).toMatchObject({ ok: true })
+      const patch = await readFile(join(exportDir(runId), 'developer.patch'), 'utf-8')
+      const removed = patch.split('\n').filter((line) => /^-(?!--)/.test(line))
+      expect(removed).toEqual(["-systemPrompt: 'Implement it.'"])
+
+      await writeFile(join(origin.dir, 'change.patch'), patch)
+      await gitExecFileAsync(['apply', 'change.patch'], { cwd: origin.dir })
+      const applied = await readFile(join(origin.dir, 'roles', 'developer.role.yaml'), 'utf-8')
+      expect(applied).toContain('# Developer role, maintained by the platform team.')
+      expect(applied).toContain('agent: codex # the default agent')
+      expect(applied).toContain('  - name: lint # always lint')
+      expect(applied).toContain(SHARPER_PROMPT)
+      const readme = await readFile(join(exportDir(runId), 'developer.README.md'), 'utf-8')
+      expect(readme).toContain(version)
+      expect(readme).not.toContain('formatted exactly as Orca writes it')
+    })
+
+    it('falls back to Orca formatting, and says so, when the origin cannot be read', async () => {
+      const source = pathToFileURL(join(root, 'no-such-origin')).href
+      const role = importedDeveloper(source)
+      const { repo, runId, proposals } = await reflectedRun(reflectionWorkflow(role))
+      await allowlist(repo, source)
+
+      const reply = await call('workflow.proposal.export', { runId, proposalId: proposals[0].id })
+      expect(reply).toMatchObject({ ok: true })
+      const patch = await readFile(join(exportDir(runId), 'developer.patch'), 'utf-8')
+      expect(patch).toContain(`+systemPrompt: ${SHARPER_PROMPT}`)
+      const readme = await readFile(join(exportDir(runId), 'developer.README.md'), 'utf-8')
+      expect(readme).toContain('formatted exactly as Orca writes it')
+    })
+
+    it('refuses a role id that cannot name the exported files', async () => {
+      const base = reflectionWorkflow()
+      const odd = { ...importedDeveloper(), id: 'odd/role' }
+      const { runId, proposals } = await reflectedRun(
+        { ...base, roles: { ...base.roles, 'odd/role': odd } },
+        [{ roleId: 'odd/role', change: { systemPrompt: SHARPER_PROMPT }, evidence: 'e' }]
+      )
+      const reply = await call('workflow.proposal.export', { runId, proposalId: proposals[0].id })
+      expect(reply).toMatchObject({ ok: false, error: { code: 'workflow_role_name_invalid' } })
+      await expect(readdir(exportDir(runId))).rejects.toThrow()
     })
 
     it('refuses a role that was not imported from an origin repository', async () => {

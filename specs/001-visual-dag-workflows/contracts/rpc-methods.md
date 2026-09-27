@@ -51,7 +51,11 @@ replaces the proposed fields of the role in the run's workflow file through the 
 `workflow_file_conflict` when those fields changed in the file since the run; an imported role keeps
 its `origin` and is flagged `localModified`. Export writes `<roleId>.patch` and
 `<roleId>.README.md` under the run workspace's `.orca/workflow-runs/<runId>/proposals/`
-(`workflow_role_not_imported` for a role with no origin). Other errors:
+(`workflow_role_not_imported` for a role with no origin; `workflow_role_name_invalid` for a role
+id that cannot name a file). The patch diffs against the origin's own role file at the imported
+version, read through the allowlisted role-import checkout on the execution host, changing only
+the proposed keys; when that file cannot be read it falls back to Orca's serialization and the
+README says so. Other errors:
 `workflow_proposal_not_found`, `workflow_proposal_not_pending`, `workflow_role_not_found`.
 
 ## Events

@@ -2,7 +2,9 @@
 // Reflection proposal tests.
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
+import { parse as parseYaml } from 'yaml'
 import type { Repo } from '../../../shared/repo-types'
+import { RoleFileSchema } from '../../../shared/workflows/workflow-definition-schema'
 import type { Role, Workflow } from '../../../shared/workflows/workflow-definition-types'
 import { serializeWorkflowFile } from '../rpc/methods/workflows/workflow-file-serialization'
 import { writeWorkflow } from './workflow-file-store'
@@ -19,14 +21,30 @@ const developer: Role = {
   skills: []
 }
 
-/** `developer` as imported from ROLE_ORIGIN_SOURCE and never edited since. */
-export function importedDeveloper(): Role {
+/** `developer` as imported from `source` and never edited since. */
+export function importedDeveloper(source = ROLE_ORIGIN_SOURCE): Role {
   const { id: _id, ...content } = developer
   return {
     ...developer,
     origin: {
-      source: ROLE_ORIGIN_SOURCE,
+      source,
       version: '0123456789abcdef',
+      importedAt: '2026-09-01T00:00:00.000Z',
+      localModified: false,
+      contentHash: roleContentHash(content)
+    }
+  }
+}
+
+/** The developer role as imported from `text`, the origin's role file at `version`. */
+export function originRole(text: string, source: string, version: string): Role {
+  const content = RoleFileSchema.parse(parseYaml(text))
+  return {
+    id: 'developer',
+    ...content,
+    origin: {
+      source,
+      version,
       importedAt: '2026-09-01T00:00:00.000Z',
       localModified: false,
       contentHash: roleContentHash(content)

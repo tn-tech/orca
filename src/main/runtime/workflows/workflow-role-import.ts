@@ -51,7 +51,7 @@ export function assertValidRoleName(roleName: string): void {
   }
 }
 
-function parseRoleFile(raw: string, roleName: string): RoleContent {
+export function parseRoleFile(raw: string, roleName: string): RoleContent {
   let parsed: unknown
   try {
     parsed = parseYaml(raw)
@@ -87,7 +87,7 @@ function assertRoleSkillSourcesAllowed(content: RoleContent, allowlist: readonly
   }
 }
 
-async function readRoleFileFromCheckout(
+export async function readRoleFileFromCheckout(
   host: RoleFetchHost,
   checkoutDir: string,
   roleName: string
@@ -129,6 +129,24 @@ async function cloneRoleRepository(
   }
 }
 
+/** Clones `source` on `host` into a temp dir that is always removed, and reads it with `read`. */
+export async function withRoleCheckout<T>(
+  host: RoleFetchHost,
+  source: string,
+  version: string | undefined,
+  read: (checkoutDir: string) => Promise<T>
+): Promise<T> {
+  const tempDir = await host.createTempDir()
+  try {
+    await cloneRoleRepository(host, source, version, tempDir)
+    return await read(host.joinPath(tempDir, CHECKOUT_DIR_NAME))
+  } finally {
+    await host.removeDir(tempDir).catch((error: unknown) => {
+      console.warn(`[workflow-role-import] failed to remove temp checkout ${tempDir}:`, error)
+    })
+  }
+}
+
 /**
  * Checks the source against the project allowlist, then clones it on the execution host into a
  * temp dir (always removed) and reads `roles/<roleName>.role.yaml`. Also refuses a role that
@@ -145,10 +163,7 @@ export async function fetchRoleForImport(
     throw new RoleSourceNotAllowedError(request.source)
   }
   const host = deps.getHost()
-  const tempDir = await host.createTempDir()
-  try {
-    await cloneRoleRepository(host, source, request.version, tempDir)
-    const checkoutDir = host.joinPath(tempDir, CHECKOUT_DIR_NAME)
+  return withRoleCheckout(host, source, request.version, async (checkoutDir) => {
     const version = (await host.runGit(['rev-parse', 'HEAD'], checkoutDir)).trim()
     const raw = await readRoleFileFromCheckout(host, checkoutDir, request.roleName)
     const content = parseRoleFile(raw, request.roleName)
@@ -160,9 +175,5 @@ export async function fetchRoleForImport(
       importedAt: deps.now.toISOString(),
       content
     }
-  } finally {
-    await host.removeDir(tempDir).catch((error: unknown) => {
-      console.warn(`[workflow-role-import] failed to remove temp checkout ${tempDir}:`, error)
-    })
-  }
+  })
 }

@@ -17,34 +17,56 @@ export type RunRecordEntry = {
   transcript?: { dispatchId: string }
 }
 
+/** Loop iterations and retries beyond this many per node are left out of a Reflection brief. */
+export const RUN_RECORD_ATTEMPTS_PER_NODE = 3
+
 const REVIEWED_NODE_TYPES: ReadonlySet<Node['type']> = new Set(['agent', 'router', 'reflection'])
 
-/** Every worker attempt of the run so far other than `reflectionNodeId`'s own, oldest first. */
+/** Worker attempts to review, each node's latest RUN_RECORD_ATTEMPTS_PER_NODE, in run order. */
+function reviewedAttempts(
+  attempts: readonly NodeAttemptView[],
+  reflectionNodeId: string
+): NodeAttemptView[] {
+  const reviewed = attempts.filter(
+    (attempt) =>
+      attempt.nodeId !== reflectionNodeId &&
+      attempt.state !== 'pending' &&
+      REVIEWED_NODE_TYPES.has(attempt.nodeType)
+  )
+  const latestFirst = [...reviewed].sort(
+    (a, b) => b.iteration - a.iteration || b.attemptIndex - a.attemptIndex
+  )
+  const kept = new Set<NodeAttemptView>()
+  const perNode = new Map<string, number>()
+  for (const attempt of latestFirst) {
+    const count = perNode.get(attempt.nodeId) ?? 0
+    if (count < RUN_RECORD_ATTEMPTS_PER_NODE) {
+      kept.add(attempt)
+      perNode.set(attempt.nodeId, count + 1)
+    }
+  }
+  return reviewed.filter((attempt) => kept.has(attempt))
+}
+
+/** Every earlier worker attempt of the run other than `reflectionNodeId`'s own, capped per node. */
 export function buildRunRecord(
   definition: Workflow,
   attempts: readonly NodeAttemptView[],
   reflectionNodeId: string
 ): RunRecordEntry[] {
-  return attempts
-    .filter(
-      (attempt) =>
-        attempt.nodeId !== reflectionNodeId &&
-        attempt.state !== 'pending' &&
-        REVIEWED_NODE_TYPES.has(attempt.nodeType)
-    )
-    .map((attempt) => ({
-      nodeId: attempt.nodeId,
-      title: definition.nodes.find((node) => node.id === attempt.nodeId)?.title ?? attempt.nodeId,
-      nodeType: attempt.nodeType,
-      iteration: attempt.iteration,
-      attemptIndex: attempt.attemptIndex,
-      state: attempt.state,
-      ...(attempt.briefPath ? { briefPath: attempt.briefPath } : {}),
-      ...(attempt.resultPath ? { resultPath: attempt.resultPath } : {}),
-      artifacts: attempt.artifactsJson.filter((a) => a.exists).map((a) => a.path),
-      ...(attempt.failureReason ? { failureReason: attempt.failureReason } : {}),
-      ...(attempt.dispatchId ? { transcript: { dispatchId: attempt.dispatchId } } : {})
-    }))
+  return reviewedAttempts(attempts, reflectionNodeId).map((attempt) => ({
+    nodeId: attempt.nodeId,
+    title: definition.nodes.find((node) => node.id === attempt.nodeId)?.title ?? attempt.nodeId,
+    nodeType: attempt.nodeType,
+    iteration: attempt.iteration,
+    attemptIndex: attempt.attemptIndex,
+    state: attempt.state,
+    ...(attempt.briefPath ? { briefPath: attempt.briefPath } : {}),
+    ...(attempt.resultPath ? { resultPath: attempt.resultPath } : {}),
+    artifacts: attempt.artifactsJson.filter((a) => a.exists).map((a) => a.path),
+    ...(attempt.failureReason ? { failureReason: attempt.failureReason } : {}),
+    ...(attempt.dispatchId ? { transcript: { dispatchId: attempt.dispatchId } } : {})
+  }))
 }
 
 function entryLine(entry: RunRecordEntry): string {
