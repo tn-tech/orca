@@ -68,7 +68,7 @@ export default function WorkflowsPage(): React.JSX.Element {
   // (FR-036); edge conditions still go through NodeInspector regardless.
   const showAttemptPanel =
     run.snapshot !== null && Boolean(controller.selectedNodeId) && !controller.selectedEdgeId
-  // F5: shared by Save's and Run's disabled-reason tooltips (FR-009).
+  // Shared by Save's and Run's disabled-reason tooltips (FR-009).
   const blockingProblems = hasBlockingWorkflowProblems(controller.problems)
 
   // F4: Delete/Backspace and Cmd/Ctrl+Z, scoped to whatever the canvas currently selects. Not
@@ -203,32 +203,10 @@ export default function WorkflowsPage(): React.JSX.Element {
                   <LayoutGrid />
                   {translate('auto.components.workflows.WorkflowsPage.relayout', 'Re-layout')}
                 </Button>
-                <div className="min-w-48 flex-1">
-                  <RunToolbar
-                    runState={run.snapshot?.state}
-                    runObjective={run.snapshot?.objective}
-                    canRun={controller.canRun}
-                    disabledReason={controller.runDisabledReason}
-                    starting={run.starting}
-                    onRun={(objective) => void run.start(objective)}
-                  />
-                </div>
-                <RunControls
-                  runState={run.snapshot?.state}
-                  pausing={run.pausing}
-                  resuming={run.resuming}
-                  cancelling={run.stopping}
-                  onPause={() => void run.pause()}
-                  onResume={() => void run.resume()}
-                  onCancel={() => void run.stop()}
-                />
                 <RunHistoryButton
                   reason={
                     !controller.repoId
-                      ? translate(
-                          'auto.components.workflows.WorkflowsPage.historyBlockedNoProject',
-                          'Select a project first.'
-                        )
+                      ? controller.noActiveProjectReason
                       : !session.openRef
                         ? translate(
                             'auto.components.workflows.WorkflowsPage.historyBlocked',
@@ -237,6 +215,23 @@ export default function WorkflowsPage(): React.JSX.Element {
                         : undefined
                   }
                   onClick={() => setHistoryOpen(true)}
+                />
+                <RunToolbar
+                  runState={run.snapshot?.state}
+                  runObjective={run.snapshot?.objective}
+                  canRun={controller.canRun}
+                  disabledReason={controller.runDisabledReason}
+                  starting={run.starting}
+                  onRun={(objective) => void run.start(objective)}
+                />
+                <RunControls
+                  runState={run.snapshot?.state}
+                  pausing={run.pausing}
+                  resuming={run.resuming}
+                  cancelling={run.stopping}
+                  onPause={() => void run.pause()}
+                  onResume={() => void run.resume()}
+                  onCancel={() => void run.stop()}
                 />
               </div>
               <WorkflowEditorProblemNotice

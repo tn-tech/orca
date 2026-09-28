@@ -114,9 +114,6 @@ describe('SaveWorkflowButton', () => {
     expect((await screen.findAllByText('Saving…')).length).toBeGreaterThan(0)
   })
 
-  // Controller ruling, F5 fix round 1: the Tooltip used to mount only when disabled, so a reason
-  // appearing after Enter re-mounted the button (a different element type at the same position)
-  // and dropped focus. DisabledReasonButton keeps it mounted; this pins the whole flow.
   it('keeps focus after Enter while dirty makes it un-dirty and disabled', async () => {
     const user = userEvent.setup()
     const onClick = vi.fn()

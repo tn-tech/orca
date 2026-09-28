@@ -9,13 +9,12 @@ export type RunHistoryButtonProps = {
   onClick: () => void
 }
 
-/** F5: History's disabled state used to give no reason. */
 export default function RunHistoryButton({
   reason,
   onClick
 }: RunHistoryButtonProps): React.JSX.Element {
   return (
-    <DisabledReasonButton variant="outline" reason={reason} onClick={onClick}>
+    <DisabledReasonButton variant="outline" reason={reason} onClick={onClick} tooltipSide="bottom">
       <History />
       {translate('auto.components.workflows.WorkflowsPage.runHistory', 'History')}
     </DisabledReasonButton>

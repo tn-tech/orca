@@ -89,9 +89,13 @@ describe('AddRepoHostSelector', () => {
     expect(html).toContain('Builder')
     expect(html).toContain('Disconnected')
     expect(html).toContain('Connect')
-    expect(html).toContain('aria-disabled="true"')
-    expect(html).not.toContain('cursor-not-allowed')
-    expect(html).not.toContain('opacity-55')
+    // Scoped to the disabled row's own element, not the whole page: a `cursor-not-allowed` or
+    // `opacity-55`/`opacity-50` elsewhere on the page (e.g. an unrelated soft-disabled control)
+    // must not fail this — only this row growing that styling should.
+    const disabledRow = html.match(/<div aria-disabled="true" class="([^"]*)"/)
+    expect(disabledRow).not.toBeNull()
+    expect(disabledRow?.[1]).not.toContain('cursor-not-allowed')
+    expect(disabledRow?.[1]).not.toContain('opacity-55')
   })
 
   it('shows exact update guidance for incompatible runtime hosts', () => {

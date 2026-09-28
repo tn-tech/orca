@@ -91,10 +91,8 @@ describe('DisabledReasonButton', () => {
     expect((await screen.findAllByText('Nothing to undo yet.')).length).toBeGreaterThan(0)
   })
 
-  // Controller ruling, F5 fix round 1: the Tooltip used to mount only when a reason existed,
-  // so a reason appearing/disappearing swapped <Button> for <Tooltip><TooltipTrigger><Button>>
-  // at the same JSX position — a different element type, so React remounted the button and
-  // focus fell to <body>. The Tooltip (and the Button inside it) must stay mounted always.
+  // The Tooltip must stay mounted so a reason appearing/disappearing never swaps <Button> for a
+  // <Tooltip>-wrapped one at the same JSX position (that remounts the button and drops focus).
   it('keeps focus on the button when a disabled reason appears after a keyboard activation', async () => {
     const user = userEvent.setup()
     const onClick = vi.fn()
@@ -117,5 +115,34 @@ describe('DisabledReasonButton', () => {
     )
 
     expect(screen.getByRole('button', { name: 'Save' })).toHaveFocus()
+  })
+
+  it('never warns Radix about switching the Tooltip between controlled and uncontrolled', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { rerender } = renderButton({ reason: undefined, onClick: vi.fn(), children: 'Save' })
+
+    rerender(
+      <TooltipProvider>
+        <DisabledReasonButton reason="No changes to save yet." onClick={vi.fn()}>
+          Save
+        </DisabledReasonButton>
+      </TooltipProvider>
+    )
+    rerender(
+      <TooltipProvider>
+        <DisabledReasonButton reason={undefined} onClick={vi.fn()}>
+          Save
+        </DisabledReasonButton>
+      </TooltipProvider>
+    )
+
+    const allCalls = [...warn.mock.calls, ...error.mock.calls]
+    const controlledWarning = allCalls.some(
+      (call) => String(call[0]).includes('changing') && String(call[0]).includes('controlled')
+    )
+    expect(controlledWarning).toBe(false)
+    warn.mockRestore()
+    error.mockRestore()
   })
 })

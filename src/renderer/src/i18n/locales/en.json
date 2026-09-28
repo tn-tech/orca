@@ -17224,7 +17224,6 @@
           "addProjectAction": "Add a project",
           "selectProjectHint": "Or select an existing project from the sidebar.",
           "relayout": "Re-layout",
-          "historyBlockedNoProject": "Select a project first.",
           "noActiveProject": "Add or select a project to create workflows."
         },
         "editor": {

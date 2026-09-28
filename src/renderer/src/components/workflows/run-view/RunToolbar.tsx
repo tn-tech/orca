@@ -53,9 +53,9 @@ export type RunToolbarProps = {
   onStop?: () => void
 }
 
-/** Run view controls (US1 AS2/AS3): an objective and Run/Stop. Re-layout lives next to Add node
- *  / Wrap in Loop in `WorkflowsPage.tsx` — keeping it here nested this row inside the outer
- *  toolbar's own wrap, which read raggedly once both wrapped independently (F5 fix round 1). */
+/** Run view controls (US1 AS2/AS3): an objective and Run/Stop. Renders a Fragment, not a wrapping
+ *  element — its two cells become direct flex items in the caller's own toolbar row so the whole
+ *  row wraps as one unit instead of this nesting its own independent `flex-wrap`. */
 export default function RunToolbar({
   runState,
   runObjective,
@@ -85,14 +85,22 @@ export default function RunToolbar({
             'Enter an objective.'
           )
         : undefined
+  const stateLabel = runState ? (
+    <span className="shrink-0 text-xs font-medium text-muted-foreground">
+      {runStateLabel(runState)}
+    </span>
+  ) : null
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <>
       <div className="flex min-w-48 flex-1 items-center gap-1.5">
         {isActive ? (
-          <p className="truncate text-sm text-foreground" title={runObjective}>
-            {runObjective}
-          </p>
+          <>
+            <p className="truncate text-sm text-foreground" title={runObjective}>
+              {runObjective}
+            </p>
+            {stateLabel}
+          </>
         ) : (
           <>
             <Label htmlFor={objectiveId} className="shrink-0">
@@ -111,14 +119,10 @@ export default function RunToolbar({
                 'Add CSV export'
               )}
             />
+            {stateLabel}
           </>
         )}
       </div>
-      {runState ? (
-        <span className="shrink-0 text-xs font-medium text-muted-foreground">
-          {runStateLabel(runState)}
-        </span>
-      ) : null}
       {isActive ? (
         onStop ? (
           <Button type="button" variant="outline" size="sm" disabled={stopping} onClick={onStop}>
@@ -136,6 +140,6 @@ export default function RunToolbar({
           {translate('auto.components.workflows.run-view.RunToolbar.run', 'Run')}
         </DisabledReasonButton>
       )}
-    </div>
+    </>
   )
 }

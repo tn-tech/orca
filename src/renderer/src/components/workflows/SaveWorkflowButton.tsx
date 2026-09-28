@@ -12,8 +12,8 @@ export type SaveWorkflowButtonProps = {
   onClick: () => void
 }
 
-/** F5: Save's disabled state used to give no reason. Extracted out of `WorkflowsPage.tsx` to keep
- *  that file under the line budget and make the reason logic independently testable. */
+/** Extracted out of `WorkflowsPage.tsx` to keep that file under the line budget and make the
+ *  reason logic independently testable. */
 export default function SaveWorkflowButton({
   dirty,
   isDraft,
@@ -36,7 +36,7 @@ export default function SaveWorkflowButton({
         : undefined
 
   return (
-    <DisabledReasonButton reason={reason} onClick={onClick}>
+    <DisabledReasonButton reason={reason} onClick={onClick} tooltipSide="bottom">
       {saving ? <Loader2 className="animate-spin" /> : null}
       {translate('auto.components.workflows.WorkflowsPage.save', 'Save')}
     </DisabledReasonButton>

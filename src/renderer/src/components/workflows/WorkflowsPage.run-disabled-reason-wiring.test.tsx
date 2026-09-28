@@ -144,7 +144,7 @@ afterEach(() => {
   cleanup()
 })
 
-describe('WorkflowsPage: Run disabled-reason wiring (F5 fix round 1)', () => {
+describe('WorkflowsPage: Run disabled-reason wiring', () => {
   it('passes controller.runDisabledReason straight through to RunToolbar', () => {
     useWorkflowsPageControllerMock.mockReturnValue(
       fakeController({ repoId: undefined, runDisabledReason: 'Add or select a project.' })

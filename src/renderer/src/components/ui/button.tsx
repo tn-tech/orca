@@ -27,11 +27,43 @@ const buttonVariants = cva(
         'icon-xs': "size-6 rounded-md [&_svg:not([class*='size-'])]:size-3",
         'icon-sm': 'size-8',
         'icon-lg': 'size-10'
+      },
+      // Opt-in "explains why on hover, but stays focusable" look for a control a caller disables
+      // via aria-disabled instead of `disabled` (which drops it from the tab order and, in
+      // Chromium, blocks the pointer events a Tooltip needs). Off by default, so no existing
+      // Button changes; a caller sets it explicitly (see DisabledReasonButton).
+      softDisabled: {
+        true: 'cursor-not-allowed opacity-50',
+        false: ''
       }
     },
+    // Each variant's own resting background/text, reapplied under `hover:` so a soft-disabled
+    // button doesn't look interactive on hover.
+    compoundVariants: [
+      { variant: 'default', softDisabled: true, class: 'hover:bg-primary' },
+      {
+        variant: 'destructive',
+        softDisabled: true,
+        class: 'hover:bg-destructive dark:hover:bg-destructive/60'
+      },
+      {
+        variant: 'outline',
+        softDisabled: true,
+        class:
+          'hover:border-border hover:bg-background hover:text-foreground dark:hover:bg-input/30'
+      },
+      { variant: 'secondary', softDisabled: true, class: 'hover:bg-secondary' },
+      {
+        variant: 'ghost',
+        softDisabled: true,
+        class: 'hover:bg-transparent hover:text-foreground dark:hover:bg-transparent'
+      },
+      { variant: 'link', softDisabled: true, class: 'hover:no-underline' }
+    ],
     defaultVariants: {
       variant: 'default',
-      size: 'default'
+      size: 'default',
+      softDisabled: false
     }
   }
 )
@@ -43,7 +75,14 @@ const Button = React.forwardRef<
       asChild?: boolean
     }
 >(function Button(
-  { className, variant = 'default', size = 'default', asChild = false, ...props },
+  {
+    className,
+    variant = 'default',
+    size = 'default',
+    softDisabled = false,
+    asChild = false,
+    ...props
+  },
   ref
 ) {
   const Comp = asChild ? Slot.Root : 'button'
@@ -54,7 +93,7 @@ const Button = React.forwardRef<
       data-slot="button"
       data-variant={variant}
       data-size={size}
-      className={cn(buttonVariants({ variant, size, className }))}
+      className={cn(buttonVariants({ variant, size, softDisabled, className }))}
       {...props}
     />
   )

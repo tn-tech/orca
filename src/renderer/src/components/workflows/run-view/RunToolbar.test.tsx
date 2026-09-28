@@ -55,7 +55,6 @@ describe('RunToolbar', () => {
     expect((await screen.findAllByText("Can't run yet.")).length).toBeGreaterThan(0)
   })
 
-  // F5: an empty objective used to disable Run with no explanation anywhere (audit B2).
   it('explains an empty objective on hover, not DOM-disabled', async () => {
     const user = userEvent.setup()
     render(
@@ -138,8 +137,8 @@ describe('RunToolbar', () => {
     expect(screen.getByText('Completed')).toBeInTheDocument()
   })
 
-  // F5: disabledReason (draft/blocking-problems, set by WorkflowsPage) takes priority over the
-  // local empty-objective reason, and must reach hover/screen-readers via aria-disabled.
+  // disabledReason (draft/blocking-problems, set by WorkflowsPage) takes priority over the local
+  // empty-objective reason, and must reach hover/screen-readers via aria-disabled.
   it('explains an external disabledReason (e.g. an unsaved draft) on hover', async () => {
     const user = userEvent.setup()
     render(
@@ -184,8 +183,6 @@ describe('RunToolbar', () => {
     expect((await screen.findAllByText('Starting the run…')).length).toBeGreaterThan(0)
   })
 
-  // Controller ruling, F5 fix round 1: Re-layout moved next to Add node / Wrap in Loop in
-  // WorkflowsPage.tsx, so RunToolbar's own wrap no longer competes with the outer toolbar's.
   it('has a visible Objective label', () => {
     render(
       <TooltipProvider>
@@ -194,5 +191,22 @@ describe('RunToolbar', () => {
     )
 
     expect(screen.getByText('Objective')).not.toHaveClass('sr-only')
+  })
+
+  // A wrapping element around RunToolbar's own output would give it a second, independent
+  // flex-wrap nested inside the caller's row — that's what produced the ragged 3-row layout a
+  // fixed-width toolbar can't otherwise avoid. Its cells must land as direct siblings instead.
+  it('renders its cells as direct items, not wrapped in a row of its own', () => {
+    render(
+      <TooltipProvider>
+        <div data-testid="outer-row">
+          <button type="button">Marker</button>
+          <RunToolbar canRun starting={false} stopping={false} onRun={vi.fn()} onStop={vi.fn()} />
+        </div>
+      </TooltipProvider>
+    )
+
+    // Marker + the objective group + Run = 3 direct children of the outer row.
+    expect(screen.getByTestId('outer-row').children.length).toBe(3)
   })
 })
