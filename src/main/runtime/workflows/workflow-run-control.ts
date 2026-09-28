@@ -7,7 +7,11 @@ import { ACTIVE_ATTEMPT_STATES } from '../../../shared/workflows/workflow-node-s
 import type { OrchestrationDb } from '../orchestration/db'
 import { OrchestrationError } from '../orchestration/orchestration-error'
 import { failUndeliveredFollowUps } from './workflow-follow-up-delivery'
-import { stopWorkerAttempt, type WorkerStopCause } from './workflow-join-branch-stop'
+import {
+  stopWorkerAttempt,
+  type WorkerStopCause,
+  type WorkerStopContext
+} from './workflow-join-branch-stop'
 import {
   createWorkflowOrchestrationClient,
   type WorkflowOrchestrationDispatcher
@@ -79,10 +83,6 @@ const CANCEL_CAUSE: WorkerStopCause = {
   subject: {}
 }
 
-/**
- * Asks each live worker to stop and cancels what never reached a worker. `false` while any
- * worker may still be alive (its stop was refused or unconfirmed), leaving that attempt as is.
- */
 export async function stopActiveAttempts(
   deps: WorkflowRunStopDeps,
   recorder: WorkflowRunRecorder,
@@ -92,7 +92,19 @@ export async function stopActiveAttempts(
     dispatcher: deps.dispatcher,
     principal: { kind: 'workflow-engine', workflowRunId: recorder.runId }
   })
-  const active = deps.db
+  return stopRunAttempts({ db: deps.db, recorder, client }, cause)
+}
+
+/**
+ * Asks each live worker to stop and cancels what never reached a worker. `false` while any
+ * worker may still be alive (its stop was refused or unconfirmed), leaving that attempt as is.
+ */
+export async function stopRunAttempts(
+  ctx: WorkerStopContext & { db: OrchestrationDb },
+  cause: WorkerStopCause
+): Promise<boolean> {
+  const { db, recorder, client } = ctx
+  const active = db
     .listWorkflowAttempts(recorder.runId)
     .filter((attempt) => ACTIVE_ATTEMPT_STATES.has(attempt.state))
   for (const attempt of active.filter((candidate) => !candidate.dispatchId)) {
@@ -103,7 +115,7 @@ export async function stopActiveAttempts(
   await Promise.all(
     workers.map((attempt) => stopWorkerAttempt({ recorder, client }, attempt, cause))
   )
-  const after = new Map(deps.db.listWorkflowAttempts(recorder.runId).map((a) => [a.id, a.state]))
+  const after = new Map(db.listWorkflowAttempts(recorder.runId).map((a) => [a.id, a.state]))
   return workers.every((attempt) => {
     const state = after.get(attempt.id)
     return state === undefined || !ACTIVE_ATTEMPT_STATES.has(state)

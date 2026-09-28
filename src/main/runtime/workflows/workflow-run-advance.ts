@@ -11,6 +11,7 @@ import {
 } from './workflow-loop-unrolling'
 import type { WorkflowResultFailureReason } from './workflow-result-capture'
 import { refreshWaitingJoins } from './workflow-join-settlement'
+import { stopRunAtLoopCap } from './workflow-run-loop-cap-stop'
 import { launchEligibleNode, type WorkflowNodeLaunchContext } from './workflow-run-node-launch'
 
 const LOOP_FAILURE_REASONS: Record<
@@ -112,6 +113,16 @@ export async function advanceRun(ctx: WorkflowNodeLaunchContext): Promise<boolea
     }
     for (const settlement of loops.settlements) {
       settleLoop(ctx, settlement)
+    }
+    const capped = loops.settlements.find((settlement) => settlement.outcome === 'cap_reached')
+    if (capped) {
+      // Nodes only the capped Loop fed can never run: show them Skipped, as before the stop.
+      const settled = ctx.db.listWorkflowAttempts(ctx.recorder.runId)
+      for (const nodeId of computeFrontier(ctx.definition, settled).skipped) {
+        recordSkip(ctx, { nodeId, iteration: 0 })
+      }
+      await stopRunAtLoopCap(ctx, capped.loopId)
+      return true
     }
     // Why: Joins settle alone, then the frontier is recomputed, so branch nodes a failed Join
     // skipped are never launched from this pass's stale eligible list.
