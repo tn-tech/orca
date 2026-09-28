@@ -291,7 +291,7 @@ Monorepo per plan.md: shared types `src/shared/workflows/`, engine `src/main/run
 
 - [X] T118 [US7] Create `src/main/runtime/workflows/workflow-role-proposals.ts` (store, accept via `workflow-file-store`, export to `.orca/workflow-runs/<runId>/proposals/<roleId>.patch` plus a README describing the origin's contribution flow) and implement `workflow.proposal.accept/export` in `methods/workflows/interaction.ts`; add the `workflow_role_proposals` mixin `db/workflow-runs/workflow-proposal-store.ts`
 - [X] T119 [US7] Give Reflection nodes their fixed result contract in `workflow-node-dispatch.ts` and feed run transcripts/results paths into their brief in `workflow-brief-builder.ts`
-- [ ] T120 [P] [US7] Create `src/renderer/src/components/workflows/editor/nodes/ReflectionNode.tsx` and `run-view/RoleProposalPanel.tsx` (diff against the role, Accept, Export)
+- [X] T120 [P] [US7] Create `src/renderer/src/components/workflows/editor/nodes/ReflectionNode.tsx` and `run-view/RoleProposalPanel.tsx` (diff against the role, Accept, Export)
 
 **Checkpoint**: Proposals show as diffs and can be accepted locally or exported.
 
