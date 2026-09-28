@@ -18,61 +18,64 @@ describe('Button softDisabled', () => {
     expect(button).toHaveClass('hover:bg-primary/90')
   })
 
-  it('dims the whole default-variant button and pins hover to its resting background', () => {
+  it('dims the whole button and shows a not-allowed cursor', () => {
     render(<Button softDisabled>Save</Button>)
 
     const button = screen.getByRole('button', { name: 'Save' })
     expect(button).toHaveClass('opacity-50')
     expect(button).toHaveClass('cursor-not-allowed')
-    // twMerge drops the conflicting hover:bg-primary/90 in favor of this override.
-    expect(button).toHaveClass('hover:bg-primary')
-    expect(button).not.toHaveClass('hover:bg-primary/90')
-  })
-
-  it('pins hover to the resting background for the outline variant too', () => {
-    render(
-      <Button variant="outline" softDisabled>
-        History
-      </Button>
-    )
-
-    const button = screen.getByRole('button', { name: 'History' })
-    expect(button).toHaveClass('opacity-50')
-    expect(button).toHaveClass('hover:bg-background')
-    expect(button).not.toHaveClass('hover:bg-accent')
-  })
-
-  it('pins the outline variant border in dark mode too, not just light', () => {
-    render(
-      <Button variant="outline" softDisabled>
-        History
-      </Button>
-    )
-
-    const button = screen.getByRole('button', { name: 'History' })
-    // Resting outline border is border-border (light) / dark:border-input (dark); the hover
-    // pin must cover both, or a dark-theme hover still shifts the border.
-    expect(button).toHaveClass('hover:border-border')
-    expect(button).toHaveClass('dark:hover:border-input')
-  })
-
-  it('does not force a text color on the ghost variant, which has none at rest', () => {
-    render(
-      <Button variant="ghost" softDisabled>
-        Draft
-      </Button>
-    )
-
-    const button = screen.getByRole('button', { name: 'Draft' })
-    expect(button).toHaveClass('hover:bg-transparent')
-    // Ghost's resting state sets no text color at all, so a soft-disabled hover must not
-    // introduce one either — that would shift a caller's own muted-text className.
-    expect(button).not.toHaveClass('hover:text-foreground')
+    expect(button).not.toHaveClass('cursor-pointer')
   })
 
   it('stays a plain, focusable button — softDisabled never sets the native disabled attribute', () => {
     render(<Button softDisabled>Save</Button>)
 
     expect(screen.getByRole('button', { name: 'Save' })).not.toBeDisabled()
+  })
+})
+
+const VARIANTS = ['default', 'destructive', 'outline', 'secondary', 'ghost', 'link'] as const
+
+function hoverClasses(element: HTMLElement): string[] {
+  return [...element.classList].filter((token) => token.split(':').includes('hover'))
+}
+
+describe('Button softDisabled hover', () => {
+  it.each(VARIANTS)('%s: soft-disabled drops every hover style the variant has', (variant) => {
+    render(
+      <>
+        <Button variant={variant}>Enabled</Button>
+        <Button variant={variant} softDisabled>
+          Soft
+        </Button>
+      </>
+    )
+
+    const enabled = screen.getByRole('button', { name: 'Enabled' })
+    const soft = screen.getByRole('button', { name: 'Soft' })
+    // Sanity: the variant really has hover styling to neutralise.
+    expect(hoverClasses(enabled).length).toBeGreaterThan(0)
+    expect(hoverClasses(soft)).toEqual([])
+  })
+
+  it.each(VARIANTS)('%s: soft-disabled keeps the resting look, only dimmed', (variant) => {
+    render(
+      <>
+        <Button variant={variant}>Enabled</Button>
+        <Button variant={variant} softDisabled>
+          Soft
+        </Button>
+      </>
+    )
+
+    const enabled = screen.getByRole('button', { name: 'Enabled' })
+    const soft = screen.getByRole('button', { name: 'Soft' })
+    const hover = new Set(hoverClasses(enabled))
+    const resting = [...enabled.classList].filter((token) => !hover.has(token)).sort()
+    const softResting = [...soft.classList]
+      .filter((token) => token !== 'opacity-50' && token !== 'cursor-not-allowed')
+      .concat('cursor-pointer')
+      .sort()
+    expect(softResting).toEqual(resting)
   })
 })

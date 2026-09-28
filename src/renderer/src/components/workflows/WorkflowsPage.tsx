@@ -177,23 +177,27 @@ export default function WorkflowsPage(): React.JSX.Element {
             </div>
           ) : (
             <>
-              <div className="flex flex-wrap shrink-0 items-center gap-2 border-b border-border px-3 py-2 md:px-5">
-                <AddNodeMenu
-                  hasStartNode={session.editor.state.definition.nodes.some(
-                    (node) => node.type === 'start'
-                  )}
-                  onAddNode={controller.addNode}
-                />
-                <WrapInLoopButton
-                  selectedNodeIds={controller.selectedNodeId ? [controller.selectedNodeId] : []}
-                  onWrapInLoop={(nodeIds) =>
-                    session.editor.dispatch({ type: 'wrap-in-loop', nodeIds })
-                  }
-                />
-                <UndoButton
-                  canUndo={session.status === 'ready' && session.editor.canUndo}
-                  onUndo={controller.undo}
-                />
+              {/* Three groups that each wrap whole: editing tools, the run (objective, state and
+                  controls), then History/Re-layout. */}
+              <div className="@container flex flex-wrap shrink-0 items-center gap-2 border-b border-border px-3 py-2 md:px-5">
+                <div className="flex items-center gap-2">
+                  <AddNodeMenu
+                    hasStartNode={session.editor.state.definition.nodes.some(
+                      (node) => node.type === 'start'
+                    )}
+                    onAddNode={controller.addNode}
+                  />
+                  <WrapInLoopButton
+                    selectedNodeIds={controller.selectedNodeId ? [controller.selectedNodeId] : []}
+                    onWrapInLoop={(nodeIds) =>
+                      session.editor.dispatch({ type: 'wrap-in-loop', nodeIds })
+                    }
+                  />
+                  <UndoButton
+                    canUndo={session.status === 'ready' && session.editor.canUndo}
+                    onUndo={controller.undo}
+                  />
+                </div>
                 <RunToolbar
                   runState={run.snapshot?.state}
                   runObjective={run.snapshot?.objective}
@@ -213,28 +217,30 @@ export default function WorkflowsPage(): React.JSX.Element {
                     />
                   }
                 />
-                <RunHistoryButton
-                  reason={
-                    !controller.repoId
-                      ? controller.noActiveProjectReason
-                      : !session.openRef
-                        ? translate(
-                            'auto.components.workflows.WorkflowsPage.historyBlocked',
-                            'Save the workflow first.'
-                          )
-                        : undefined
-                  }
-                  onClick={() => setHistoryOpen(true)}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => session.editor.dispatch({ type: 'auto-layout' })}
-                >
-                  <LayoutGrid />
-                  {translate('auto.components.workflows.WorkflowsPage.relayout', 'Re-layout')}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <RunHistoryButton
+                    reason={
+                      !controller.repoId
+                        ? controller.noActiveProjectReason
+                        : !session.openRef
+                          ? translate(
+                              'auto.components.workflows.WorkflowsPage.historyBlocked',
+                              'Save the workflow first.'
+                            )
+                          : undefined
+                    }
+                    onClick={() => setHistoryOpen(true)}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => session.editor.dispatch({ type: 'auto-layout' })}
+                  >
+                    <LayoutGrid />
+                    {translate('auto.components.workflows.WorkflowsPage.relayout', 'Re-layout')}
+                  </Button>
+                </div>
               </div>
               <WorkflowEditorProblemNotice
                 problem={session.editor.state.lastProblem}

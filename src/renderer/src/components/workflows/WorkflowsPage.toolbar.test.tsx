@@ -1,8 +1,6 @@
 // @vitest-environment happy-dom
-// F6 added `controller.runDisabledReason` (no-project reason takes priority over draft/blocking
-// problems). WorkflowsPage must pass it straight through to RunToolbar's `disabledReason` — this
-// pins that wiring, which the other WorkflowsPage tests don't cover (they mock RunToolbar to
-// `() => null` since it's irrelevant to what they test).
+// The editor toolbar: `controller.runDisabledReason` reaches RunToolbar unchanged, and the row is
+// built from whole groups so it wraps between them, never inside one.
 import '@testing-library/jest-dom/vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -18,9 +16,11 @@ vi.mock('@/store', () => ({
   ) => selector({ settings: { activeRuntimeEnvironmentId: null }, openModal: vi.fn() })
 }))
 
-vi.mock('./editor/AddNodeMenu', () => ({ default: () => null }))
-vi.mock('./editor/WrapInLoopButton', () => ({ default: () => null }))
-vi.mock('./editor/UndoButton', () => ({ default: () => null }))
+vi.mock('./editor/AddNodeMenu', () => ({ default: () => <button type="button">Add node</button> }))
+vi.mock('./editor/WrapInLoopButton', () => ({
+  default: () => <button type="button">Wrap in Loop</button>
+}))
+vi.mock('./editor/UndoButton', () => ({ default: () => <button type="button">Undo</button> }))
 vi.mock('./editor/NodeInspector', () => ({ default: () => null }))
 vi.mock('./editor/ValidationProblemsPanel', () => ({ default: () => null }))
 vi.mock('./editor/WorkflowEditorProblemNotice', () => ({ default: () => null }))
@@ -28,7 +28,7 @@ vi.mock('./editor/FileConflictDialog', () => ({ default: () => null }))
 vi.mock('./WorkflowListPane', () => ({ default: () => null }))
 vi.mock('./WorkflowNameDialog', () => ({ default: () => null }))
 vi.mock('./TrustedSourcesDialog', () => ({ default: () => null }))
-vi.mock('./RunHistoryButton', () => ({ default: () => null }))
+vi.mock('./RunHistoryButton', () => ({ default: () => <button type="button">History</button> }))
 vi.mock('./run-view/RunCanvasOverlay', () => ({ default: () => null }))
 vi.mock('./run-view/RunControls', () => ({ default: () => null }))
 vi.mock('./run-view/RunHistory', () => ({ default: () => null }))
@@ -171,5 +171,36 @@ describe('WorkflowsPage: Run disabled-reason wiring', () => {
     )
 
     expect(screen.getByTestId('run-toolbar-disabled-reason')).toHaveTextContent('')
+  })
+})
+
+describe('WorkflowsPage: toolbar groups', () => {
+  // The row wraps between groups only, never inside one: editing tools, the run, then
+  // History/Re-layout — in that order.
+  it('renders the toolbar as three groups in order: editing tools, run, History/Re-layout', () => {
+    useWorkflowsPageControllerMock.mockReturnValue(fakeController())
+
+    render(
+      <TooltipProvider>
+        <WorkflowsPage />
+      </TooltipProvider>
+    )
+
+    const runGroup = screen.getByTestId('run-toolbar-disabled-reason')
+    const row = runGroup.parentElement
+    expect(row).toHaveClass('flex-wrap')
+    const groups = [...(row?.children ?? [])]
+    expect(groups).toHaveLength(3)
+    const [editing, run, trailing] = groups
+    expect([...editing.querySelectorAll('button')].map((button) => button.textContent)).toEqual([
+      'Add node',
+      'Wrap in Loop',
+      'Undo'
+    ])
+    expect(run).toBe(runGroup)
+    expect([...trailing.querySelectorAll('button')].map((button) => button.textContent)).toEqual([
+      'History',
+      'Re-layout'
+    ])
   })
 })

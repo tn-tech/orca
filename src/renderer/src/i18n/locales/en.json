@@ -17478,7 +17478,7 @@
             "stateFailed": "Failed",
             "stateCancelled": "Cancelled",
             "objectiveLabel": "Objective",
-            "objectivePlaceholder": "Add CSV export",
+            "objectivePlaceholder": "Add tests",
             "stop": "Stop",
             "run": "Run",
             "starting": "Starting the run…",

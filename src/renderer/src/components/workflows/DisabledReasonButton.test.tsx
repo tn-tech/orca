@@ -202,4 +202,29 @@ describe('DisabledReasonButton', () => {
 
     expect(screen.queryAllByText('Add or select a project to create workflows.').length).toBe(0)
   })
+
+  it('does not reference an unrendered description while an enabled control with nothing to say is hovered or focused', async () => {
+    const user = userEvent.setup()
+    renderButton({ reason: undefined, onClick: vi.fn(), children: 'Save' })
+
+    const button = screen.getByRole('button', { name: 'Save' })
+    await user.hover(button)
+    expect(button).not.toHaveAttribute('aria-describedby')
+    await user.unhover(button)
+    await user.tab()
+    expect(button).toHaveFocus()
+    expect(button).not.toHaveAttribute('aria-describedby')
+  })
+
+  it('references the rendered reason while a disabled control is hovered', async () => {
+    const user = userEvent.setup()
+    renderButton({ reason: 'Fix the problems first.', onClick: vi.fn(), children: 'Save' })
+
+    const button = screen.getByRole('button', { name: 'Save' })
+    await user.hover(button)
+    await screen.findAllByText('Fix the problems first.')
+    const describedBy = button.getAttribute('aria-describedby')
+    expect(describedBy).not.toBeNull()
+    expect(document.getElementById(describedBy ?? '')).toHaveTextContent('Fix the problems first.')
+  })
 })

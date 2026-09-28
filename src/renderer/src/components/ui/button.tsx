@@ -9,14 +9,14 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground hover:bg-primary/90',
+        default: 'bg-primary text-primary-foreground',
         destructive:
-          'bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40',
+          'bg-destructive text-white focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40',
         outline:
-          'border border-border bg-background text-foreground shadow-xs hover:border-muted-foreground/35 hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50',
-        secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
-        ghost: 'hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50',
-        link: 'text-primary underline-offset-4 hover:underline'
+          'border border-border bg-background text-foreground shadow-xs dark:border-input dark:bg-input/30',
+        secondary: 'bg-secondary text-secondary-foreground',
+        ghost: '',
+        link: 'text-primary underline-offset-4'
       },
       size: {
         default: 'h-9 px-4 py-2 has-[>svg]:px-3',
@@ -37,30 +37,24 @@ const buttonVariants = cva(
         false: ''
       }
     },
-    // Each variant's own resting background/text, reapplied under `hover:` so a soft-disabled
-    // button doesn't look interactive on hover.
+    // Hover styles live only on the not-soft-disabled compounds, so a soft-disabled button has no
+    // hover response at all — nothing to pin back per variant.
     compoundVariants: [
-      { variant: 'default', softDisabled: true, class: 'hover:bg-primary' },
-      {
-        variant: 'destructive',
-        softDisabled: true,
-        class: 'hover:bg-destructive dark:hover:bg-destructive/60'
-      },
+      { variant: 'default', softDisabled: false, class: 'hover:bg-primary/90' },
+      { variant: 'destructive', softDisabled: false, class: 'hover:bg-destructive/90' },
       {
         variant: 'outline',
-        softDisabled: true,
+        softDisabled: false,
         class:
-          'hover:border-border hover:bg-background hover:text-foreground dark:hover:border-input dark:hover:bg-input/30'
+          'hover:border-muted-foreground/35 hover:bg-accent hover:text-accent-foreground dark:hover:bg-input/50'
       },
-      { variant: 'secondary', softDisabled: true, class: 'hover:bg-secondary' },
+      { variant: 'secondary', softDisabled: false, class: 'hover:bg-secondary/80' },
       {
-        // No forced hover:text-* — ghost sets no resting text color, so pinning one here would
-        // override a caller's own text className (e.g. a muted-text ghost icon button).
         variant: 'ghost',
-        softDisabled: true,
-        class: 'hover:bg-transparent dark:hover:bg-transparent'
+        softDisabled: false,
+        class: 'hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50'
       },
-      { variant: 'link', softDisabled: true, class: 'hover:no-underline' }
+      { variant: 'link', softDisabled: false, class: 'hover:underline' }
     ],
     defaultVariants: {
       variant: 'default',

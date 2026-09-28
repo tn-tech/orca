@@ -57,9 +57,9 @@ export type RunToolbarProps = {
 }
 
 /** Run view controls (US1 AS2/AS3): an objective, and either Run or the run's state plus its
- *  controls. Renders a Fragment, not a wrapping element — its two cells become direct flex items
- *  in the caller's own toolbar row so the whole row wraps as one flat set instead of this nesting
- *  its own independent `flex-wrap`. */
+ *  controls — one non-wrapping unit, so the caller's wrapping row moves it whole. Only the
+ *  objective flexes; explicit widths on it keep the unit's min-content (what decides the wrap)
+ *  small and predictable. */
 export default function RunToolbar({
   runState,
   runObjective,
@@ -97,60 +97,50 @@ export default function RunToolbar({
   ) : null
 
   return (
-    <>
-      <div className="flex min-w-48 flex-1 items-center gap-1.5">
-        {isActive ? (
-          <p className="truncate text-sm text-foreground" title={runObjective}>
-            {runObjective}
-          </p>
-        ) : (
-          <>
-            <Label htmlFor={objectiveId} className="shrink-0">
-              {translate(
-                'auto.components.workflows.run-view.RunToolbar.objectiveLabel',
-                'Objective'
-              )}
-            </Label>
-            <Input
-              id={objectiveId}
-              className="h-8 min-w-28 flex-1"
-              value={objective}
-              onChange={(event) => setObjective(event.target.value)}
-              placeholder={translate(
-                'auto.components.workflows.run-view.RunToolbar.objectivePlaceholder',
-                'Add CSV export'
-              )}
-            />
-          </>
-        )}
-      </div>
-      {/* One shrink-0 unit so the run's state and its controls always wrap together, never split
-          across lines. */}
-      <div className="flex shrink-0 items-center gap-2">
-        {stateLabel}
-        {isActive ? (
-          <>
-            {runControls}
-            {onStop ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={stopping}
-                onClick={onStop}
-              >
-                <Square />
-                {translate('auto.components.workflows.run-view.RunToolbar.stop', 'Stop')}
-              </Button>
-            ) : null}
-          </>
-        ) : (
-          <DisabledReasonButton reason={runReason} onClick={() => onRun(objectiveTrimmed)}>
-            <Play />
-            {translate('auto.components.workflows.run-view.RunToolbar.run', 'Run')}
-          </DisabledReasonButton>
-        )}
-      </div>
-    </>
+    <div className="flex flex-1 items-center gap-1.5">
+      {isActive ? (
+        // A wide toolbar (the WorkflowsPage row is the container) wraps History/Re-layout rather
+        // than squeezing the objective to a sliver.
+        <p
+          className="w-0 min-w-10 flex-1 truncate text-sm text-foreground @min-[48rem]:min-w-40"
+          title={runObjective}
+        >
+          {runObjective}
+        </p>
+      ) : (
+        <>
+          <Label htmlFor={objectiveId} className="shrink-0">
+            {translate('auto.components.workflows.run-view.RunToolbar.objectiveLabel', 'Objective')}
+          </Label>
+          <Input
+            id={objectiveId}
+            className="h-8 w-0 min-w-20 flex-1"
+            value={objective}
+            onChange={(event) => setObjective(event.target.value)}
+            placeholder={translate(
+              'auto.components.workflows.run-view.RunToolbar.objectivePlaceholder',
+              'Add tests'
+            )}
+          />
+        </>
+      )}
+      {stateLabel}
+      {isActive ? (
+        <>
+          {runControls}
+          {onStop ? (
+            <Button type="button" variant="outline" size="sm" disabled={stopping} onClick={onStop}>
+              <Square />
+              {translate('auto.components.workflows.run-view.RunToolbar.stop', 'Stop')}
+            </Button>
+          ) : null}
+        </>
+      ) : (
+        <DisabledReasonButton reason={runReason} onClick={() => onRun(objectiveTrimmed)}>
+          <Play />
+          {translate('auto.components.workflows.run-view.RunToolbar.run', 'Run')}
+        </DisabledReasonButton>
+      )}
+    </div>
   )
 }

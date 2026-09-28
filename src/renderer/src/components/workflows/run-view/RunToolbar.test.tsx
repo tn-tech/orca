@@ -193,21 +193,56 @@ describe('RunToolbar', () => {
     expect(screen.getByText('Objective')).not.toHaveClass('sr-only')
   })
 
-  // A wrapping element around RunToolbar's own output would give it a second, independent
-  // flex-wrap nested inside the caller's row — that's what produced the ragged 3-row layout a
-  // fixed-width toolbar can't otherwise avoid. Its cells must land as direct siblings instead.
-  it('renders its cells as direct items, not wrapped in a row of its own', () => {
+  // The run group wraps as one unit in the caller's row: objective, state and Run/controls share
+  // one non-wrapping container whose min-content (not an explicit min-w) decides when it wraps.
+  it('renders the objective, state and Run as one non-wrapping unit', () => {
     render(
       <TooltipProvider>
         <div data-testid="outer-row">
-          <button type="button">Marker</button>
-          <RunToolbar canRun starting={false} stopping={false} onRun={vi.fn()} onStop={vi.fn()} />
+          <RunToolbar
+            canRun
+            starting={false}
+            runState="cancelled"
+            runObjective="Say hello"
+            onRun={vi.fn()}
+          />
         </div>
       </TooltipProvider>
     )
 
-    // Marker + the objective group + Run = 3 direct children of the outer row.
-    expect(screen.getByTestId('outer-row').children.length).toBe(3)
+    const outer = screen.getByTestId('outer-row')
+    expect(outer.children.length).toBe(1)
+    const unit = outer.children[0]
+    expect(unit).toContainElement(screen.getByRole('textbox', { name: 'Objective' }))
+    expect(unit).toContainElement(screen.getByText('Cancelled'))
+    expect(unit).toContainElement(screen.getByRole('button', { name: 'Run' }))
+    expect(unit).toHaveClass('flex-1')
+    expect(unit).not.toHaveClass('flex-wrap')
+    expect([...unit.classList].some((token) => token.startsWith('min-w-'))).toBe(false)
+  })
+
+  it('keeps the read-only objective in the same unit as the state and runControls while active', () => {
+    render(
+      <TooltipProvider>
+        <div data-testid="outer-row">
+          <RunToolbar
+            canRun
+            starting={false}
+            runState="paused"
+            runObjective="Say hello"
+            onRun={vi.fn()}
+            runControls={<button type="button">Resume</button>}
+          />
+        </div>
+      </TooltipProvider>
+    )
+
+    const outer = screen.getByTestId('outer-row')
+    expect(outer.children.length).toBe(1)
+    const unit = outer.children[0]
+    expect(unit).toContainElement(screen.getByText('Say hello'))
+    expect(unit).toContainElement(screen.getByText('Paused'))
+    expect(unit).toContainElement(screen.getByRole('button', { name: 'Resume' }))
   })
 
   // A run's state and its controls must wrap as one unit, never split across lines — so they
