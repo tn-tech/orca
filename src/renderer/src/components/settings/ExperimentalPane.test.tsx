@@ -500,7 +500,12 @@ describe('ExperimentalPane', () => {
       switchButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(updateSettings).toHaveBeenCalledWith({ experimentalWorkflows: true })
+    // F6: also restores the sidebar button — otherwise a user who hid it has no way back in
+    // besides an easy-to-miss Appearance setting (WorkflowsExperimentalSetting.tsx).
+    expect(updateSettings).toHaveBeenCalledWith({
+      experimentalWorkflows: true,
+      showWorkflowsButton: true
+    })
     root.unmount()
   })
 

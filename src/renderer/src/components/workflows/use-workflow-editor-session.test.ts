@@ -71,6 +71,17 @@ describe('useWorkflowEditorSession', () => {
     ])
   })
 
+  it('createNew rejects with a clear message instead of closing as success when there is no active project (F6)', async () => {
+    const { result } = renderHook(() => useWorkflowEditorSession({ settings, repoId: undefined }))
+
+    await expect(act(() => result.current.createNew('my-flow', 'project'))).rejects.toThrow(
+      'Add or select a project to create workflows.'
+    )
+
+    expect(workflowWriteMock).not.toHaveBeenCalled()
+    expect(result.current.status).toBe('empty')
+  })
+
   it('open loads the definition returned by workflow.read', async () => {
     const definition = savedWorkflow()
     workflowReadMock.mockResolvedValue({ definition, raw: 'raw', revision: 'rev-1', problems: [] })
@@ -327,6 +338,19 @@ describe('useWorkflowEditorSession', () => {
       expect(result.current.isDraft).toBe(true)
       expect(result.current.openRef).toBeNull()
       expect(result.current.saving).toBe(false)
+    })
+
+    it('saveDraftAs rejects with a clear message instead of closing as success when there is no active project (F6)', async () => {
+      const drafted = savedWorkflow({ name: 'triage-tickets' })
+      const { result } = renderHook(() => useWorkflowEditorSession({ settings, repoId: undefined }))
+      act(() => result.current.openDraft(drafted))
+
+      await expect(
+        act(() => result.current.saveDraftAs('triage-tickets', 'project'))
+      ).rejects.toThrow('Add or select a project to create workflows.')
+
+      expect(workflowWriteMock).not.toHaveBeenCalled()
+      expect(result.current.isDraft).toBe(true)
     })
 
     it('close clears an open draft back to empty', () => {

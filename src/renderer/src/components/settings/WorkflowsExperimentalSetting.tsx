@@ -36,7 +36,16 @@ export function WorkflowsExperimentalSetting({
             'auto.components.settings.experimental.workflows.toggleLabel',
             'Toggle Workflows'
           )}
-          onChange={() => updateSettings({ experimentalWorkflows: !enabled })}
+          onChange={() =>
+            // F6: re-enabling always restores the sidebar button. A user who hid it (SidebarNav's
+            // "Hide") otherwise has no way back in besides this easy-to-miss Appearance setting —
+            // and turning the experiment back on is the intuitive way to ask for it again.
+            updateSettings(
+              enabled
+                ? { experimentalWorkflows: false }
+                : { experimentalWorkflows: true, showWorkflowsButton: true }
+            )
+          }
         />
       </div>
     </SearchableSetting>

@@ -17220,7 +17220,10 @@
           "runHistory": "History",
           "runHistoryTitle": "Run history",
           "historyBlocked": "Save the workflow first.",
-          "runBlockedProblems": "Fix the problems below before running."
+          "runBlockedProblems": "Fix the problems below before running.",
+          "addProjectAction": "Add a project",
+          "selectProjectHint": "Or select an existing project from the sidebar.",
+          "noActiveProject": "Add or select a project to create workflows."
         },
         "editor": {
           "AgentNodeArtifactsField": {

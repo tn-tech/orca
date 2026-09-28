@@ -89,9 +89,34 @@ export function useWorkflowsPageController() {
     () => mergeWorkflowValidationProblems(localProblems, hostProblems),
     [localProblems, hostProblems]
   )
+  // F6: the active project can drop out from under a still-'ready' session (the user switches
+  // away from it mid-edit); without this, Run stays clickable and startRun's own `!repoId` guard
+  // just no-ops silently.
+  const noActiveProjectReason = repoId
+    ? undefined
+    : translate(
+        'auto.components.workflows.WorkflowsPage.noActiveProject',
+        'Add or select a project to create workflows.'
+      )
+  const blockingProblems = hasBlockingWorkflowProblems(problems)
   // US6 AS2: an unsaved draft has no file to run against yet — save it first.
   const canRun =
-    session.status === 'ready' && !session.isDraft && !hasBlockingWorkflowProblems(problems)
+    Boolean(repoId) && session.status === 'ready' && !session.isDraft && !blockingProblems
+  // F6: mirrors the reason WorkflowsPage's RunToolbar already shows (draft, then blocking
+  // problems) with the no-project reason taking priority — nothing else matters without one.
+  const runDisabledReason = noActiveProjectReason
+    ? noActiveProjectReason
+    : session.isDraft
+      ? translate(
+          'auto.components.workflows.WorkflowsPage.runBlockedDraft',
+          'Save this draft before running it.'
+        )
+      : blockingProblems
+        ? translate(
+            'auto.components.workflows.WorkflowsPage.runBlockedProblems',
+            'Fix the problems below before running.'
+          )
+        : undefined
 
   const { run, clearActiveRun } = useWorkflowRunControls({
     settings,
@@ -245,6 +270,8 @@ export function useWorkflowsPageController() {
     session,
     problems,
     canRun,
+    noActiveProjectReason,
+    runDisabledReason,
     run,
     selectedNodeId,
     selectedEdgeId,

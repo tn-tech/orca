@@ -8,6 +8,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
 import type { WorkflowDraftResult, WorkflowSummary } from '@/runtime/runtime-workflow-client'
@@ -34,10 +35,59 @@ export type WorkflowListPaneProps = {
   unsavedGuard: 'draft' | 'changes' | null
   onDraft: (objective: string) => Promise<WorkflowDraftResult>
   onOpenDraft: (definition: Workflow) => void
+  /** F6: set when there's no active project — New/Draft show this as their disabled reason
+   *  instead of silently doing nothing. */
+  disabledReason?: string
 }
 
 function rowKey(row: Pick<WorkflowSummary, 'name' | 'source'>): string {
   return `${row.source}\u0000${row.name}`
+}
+
+/** F6: same `aria-disabled` + inline-style pattern as `SaveWorkflowButton`/`RunToolbar` — a native
+ *  `disabled` button drops pointer events (hides a Radix Tooltip) and tab order (hides the reason
+ *  from screen readers). */
+function HeaderIconButton({
+  icon,
+  label,
+  disabledReason,
+  onClick
+}: {
+  icon: React.ReactNode
+  label: string
+  disabledReason?: string
+  onClick: () => void
+}): React.JSX.Element {
+  const disabled = Boolean(disabledReason)
+  const button = (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-xs"
+      aria-disabled={disabled}
+      style={disabled ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+      aria-label={label}
+      onClick={() => {
+        if (disabled) {
+          return
+        }
+        onClick()
+      }}
+    >
+      {icon}
+    </Button>
+  )
+  if (!disabledReason) {
+    return button
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
+      <TooltipContent side="bottom" sideOffset={4}>
+        {disabledReason}
+      </TooltipContent>
+    </Tooltip>
+  )
 }
 
 /** FR-001: list, open, create, duplicate and delete workflows scoped to the active project. */
@@ -52,7 +102,8 @@ export default function WorkflowListPane({
   onDelete,
   unsavedGuard,
   onDraft,
-  onOpenDraft
+  onOpenDraft,
+  disabledReason
 }: WorkflowListPaneProps): React.JSX.Element {
   const [createOpen, setCreateOpen] = useState(false)
   const [duplicateTarget, setDuplicateTarget] = useState<WorkflowSummary | null>(null)
@@ -97,27 +148,21 @@ export default function WorkflowListPane({
           {translate('auto.components.workflows.WorkflowListPane.heading', 'Workflows')}
         </h2>
         <div className="flex shrink-0 items-center gap-0.5">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            onClick={() => guardUnsavedDiscard(openDraftDialog)}
-            aria-label={translate(
+          <HeaderIconButton
+            icon={<Sparkles />}
+            label={translate(
               'auto.components.workflows.WorkflowListPane.draft',
               'Draft from objective'
             )}
-          >
-            <Sparkles />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
+            disabledReason={disabledReason}
+            onClick={() => guardUnsavedDiscard(openDraftDialog)}
+          />
+          <HeaderIconButton
+            icon={<Plus />}
+            label={translate('auto.components.workflows.WorkflowListPane.new', 'New workflow')}
+            disabledReason={disabledReason}
             onClick={() => guardUnsavedDiscard(openCreateDialog)}
-            aria-label={translate('auto.components.workflows.WorkflowListPane.new', 'New workflow')}
-          >
-            <Plus />
-          </Button>
+          />
         </div>
       </div>
       <div className="scrollbar-sleek min-h-0 flex-1 overflow-y-auto">
@@ -128,10 +173,11 @@ export default function WorkflowListPane({
         ) : null}
         {!loading && !error && rows.length === 0 ? (
           <p className="p-3 text-xs text-muted-foreground">
-            {translate(
-              'auto.components.workflows.WorkflowListPane.empty',
-              'No workflows yet. Create one to get started.'
-            )}
+            {disabledReason ??
+              translate(
+                'auto.components.workflows.WorkflowListPane.empty',
+                'No workflows yet. Create one to get started.'
+              )}
           </p>
         ) : null}
         <ul>

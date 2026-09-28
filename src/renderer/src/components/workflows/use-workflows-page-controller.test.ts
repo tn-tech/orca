@@ -268,6 +268,25 @@ describe('useWorkflowsPageController', () => {
       expect(result.current.run.runId).toBe('run-1')
     })
 
+    it('disables Run (with the no-project reason) when the active project drops out from under a still-ready session (F6)', async () => {
+      const { result, rerender } = renderHook(() => useWorkflowsPageController())
+      await openReadyWorkflow(result)
+      expect(result.current.canRun).toBe(true)
+      expect(result.current.runDisabledReason).toBeUndefined()
+
+      // The user switches away from the active project while the workflow editor is still open.
+      useActiveRepoMock.mockReturnValue(undefined)
+      rerender()
+
+      expect(result.current.session.status).toBe('ready')
+      expect(result.current.canRun).toBe(false)
+      expect(result.current.runDisabledReason).toBe('Add or select a project to create workflows.')
+
+      // Run must actually no-op now, not just look disabled.
+      await act(() => result.current.run.start('Add CSV export'))
+      expect(workflowRunStartMock).not.toHaveBeenCalled()
+    })
+
     it('reports a workflow.run.start failure as a toast without leaving `starting` stuck', async () => {
       workflowRunStartMock.mockRejectedValue(new Error('host unreachable'))
       const { result } = renderHook(() => useWorkflowsPageController())

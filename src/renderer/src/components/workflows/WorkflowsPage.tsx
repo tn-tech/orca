@@ -35,6 +35,7 @@ export default function WorkflowsPage(): React.JSX.Element {
   const runtimeEnvironmentId = useAppStore(
     (s) => s.settings?.activeRuntimeEnvironmentId?.trim() || null
   )
+  const openModal = useAppStore((s) => s.openModal)
   const [trustedSourcesOpen, setTrustedSourcesOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   // US6: names and writes an open draft on its first save; see WorkflowNameDialog generation
@@ -137,15 +138,34 @@ export default function WorkflowsPage(): React.JSX.Element {
           unsavedGuard={unsavedGuard}
           onDraft={controller.draftWorkflow}
           onOpenDraft={controller.openDraft}
+          disabledReason={controller.noActiveProjectReason}
         />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {session.status === 'empty' ? (
-            <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-              {translate(
-                'auto.components.workflows.WorkflowsPage.placeholder',
-                'Select a workflow, or create a new one.'
-              )}
-            </div>
+            controller.noActiveProjectReason ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-3 p-4 text-center text-sm text-muted-foreground">
+                <p>{controller.noActiveProjectReason}</p>
+                <Button type="button" size="sm" onClick={() => openModal('add-repo')}>
+                  {translate(
+                    'auto.components.workflows.WorkflowsPage.addProjectAction',
+                    'Add a project'
+                  )}
+                </Button>
+                <p className="text-xs">
+                  {translate(
+                    'auto.components.workflows.WorkflowsPage.selectProjectHint',
+                    'Or select an existing project from the sidebar.'
+                  )}
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+                {translate(
+                  'auto.components.workflows.WorkflowsPage.placeholder',
+                  'Select a workflow, or create a new one.'
+                )}
+              </div>
+            )
           ) : session.status === 'loading' ? (
             <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
               <Loader2 className="mr-2 size-4 animate-spin" />

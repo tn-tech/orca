@@ -80,7 +80,14 @@ export function useWorkflowEditorSession({
   const createNew = useCallback(
     async (name: string, source: WorkflowRunSource) => {
       if (!repoId) {
-        return
+        // F6: throw (not a silent return) so WorkflowNameDialog's catch shows this instead of
+        // closing as if the workflow were created.
+        throw new Error(
+          translate(
+            'auto.components.workflows.WorkflowsPage.noActiveProject',
+            'Add or select a project to create workflows.'
+          )
+        )
       }
       setStatus('loading')
       setLoadError(null)
@@ -118,7 +125,14 @@ export function useWorkflowEditorSession({
   const saveDraftAs = useCallback(
     async (name: string, source: WorkflowRunSource) => {
       if (!repoId) {
-        return
+        // F6: throw (not a silent return) so the save-draft dialog's catch shows this instead of
+        // closing as if the draft were saved.
+        throw new Error(
+          translate(
+            'auto.components.workflows.WorkflowsPage.noActiveProject',
+            'Add or select a project to create workflows.'
+          )
+        )
       }
       setSaving(true)
       try {
