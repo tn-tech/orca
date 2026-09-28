@@ -184,7 +184,10 @@ describe('workflow-attempt-store', () => {
       }
       const original = d.listWorkflowAttempts(source.id)[0]
 
-      const [copy] = d.copyWorkflowAttempts([a.id], target.id)
+      const [pair] = d.copyWorkflowAttempts([a.id], target.id)
+      const { copy } = pair
+
+      expect(pair.sourceId).toBe(a.id)
 
       expect(copy.id).not.toBe(a.id)
       expect(copy).toMatchObject({

@@ -308,6 +308,40 @@ describe('workflow rerun from a node (FR-030, US8 AS2)', () => {
     expect(h.db.listWorkflowRuns({}).runs.every((run) => !run.rerunOfRunId)).toBe(true)
   })
 
+  it('starts exactly one of two overlapping reruns in the same run workspace', async () => {
+    const source = await failAtThirdNode()
+
+    const results = await Promise.allSettled([
+      startRerun(deps(), { runId: source.id }),
+      startRerun(deps(), { runId: source.id })
+    ])
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+    const refused = results.find((result) => result.status === 'rejected')
+    expect(refused?.status === 'rejected' && refused.reason).toMatchObject({
+      code: 'workflow_rerun_refused'
+    })
+    expect(h.db.listWorkflowRuns({}).runs.filter((run) => run.rerunOfRunId)).toHaveLength(1)
+  })
+
+  it('refuses while the source run still has a worker that may be alive', async () => {
+    const source = await failAtThirdNode()
+    const stranded = h.db.createWorkflowAttempt({
+      runId: source.id,
+      nodeId: 'review',
+      nodeType: 'agent'
+    })
+    for (const state of ['provisioning', 'running', 'unverifiable'] as const) {
+      h.db.transitionWorkflowAttempt(stranded.id, state)
+    }
+
+    await expect(startRerun(deps(), { runId: source.id })).rejects.toMatchObject({
+      code: 'workflow_rerun_refused',
+      message: expect.stringContaining('may still be running')
+    })
+    expect(h.db.listWorkflowRuns({}).runs.every((run) => !run.rerunOfRunId)).toBe(true)
+  })
+
   it('refuses when the source run workspace is gone', async () => {
     const source = await failAtThirdNode()
     vi.spyOn(h.runtime, 'showManagedWorktree').mockRejectedValue(new Error('worktree_not_found'))

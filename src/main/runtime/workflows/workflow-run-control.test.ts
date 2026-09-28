@@ -177,6 +177,41 @@ describe('workflow run control (pause / resume / cancel)', () => {
     expect(attention).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'run-failed' }))
   })
 
+  it('cancel asks every live worker to stop at once, not one after another', async () => {
+    let inFlight = 0
+    let maxInFlight = 0
+    const dispatch = h.dispatcher.dispatchAsWorkflowEngine.bind(h.dispatcher)
+    vi.spyOn(h.dispatcher, 'dispatchAsWorkflowEngine').mockImplementation(
+      async (request, ...rest) => {
+        if (request.method !== 'orchestration.workerStop') {
+          return dispatch(request, ...rest)
+        }
+        inFlight += 1
+        maxInFlight = Math.max(maxInFlight, inFlight)
+        await new Promise<void>((resolve) => setImmediate(resolve))
+        inFlight -= 1
+        const dispatchId: unknown = Reflect.get(Object(request.params), 'dispatch')
+        return {
+          id: request.id,
+          ok: true,
+          result: { dispatchId, state: 'stopped', alreadySettled: false },
+          _meta: { runtimeId: 'test' }
+        }
+      }
+    )
+    const { run, finished } = start(h.createRun(fanOutWorkflow('all', 'fail')))
+    await waitUntil(() => ['a', 'b', 'c'].every((id) => d.attempt(run.id, id)?.state === 'running'))
+
+    await cancelWorkflowRun(stopDeps(finished), run.id)
+
+    expect(maxInFlight).toBe(3)
+    expect(['a', 'b', 'c'].map((id) => d.attempt(run.id, id)?.state)).toEqual([
+      'cancelled',
+      'cancelled',
+      'cancelled'
+    ])
+  })
+
   it('cancel closes open questions so nothing is left answerable', async () => {
     joinDriver(h).interceptWorkerStop(() => ({ state: 'stopped', alreadySettled: false }))
     const { run, finished } = start(h.createRun(approvalWorkflow()))

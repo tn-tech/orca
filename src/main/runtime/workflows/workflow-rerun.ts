@@ -6,7 +6,10 @@
 // previous-iteration inputs (FR-028) live on the Loop's own attempts, not on one body node.
 import type { Repo } from '../../../shared/repo-types'
 import type { Workflow } from '../../../shared/workflows/workflow-definition-types'
-import type { WorkflowAttemptState } from '../../../shared/workflows/workflow-node-states'
+import {
+  ACTIVE_ATTEMPT_STATES,
+  type WorkflowAttemptState
+} from '../../../shared/workflows/workflow-node-states'
 import type { NodeAttemptView, RunSnapshot } from '../../../shared/workflows/workflow-run-types'
 import { getRepoMainWorktreeId } from '../../../shared/worktree/id'
 import type { OrchestrationDb } from '../orchestration/db'
@@ -111,18 +114,18 @@ export function seedRerunAttempts(
     plan.retained.map((attempt) => attempt.id),
     run.id
   )
-  copies.forEach((copy, index) => {
+  for (const { sourceId, copy } of copies) {
     recorder.event(
       'attempt_copied',
       {
         nodeId: copy.nodeId,
         iteration: copy.iteration,
         state: copy.state,
-        sourceAttemptId: plan.retained[index].id
+        sourceAttemptId: sourceId
       },
       { attemptId: copy.id, reason: 'attempt' }
     )
-  })
+  }
   recorder.event('rerun_seeded', {
     rerunOfRunId: run.rerunOfRunId,
     fromNodeId: plan.fromNodeId ?? null,
@@ -143,7 +146,10 @@ function refuse(message: string, runId: string): never {
   throw new OrchestrationError('workflow_rerun_refused', message, { runId })
 }
 
-/** Two live runs in one run workspace would edit the same files; in-place runs share by design. */
+/**
+ * Two live runs in one run workspace would edit the same files; in-place runs share by design.
+ * Called again right before the row insert: a concurrent rerun may have started across the awaits.
+ */
 function refuseBusyWorkspace(db: OrchestrationDb, source: RunSnapshot): void {
   if (source.workflowSnapshot.workspacePolicy !== 'run-workspace') {
     return
@@ -174,6 +180,10 @@ export async function startRerun(
   if (args.fromNodeId && !definition.nodes.some((node) => node.id === args.fromNodeId)) {
     refuse(`Run ${source.id} has no node ${args.fromNodeId}.`, source.id)
   }
+  // An unconfirmed stop leaves its attempt active; rerunning that node would start a second worker.
+  if (db.listWorkflowAttempts(source.id).some((a) => ACTIVE_ATTEMPT_STATES.has(a.state))) {
+    refuse(`Run ${source.id} has a worker that may still be running; stop it first.`, source.id)
+  }
   refuseBusyWorkspace(db, source)
   const repo = await deps.resolveRepo(source.repoId)
   await assertWorkflowRunnable(definition, repo, deps.validation)
@@ -187,6 +197,8 @@ export async function startRerun(
     )
   }
   const { fromNodeId } = planRerun(definition, db.listWorkflowAttempts(source.id), args.fromNodeId)
+  // No await from here to the insert, so this check and the new row are atomic.
+  refuseBusyWorkspace(db, source)
   const rerun = db.createWorkflowRun({
     workflowName: source.workflowName,
     workflowSource: source.workflowSource,

@@ -229,12 +229,14 @@ export function findWorkflowAttemptByTask(
  * A rerun's retained upstream attempts (FR-030): same state, results, artifacts and timing, in one
  * transaction. The Task is not carried over; it belongs to the source run's orchestration Run.
  */
+export type CopiedWorkflowAttempt = { sourceId: string; copy: NodeAttemptView }
+
 export function copyWorkflowAttempts(
   this: OrchestrationDb,
   sourceAttemptIds: readonly string[],
   targetRunId: string
-): NodeAttemptView[] {
-  const copyIds: string[] = []
+): CopiedWorkflowAttempt[] {
+  const copied: { sourceId: string; id: string }[] = []
   const insert = this.db.prepare(
     `INSERT INTO workflow_node_attempts (
        id, run_id, node_id, node_type, iteration, attempt_index, task_id, dispatch_id, state,
@@ -253,16 +255,16 @@ export function copyWorkflowAttempts(
       if (insert.run(id, targetRunId, sourceId).changes !== 1) {
         throw new Error(`Node attempt ${sourceId} was not found to copy.`)
       }
-      copyIds.push(id)
+      copied.push({ sourceId, id })
     }
     this.db.exec('COMMIT')
   } catch (error) {
     this.db.exec('ROLLBACK')
     throw error
   }
-  return copyIds.flatMap((id) => {
+  return copied.flatMap(({ sourceId, id }) => {
     const row = selectAttemptRow(this.db, id)
-    return row ? [toAttemptView(row)] : []
+    return row ? [{ sourceId, copy: toAttemptView(row) }] : []
   })
 }
 

@@ -95,20 +95,19 @@ export async function stopActiveAttempts(
   const active = deps.db
     .listWorkflowAttempts(recorder.runId)
     .filter((attempt) => ACTIVE_ATTEMPT_STATES.has(attempt.state))
-  let clean = true
-  for (const attempt of active) {
-    if (!attempt.dispatchId) {
-      // The controller has settled, so no worker-start is still in flight for it.
-      recorder.transitionAttempt(attempt.id, 'cancelled', { reason: cause.reason })
-      continue
-    }
-    await stopWorkerAttempt({ recorder, client }, attempt, cause)
-    const after = deps.db.listWorkflowAttempts(recorder.runId).find((a) => a.id === attempt.id)
-    if (after && ACTIVE_ATTEMPT_STATES.has(after.state)) {
-      clean = false
-    }
+  for (const attempt of active.filter((candidate) => !candidate.dispatchId)) {
+    // The controller has settled, so no worker-start is still in flight for it.
+    recorder.transitionAttempt(attempt.id, 'cancelled', { reason: cause.reason })
   }
-  return clean
+  const workers = active.filter((candidate) => candidate.dispatchId)
+  await Promise.all(
+    workers.map((attempt) => stopWorkerAttempt({ recorder, client }, attempt, cause))
+  )
+  const after = new Map(deps.db.listWorkflowAttempts(recorder.runId).map((a) => [a.id, a.state]))
+  return workers.every((attempt) => {
+    const state = after.get(attempt.id)
+    return state === undefined || !ACTIVE_ATTEMPT_STATES.has(state)
+  })
 }
 
 /** Idempotent for an already-cancelled run; a completed or failed run refuses the transition. */
