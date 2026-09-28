@@ -12,6 +12,7 @@ import type {
   WorkflowLaunchReceipt
 } from '../../../shared/workflows/workflow-run-types'
 import { engineCoordinatorHandle } from './workflow-engine-principal'
+import { parseWorkerStartResult, recordStartedWorker } from './workflow-worker-start-receipt'
 import type { BriefNode } from './workflow-brief-builder'
 import type { WorkflowOrchestrationClient } from './workflow-orchestration-client'
 import {
@@ -39,89 +40,6 @@ export function resolveNodeLaunch(node: BriefNode, roles: Workflow['roles']): Re
     model: node.overrides?.model ?? role?.model,
     effort: node.overrides?.effort ?? role?.effort,
     systemPrompt: node.overrides?.systemPrompt ?? role?.systemPrompt ?? ''
-  }
-}
-
-type WorkerStartLaunchSelection = {
-  agent: string | null
-  model: string | null
-  effort: string | null
-}
-type ParsedWorkerStartResult = {
-  dispatchId?: string
-  state?: string
-  lastError?: string
-  requested?: WorkerStartLaunchSelection
-  effective?: WorkerStartLaunchSelection | null
-  /** The worktree the placement effect landed on, whether created or reused. */
-  worktreeId?: string
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-}
-
-function isStringOrNull(value: unknown): value is string | null {
-  return typeof value === 'string' || value === null
-}
-
-function asLaunchSelection(value: unknown): WorkerStartLaunchSelection | undefined {
-  if (!isPlainObject(value)) {
-    return undefined
-  }
-  const { agent, model, effort } = value
-  if (!isStringOrNull(agent) || !isStringOrNull(model) || !isStringOrNull(effort)) {
-    return undefined
-  }
-  return { agent, model, effort }
-}
-
-/** The worker-start receipt's `effects` always includes one `kind: 'worktree'` entry — created or reused. */
-function extractWorktreeEffectId(effects: unknown): string | undefined {
-  if (!Array.isArray(effects)) {
-    return undefined
-  }
-  for (const effect of effects) {
-    if (isPlainObject(effect) && effect.kind === 'worktree' && typeof effect.id === 'string') {
-      return effect.id
-    }
-  }
-  return undefined
-}
-
-/** `orchestration.workerStart`'s result is `unknown` on the wire; pull out only what dispatch needs. */
-function parseWorkerStartResult(result: unknown): ParsedWorkerStartResult {
-  if (!isPlainObject(result)) {
-    return {}
-  }
-  const dispatchId = typeof result.dispatchId === 'string' ? result.dispatchId : undefined
-  const state = typeof result.state === 'string' ? result.state : undefined
-  const lastError = typeof result.lastError === 'string' ? result.lastError : undefined
-  const worktreeId = extractWorktreeEffectId(result.effects)
-  const launch = result.launch
-  if (!isPlainObject(launch)) {
-    return { dispatchId, state, lastError, worktreeId }
-  }
-  return {
-    dispatchId,
-    state,
-    lastError,
-    worktreeId,
-    requested: asLaunchSelection(launch.requested),
-    effective: launch.effective === null ? null : asLaunchSelection(launch.effective)
-  }
-}
-
-function toLaunchReceipt(
-  selection: WorkerStartLaunchSelection | undefined
-): WorkflowLaunchReceipt | undefined {
-  if (!selection?.agent) {
-    return undefined
-  }
-  return {
-    agent: selection.agent,
-    ...(selection.model ? { model: selection.model } : {}),
-    ...(selection.effort ? { effort: selection.effort } : {})
   }
 }
 
@@ -262,14 +180,7 @@ export async function dispatchWorkflowNode(
     )
   }
 
-  const requestedLaunch = toLaunchReceipt(parsed.requested)
-  const effectiveLaunch = toLaunchReceipt(parsed.effective ?? undefined)
-  attemptStore.updateWorkflowAttempt(attemptId, {
-    ...(parsed.dispatchId ? { dispatchId: parsed.dispatchId } : {}),
-    ...(requestedLaunch ? { requestedLaunch } : {}),
-    ...(effectiveLaunch ? { effectiveLaunch } : {}),
-    ...(wantsChildWorkspace && parsed.worktreeId ? { workspaceWorktreeId: parsed.worktreeId } : {})
-  })
+  recordStartedWorker(attemptStore, attemptId, parsed, wantsChildWorkspace)
   const attempt = attemptStore.transitionWorkflowAttempt(attemptId, 'running')
   return { ok: true, attempt }
 }

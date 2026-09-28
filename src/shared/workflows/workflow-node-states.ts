@@ -10,6 +10,13 @@ export const WORKFLOW_RUN_STATES = [
 ] as const
 export type WorkflowRunState = (typeof WORKFLOW_RUN_STATES)[number]
 
+/** Run states with no outgoing transition: the run is over. */
+export const TERMINAL_RUN_STATES: ReadonlySet<WorkflowRunState> = new Set([
+  'completed',
+  'failed',
+  'cancelled'
+])
+
 /** Node attempt states (data-model.md §3 `workflow_node_attempts.state`, §4 state machine). */
 export const WORKFLOW_ATTEMPT_STATES = [
   'pending',

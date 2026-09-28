@@ -7,6 +7,7 @@ import {
   getSshFilesystemProvider,
   SSH_FILESYSTEM_PROVIDER_UNAVAILABLE_MESSAGE
 } from '../../providers/ssh-filesystem-dispatch'
+import type { IFilesystemProvider } from '../../providers/types'
 import type { OrcaIgnoreTarget } from './workflow-brief-builder'
 import {
   getProjectWorkflowFilesystem,
@@ -32,19 +33,24 @@ function orcaIgnoreTargetFor(repo: Repo): OrcaIgnoreTarget {
   if (!repo.connectionId) {
     return { host: 'local', repoPath: repo.path }
   }
-  const fsProvider = getSshFilesystemProvider(repo.connectionId)
-  if (!fsProvider) {
-    throw new Error(WORKFLOW_HOST_UNREACHABLE_CODE)
-  }
+  const fsProvider = requireSshFilesystemProvider(repo.connectionId)
   return { host: 'remote', fsProvider, repoPath: repo.path, connectionId: repo.connectionId }
 }
 
 /** Refuses before anything is read or created: an SSH repo whose host is gone has no local
  *  fallback (FR-038), so reading its files locally could answer for the wrong repository. */
 export function assertRepoHostReachable(repo: Pick<Repo, 'connectionId'>): void {
-  if (repo.connectionId && !getSshFilesystemProvider(repo.connectionId)) {
+  if (repo.connectionId) {
+    requireSshFilesystemProvider(repo.connectionId)
+  }
+}
+
+function requireSshFilesystemProvider(connectionId: string): IFilesystemProvider {
+  const fsProvider = getSshFilesystemProvider(connectionId)
+  if (!fsProvider) {
     throw new Error(WORKFLOW_HOST_UNREACHABLE_CODE)
   }
+  return fsProvider
 }
 
 export function isHostUnreachableError(error: unknown): boolean {

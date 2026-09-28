@@ -10,9 +10,19 @@ import type { RpcRequest, RpcResponse } from '../rpc/core'
 import { RpcDispatcher } from '../rpc/dispatcher'
 import { WORKFLOW_RUN_METHODS } from '../rpc/methods/workflows/runs'
 import type { RuntimeStore } from '../runtime-store-contract'
-import { ATTEMPT_LIVENESS_INTERVAL_MS } from './workflow-attempt-liveness'
+import {
+  registerSshFilesystemProvider,
+  unregisterSshFilesystemProvider
+} from '../../providers/ssh-filesystem-dispatch'
+import type { IFilesystemProvider } from '../../providers/types'
+import {
+  ATTEMPT_LIVENESS_INTERVAL_MS,
+  WORKER_EXITED_WITHOUT_REPORT_REASON
+} from './workflow-attempt-liveness'
+import { WorkflowEngine } from './workflow-engine'
 import {
   createControllerHarness,
+  RUN_WORKTREE_ID,
   TWO_NODE_WORKFLOW,
   waitUntil
 } from './workflow-run-controller-test-harness'
@@ -62,6 +72,10 @@ describe('WorkflowRunController rehydration and dispatch liveness', () => {
       hang: string | undefined
       workerLists: number
       workerStarts: number
+      /** Runs as the host answers worker-list, e.g. a report sent just before the worker exits. */
+      onWorkerList?: () => Promise<unknown>
+      /** Drops a child placement request, which the harness cannot create a worktree for. */
+      startInPlace?: boolean
     } = {
       answer: 'live',
       reason: 'host_unavailable',
@@ -77,9 +91,15 @@ describe('WorkflowRunController rehydration and dispatch liveness', () => {
         }
         if (request.method === 'orchestration.workerList') {
           state.workerLists += 1
+          await state.onWorkerList?.()
           return workerListReply(request, state.answer, state.reason)
         }
-        const response = await dispatch(request, ...rest)
+        const params: unknown = request.params
+        const forwarded =
+          state.startInPlace && request.method === 'orchestration.workerStart'
+            ? { ...request, params: { ...Object(params), worktree: undefined } }
+            : request
+        const response = await dispatch(forwarded, ...rest)
         if (state.hang === request.method) {
           return new Promise<RpcResponse>(() => {})
         }
@@ -230,7 +250,7 @@ describe('WorkflowRunController rehydration and dispatch liveness', () => {
     await finished
   })
 
-  it('treats an unlisted worker or an unanswerable worker-list as unverifiable, and exited as no verdict of its own', async () => {
+  it('treats an unlisted worker or an unanswerable worker-list as unverifiable', async () => {
     const calls = interceptEngineCalls()
     const run = await runningThenRestart()
     calls.answer = 'throws'
@@ -238,7 +258,8 @@ describe('WorkflowRunController rehydration and dispatch liveness', () => {
     const finished = controller.run()
     await waitUntil(() => attempt(run.id, 'implement')?.state === 'unverifiable')
     expect(events(run.id, 'attempt_unverifiable')[0]?.payloadJson).toMatchObject({
-      reason: 'liveness_unreadable'
+      reason: 'liveness_unreadable',
+      detail: 'relay closed'
     })
 
     calls.answer = 'live'
@@ -251,14 +272,94 @@ describe('WorkflowRunController rehydration and dispatch liveness', () => {
       reason: 'not_listed'
     })
 
-    // `exited` is settled by the worker's own report, not by this sweep.
-    calls.answer = 'exited'
-    await vi.advanceTimersByTimeAsync(ATTEMPT_LIVENESS_INTERVAL_MS * 2)
-    await settle()
-    expect(attempt(run.id, 'implement')?.state).toBe('unverifiable')
     expect(events(run.id, 'attempt_failed')).toHaveLength(0)
     controller.stop()
     await finished
+  })
+
+  it('fails an attempt the host confirmed exited once the mailbox holds no report from it', async () => {
+    const calls = interceptEngineCalls()
+    const run = await runningThenRestart()
+    const exiting = attempt(run.id, 'implement')
+    const taskId = exiting?.taskId ?? ''
+    // What the host records when it observes the worker's process end.
+    h.db.db
+      .prepare("UPDATE dispatch_contexts SET status = 'failed' WHERE id = ?")
+      .run(exiting?.dispatchId ?? '')
+    calls.answer = 'exited'
+
+    await expect(h.createController(run.id).run()).resolves.toBe('failed')
+    expect(attempt(run.id, 'implement')).toMatchObject({
+      state: 'failed',
+      failureReason: WORKER_EXITED_WITHOUT_REPORT_REASON
+    })
+    expect(events(run.id, 'attempt_failed')[0]?.payloadJson).toMatchObject({
+      reason: 'worker_exited'
+    })
+    expect(h.db.getTask(taskId)?.status).toBe('failed')
+    expect(attempt(run.id, 'review')?.state).toBe('skipped')
+    expect(calls.workerStarts).toBe(1)
+  })
+
+  it('settles from the worker_done an exiting worker sent in the same sweep, never failing it', async () => {
+    const calls = interceptEngineCalls()
+    const run = await runningThenRestart()
+    calls.answer = 'exited'
+    calls.onWorkerList = async () => {
+      calls.onWorkerList = undefined
+      await reportDone(run.id, 'implement', { summary: 'ok' })
+    }
+
+    const finished = h.createController(run.id).run()
+    await waitUntil(() => attempt(run.id, 'review')?.state === 'running')
+    calls.answer = 'live'
+    expect(attempt(run.id, 'implement')).toMatchObject({
+      state: 'completed',
+      resultJson: { summary: 'ok' }
+    })
+    expect(events(run.id, 'attempt_failed')).toHaveLength(0)
+    await reportDone(run.id, 'review', { verdict: 'ok' })
+    await expect(finished).resolves.toBe('completed')
+  })
+
+  it('marks running workers unverifiable while an SSH host is unreachable at rehydrate, then resumes', async () => {
+    const run = await runningThenRestart()
+    const connectionId = 'ssh-rehydrate-gone'
+    Object.assign(h.runtime, {
+      showManagedWorktree: async () => ({ id: RUN_WORKTREE_ID, path: workspaceRoot })
+    })
+    const engine = new WorkflowEngine({
+      db: h.db,
+      runtime: h.runtime,
+      dispatcher: h.dispatcher,
+      getRepo: (repoId) => ({
+        id: repoId,
+        path: workspaceRoot,
+        displayName: 'Remote',
+        badgeColor: '#000',
+        addedAt: 0,
+        connectionId
+      }),
+      hostUnreachableRetryDelayMs: 3_600_000
+    })
+    try {
+      engine.rehydrateActiveRuns()
+      await waitUntil(() => attempt(run.id, 'implement')?.state === 'unverifiable')
+      expect(events(run.id, 'attempt_unverifiable')[0]?.payloadJson).toMatchObject({
+        reason: 'host_unavailable'
+      })
+      await settle()
+      expect(h.db.getWorkflowRun(run.id)?.state).toBe('running')
+      expect(events(run.id, 'attempt_failed')).toHaveLength(0)
+
+      // The host comes back: the retried controller re-reads the verdict and the worker is live.
+      registerSshFilesystemProvider(connectionId, throwingFilesystemProvider())
+      await waitUntil(() => attempt(run.id, 'implement')?.state === 'running')
+      expect(h.workerHandles).toHaveLength(1)
+    } finally {
+      unregisterSshFilesystemProvider(connectionId)
+      await engine.stop()
+    }
   })
 
   it('reads real worker-list verdicts: a reporting agent stays running across a restart', async () => {
@@ -312,12 +413,111 @@ describe('WorkflowRunController rehydration and dispatch liveness', () => {
       interrupted?.taskId ? h.db.getDispatchContext(interrupted.taskId)?.id : 'missing'
     )
     expect(adopted?.transcriptRef).toEqual({ kind: 'dispatch', id: adopted?.dispatchId })
+    expect(adopted).toMatchObject({
+      requestedLaunch: { agent: 'codex' },
+      effectiveLaunch: { agent: 'codex' },
+      workspaceWorktreeId: RUN_WORKTREE_ID
+    })
     expect(calls.workerStarts).toBe(1)
     expect(h.workerHandles).toHaveLength(1)
     expect(events(run.id, 'attempt_dispatch_adopted')).toHaveLength(1)
 
     await reportDone(run.id, 'implement', { summary: 'ok' })
     await waitUntil(() => attempt(run.id, 'review')?.state === 'running')
+    await reportDone(run.id, 'review', { verdict: 'ok' })
+    await expect(finished).resolves.toBe('completed')
+  })
+
+  /** Crashes inside worker-start after the host accepted it; returns the interrupted attempt. */
+  async function crashInsideWorkerStart(
+    workflow = TWO_NODE_WORKFLOW,
+    options: { startInPlace?: boolean } = {}
+  ) {
+    const calls = interceptEngineCalls()
+    calls.hang = 'orchestration.workerStart'
+    calls.startInPlace = options.startInPlace === true
+    const run = h.createRun(workflow)
+    void h.createController(run.id).run()
+    await waitUntil(() => calls.workerStarts === 1)
+    await settle()
+    calls.hang = undefined
+    const interrupted = attempt(run.id, 'implement')
+    const dispatch = h.db.getDispatchContext(interrupted?.taskId ?? '')
+    if (!interrupted?.taskId || !dispatch) {
+      throw new Error('worker start did not reach the host')
+    }
+    return { run, calls, interrupted, dispatch }
+  }
+
+  it('records the child worktree a child-workspace node was started in when adopting it', async () => {
+    const childWorkflow = {
+      ...TWO_NODE_WORKFLOW,
+      nodes: TWO_NODE_WORKFLOW.nodes.map((node) =>
+        node.id === 'implement' && node.type === 'agent'
+          ? { ...node, workspace: 'child' as const }
+          : node
+      )
+    }
+    // The harness cannot create worktrees, so the start runs in place and the host's record of
+    // the child worktree it would have created is written the way worker-start writes it.
+    const { run, dispatch: started } = await crashInsideWorkerStart(childWorkflow, {
+      startInPlace: true
+    })
+    h.db.db
+      .prepare('UPDATE worker_dispatches SET effects = ?, worktree_id = ? WHERE dispatch_id = ?')
+      .run(
+        JSON.stringify([{ kind: 'worktree', action: 'created', id: 'repo::child-1' }]),
+        'repo::child-1',
+        started.id
+      )
+
+    const controller = h.createController(run.id)
+    const finished = controller.run()
+    await waitUntil(() => attempt(run.id, 'implement')?.state === 'running')
+    expect(attempt(run.id, 'implement')).toMatchObject({
+      dispatchId: started.id,
+      workspaceWorktreeId: 'repo::child-1',
+      effectiveLaunch: { agent: 'codex' }
+    })
+    controller.stop()
+    await finished
+  })
+
+  it('fails, never adopts, an interrupted attempt whose Dispatch failed without a report', async () => {
+    const { run, calls, dispatch } = await crashInsideWorkerStart()
+    h.db.db
+      .prepare("UPDATE dispatch_contexts SET status = 'failed', last_failure = ? WHERE id = ?")
+      .run('Agent did not become ready (exited).', dispatch.id)
+
+    await expect(h.createController(run.id).run()).resolves.toBe('failed')
+    expect(attempt(run.id, 'implement')).toMatchObject({
+      state: 'failed',
+      dispatchId: dispatch.id,
+      failureReason: 'Agent did not become ready (exited).'
+    })
+    expect(events(run.id, 'attempt_dispatch_adopted')).toHaveLength(0)
+    expect(calls.workerStarts).toBe(1)
+  })
+
+  it('adopts an interrupted attempt whose settled Dispatch left a worker_done, so the report settles it', async () => {
+    const { run, dispatch, interrupted } = await crashInsideWorkerStart()
+    const handle = h.db.getWorkerDispatch(dispatch.id)?.agent_terminal_handle ?? ''
+    await h.writeResult(interrupted.resultPath ?? '', { summary: 'done while down' })
+    await h.sendWorkerDone({
+      handle,
+      taskId: interrupted.taskId ?? '',
+      dispatchId: dispatch.id,
+      reportPath: interrupted.resultPath ?? ''
+    })
+    expect(h.db.getDispatchContext(interrupted.taskId ?? '')?.status).toBe('completed')
+
+    const finished = h.createController(run.id).run()
+    await waitUntil(() => attempt(run.id, 'review')?.state === 'running')
+    expect(attempt(run.id, 'implement')).toMatchObject({
+      state: 'completed',
+      resultJson: { summary: 'done while down' }
+    })
+    expect(events(run.id, 'attempt_dispatch_adopted')).toHaveLength(1)
     await reportDone(run.id, 'review', { verdict: 'ok' })
     await expect(finished).resolves.toBe('completed')
   })
@@ -401,7 +601,7 @@ describe('workflow.run.start against an unreachable SSH host (FR-038)', () => {
     expect(await readdir(repoPath)).toEqual([])
   })
 
-  it('refuses at workspace creation without a local fallback when the workflow itself was readable', async () => {
+  it('refuses at start validation, before any workspace, when the workflow itself was readable', async () => {
     const engine = runtime.getWorkflowEngine()
     await expect(
       engine.startRun({
@@ -439,5 +639,31 @@ function sshStoreFixture(repo: Repo): RuntimeStore {
       branchPrefix: 'none',
       branchPrefixCustom: ''
     })
+  }
+}
+
+/** Registered only to make the host reachable; the resumed controller reads no files. */
+function throwingFilesystemProvider(): IFilesystemProvider {
+  const unused = (): never => {
+    throw new Error('not used by this test')
+  }
+  return {
+    readDir: unused,
+    readFile: unused,
+    writeFile: unused,
+    writeFileBase64: unused,
+    writeFileBase64Chunk: unused,
+    stat: unused,
+    deletePath: unused,
+    createFile: unused,
+    createDir: unused,
+    createDirNoClobber: unused,
+    rename: unused,
+    renameNoClobber: unused,
+    copy: unused,
+    realpath: unused,
+    search: unused,
+    listFiles: unused,
+    watch: unused
   }
 }

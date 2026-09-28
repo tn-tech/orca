@@ -1,7 +1,10 @@
 // Per-run deterministic loop (research R1–R3): rehydrate from the DB, drain the engine Run's
 // mailbox backlog, then sleep on the exclusive Run-mailbox waiter. worker_done drives result
 // capture and the frontier; every change is recorded and announced (WorkflowRunRecorder).
-import type { WorkflowRunState } from '../../../shared/workflows/workflow-node-states'
+import {
+  TERMINAL_RUN_STATES,
+  type WorkflowRunState
+} from '../../../shared/workflows/workflow-node-states'
 import type { RunSnapshot } from '../../../shared/workflows/workflow-run-types'
 import type { OrchestrationDb } from '../orchestration/db'
 import type { MessageRow } from '../orchestration/types'
@@ -10,7 +13,12 @@ import { AgentAnswerDeliveryBackoff } from './workflow-agent-answer-delivery'
 import { settleAgentQuestions } from './workflow-agent-question-settlement'
 import { raiseAgentQuestion } from './workflow-agent-questions'
 import { settleApprovals } from './workflow-approval-gates'
-import { AttemptLivenessSchedule } from './workflow-attempt-liveness'
+import {
+  AttemptLivenessSchedule,
+  failExitedAttempts,
+  markHostUnreachableAttempts,
+  type ExitedAttempt
+} from './workflow-attempt-liveness'
 import { recoverInterruptedAttempts } from './workflow-attempt-recovery'
 import { deliverFollowUps, failUndeliveredFollowUps } from './workflow-follow-up-delivery'
 import type { TerminalPromptProgress } from './workflow-follow-up-interrupt'
@@ -21,6 +29,7 @@ import {
 } from './workflow-question-deadlines'
 import { advanceRun } from './workflow-run-advance'
 import { openControllerSession, type ControllerSession } from './workflow-run-controller-session'
+import { isHostUnreachableError } from './workflow-run-host-access'
 import { classifyRunMail } from './workflow-run-mailbox-message'
 import {
   resumeAnsweredTrustWaits,
@@ -59,7 +68,6 @@ export type WorkflowRunControllerDeps = {
   onAgentQuestionEscalated?: WorkflowQuestionListener
 }
 
-const TERMINAL_RUN_STATES = new Set<WorkflowRunState>(['completed', 'failed', 'cancelled'])
 export class WorkflowRunController {
   private readonly abort = new AbortController()
   private wakeSignal = new AbortController()
@@ -69,6 +77,8 @@ export class WorkflowRunController {
   /** A pause held an advance back (FR-030); it runs once the run is no longer paused. */
   private advanceOnResume = false
   private liveness = new AttemptLivenessSchedule(false)
+  /** Confirmed exits from the last sweep, failed only once the mailbox backlog is drained. */
+  private exited: ExitedAttempt[] = []
 
   constructor(private readonly deps: WorkflowRunControllerDeps) {
     this.recorder = new WorkflowRunRecorder(deps.db, deps.runtime, deps.workflowRunId)
@@ -91,17 +101,7 @@ export class WorkflowRunController {
       await releaseRunSkills(run.id, () => this.deps.resolveWorkspace(run))
       return run.state
     }
-    const session = await openControllerSession(
-      {
-        ...this.deps,
-        recorder: this.recorder,
-        signal: this.abort.signal,
-        followUpBackoff: this.followUpBackoff,
-        sendTerminalPrompt: (handle, prompt, progress) =>
-          this.deps.runtime.sendTerminalAgentPrompt(handle, prompt, progress)
-      },
-      run
-    )
+    const session = await this.openSession(run)
     // A rehydrated run's worker verdicts predate the restart, so its first idle re-reads them.
     this.liveness = new AttemptLivenessSchedule(run.state !== 'queued')
     if (run.state === 'queued') {
@@ -120,6 +120,28 @@ export class WorkflowRunController {
         failUndeliveredFollowUps(this.deps.db, this.recorder)
         await releaseRunSkills(run.id, async () => session.launch.workspace)
       }
+    }
+  }
+
+  /** Lost contact at rehydrate leaves no controller to sweep, so its workers turn unverifiable here. */
+  private async openSession(run: RunSnapshot): Promise<ControllerSession> {
+    try {
+      return await openControllerSession(
+        {
+          ...this.deps,
+          recorder: this.recorder,
+          signal: this.abort.signal,
+          followUpBackoff: this.followUpBackoff,
+          sendTerminalPrompt: (handle, prompt, progress) =>
+            this.deps.runtime.sendTerminalAgentPrompt(handle, prompt, progress)
+        },
+        run
+      )
+    } catch (error) {
+      if (isHostUnreachableError(error)) {
+        markHostUnreachableAttempts(this.deps.db, this.recorder)
+      }
+      throw error
     }
   }
 
@@ -150,7 +172,7 @@ export class WorkflowRunController {
         continue
       }
       if (this.liveness.isDue(session.launch)) {
-        await this.liveness.sweep(session.launch, session.engineRunId)
+        this.exited.push(...(await this.liveness.sweep(session.launch, session.engineRunId)))
       }
       // Why: the backlog read and waiter registration share one tick, so no wake is lost between them.
       const batch = db.getOrCreateRunDelivery(mailbox)
@@ -162,6 +184,14 @@ export class WorkflowRunController {
           break // Unacknowledged, so the next controller replays what this one left unsettled.
         }
         db.acknowledgeRunDelivery({ ...mailbox, deliveryId: batch.delivery.id })
+        continue
+      }
+      // The backlog is empty, so no report an exited worker sent is still waiting to be read.
+      if (this.exited.length > 0) {
+        const exited = this.exited.splice(0)
+        if (await failExitedAttempts(session.launch, exited)) {
+          await this.advance(session)
+        }
         continue
       }
       const wake = this.wakeSignal
