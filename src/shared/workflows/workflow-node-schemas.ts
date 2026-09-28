@@ -26,26 +26,26 @@ const OverridesSchema = z
   })
   .strict()
 
-const nodeBaseShape = {
+const nodeBaseFields = {
   id: z.string().min(1),
   title: z.string().min(1),
   notes: z.string().optional()
 }
 
 /** Agent/router/reflection nodes all dispatch a role with an optional override + prompt. */
-const roleDispatchShape = {
+const roleDispatchFields = {
   roleId: z.string().min(1).optional(),
   overrides: OverridesSchema.optional(),
   prompt: z.string().min(1)
 }
 
-const StartNodeSchema = z.object({ ...nodeBaseShape, type: z.literal('start') }).strict()
-const EndNodeSchema = z.object({ ...nodeBaseShape, type: z.literal('end') }).strict()
+const StartNodeSchema = z.object({ ...nodeBaseFields, type: z.literal('start') }).strict()
+const EndNodeSchema = z.object({ ...nodeBaseFields, type: z.literal('end') }).strict()
 
 const AgentNodeSchema = z
   .object({
-    ...nodeBaseShape,
-    ...roleDispatchShape,
+    ...nodeBaseFields,
+    ...roleDispatchFields,
     type: z.literal('agent'),
     workspace: z.enum(['run', 'child']),
     resultContract: ResultContractSchema,
@@ -56,8 +56,8 @@ const AgentNodeSchema = z
 
 const RouterNodeSchema = z
   .object({
-    ...nodeBaseShape,
-    ...roleDispatchShape,
+    ...nodeBaseFields,
+    ...roleDispatchFields,
     type: z.literal('router'),
     choices: z.array(z.string().min(1)).min(1)
   })
@@ -65,7 +65,7 @@ const RouterNodeSchema = z
 
 const LoopNodeSchema = z
   .object({
-    ...nodeBaseShape,
+    ...nodeBaseFields,
     type: z.literal('loop'),
     body: z.object({ nodeIds: z.array(z.string().min(1)).min(1) }).strict(),
     entryNodeId: z.string().min(1),
@@ -79,7 +79,7 @@ const LoopNodeSchema = z
 
 const JoinNodeSchema = z
   .object({
-    ...nodeBaseShape,
+    ...nodeBaseFields,
     type: z.literal('join'),
     policy: z.union([
       z.literal('all'),
@@ -92,7 +92,7 @@ const JoinNodeSchema = z
 
 const ApprovalNodeSchema = z
   .object({
-    ...nodeBaseShape,
+    ...nodeBaseFields,
     type: z.literal('approval'),
     question: z.string().min(1),
     options: z.array(z.string().min(1)).min(1),
@@ -104,8 +104,8 @@ const ApprovalNodeSchema = z
 
 const ReflectionNodeSchema = z
   .object({
-    ...nodeBaseShape,
-    ...roleDispatchShape,
+    ...nodeBaseFields,
+    ...roleDispatchFields,
     type: z.literal('reflection')
   })
   .strict()

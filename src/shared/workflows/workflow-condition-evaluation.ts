@@ -1,6 +1,10 @@
 import type { Condition } from './workflow-definition-types'
 import { getResultPath } from './workflow-result-path'
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 /** Structural equality for JSON-shaped operands (Condition.value); not a general deep-equal. */
 function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) {
@@ -9,7 +13,7 @@ function deepEqual(a: unknown, b: unknown): boolean {
   if (Array.isArray(a) && Array.isArray(b)) {
     return a.length === b.length && a.every((item, index) => deepEqual(item, b[index]))
   }
-  if (typeof a === 'object' && a !== null && typeof b === 'object' && b !== null) {
+  if (isRecord(a) && isRecord(b)) {
     if (Array.isArray(a) || Array.isArray(b)) {
       return false
     }
@@ -17,9 +21,7 @@ function deepEqual(a: unknown, b: unknown): boolean {
     const bKeys = Object.keys(b)
     return (
       aKeys.length === bKeys.length &&
-      aKeys.every(
-        (key) => Object.hasOwn(b, key) && deepEqual(Reflect.get(a, key), Reflect.get(b, key))
-      )
+      aKeys.every((key) => Object.hasOwn(b, key) && deepEqual(a[key], b[key]))
     )
   }
   return false

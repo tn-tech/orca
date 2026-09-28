@@ -54,7 +54,7 @@ const EdgeSchema = z
   })
   .strict()
 
-const workflowShapeBase = {
+const workflowBaseFields = {
   version: z.literal(1),
   name: z.string().min(1),
   description: z.string().optional(),
@@ -65,12 +65,12 @@ const workflowShapeBase = {
   layout: z.record(z.string().min(1), z.object({ x: z.number(), y: z.number() }).strict())
 }
 
-export const WorkflowFileSchema = z.object({ ...workflowShapeBase, roles: RolesSchema }).strict()
+export const WorkflowFileSchema = z.object({ ...workflowBaseFields, roles: RolesSchema }).strict()
 
 /** Same shape as `WorkflowFileSchema`, for RPC params that carry an already-parsed `Workflow`
  *  (e.g. a prior `workflow.read` result round-tripped through `workflow.write`/`workflow.validate`)
  *  rather than raw file text — `WorkflowFileSchema` would reject its roles' injected `id` field. */
-export const WorkflowSchema = z.object({ ...workflowShapeBase, roles: RolesWithIdSchema }).strict()
+export const WorkflowSchema = z.object({ ...workflowBaseFields, roles: RolesWithIdSchema }).strict()
 
 export type Workflow = z.infer<typeof WorkflowFileSchema>
 export type Role = z.infer<typeof RolesSchema>[string]
