@@ -264,7 +264,7 @@ export default function AttemptPanel({
 
       {attempt.failureReason ? (
         <p className={cn('text-xs', attemptReasonClassName(attempt.state))}>
-          {attemptReasonLabel(attempt.failureReason)}
+          {attemptReasonLabel(attempt.failureReason, attempt.failureCode)}
         </p>
       ) : null}
 

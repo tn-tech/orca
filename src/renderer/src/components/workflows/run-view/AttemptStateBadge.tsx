@@ -1,6 +1,7 @@
 import React from 'react'
 import { translate } from '@/i18n/i18n'
 import { cn } from '@/lib/utils'
+import { AGENT_READINESS_TIMEOUT_FAILURE_CODE } from '../../../../../shared/workflows/workflow-attempt-failure-code'
 import type { WorkflowAttemptState } from '../../../../../shared/workflows/workflow-node-states'
 import { workflowNodeStatusDotClassName } from '../editor/nodes/workflow-node-run-status-style'
 
@@ -10,12 +11,21 @@ export function attemptReasonClassName(state: WorkflowAttemptState): string {
   return state === 'failed' ? 'text-destructive' : 'text-muted-foreground'
 }
 
-/** `join_skipped`/`approval_timed_out`/`approval_rejected` are machine reason codes
+/** F2 (moved to F5): `failureCode` (`workflow-attempt-failure-code.ts`) is the open,
+ *  machine-readable vocabulary — an unknown or absent code falls back to the free-text
+ *  `failureReason`. `join_skipped`/`approval_timed_out`/`approval_rejected` predate that field:
+ *  they're machine reason codes stored directly as `failureReason` text
  *  (`workflow-join-settlement.ts`'s `JOIN_SKIPPED_REASON`, `workflow-approval-deadlines.ts`'s
  *  `APPROVAL_TIMED_OUT_REASON`, `workflow-approval-rejection.ts`'s `APPROVAL_REJECTED_REASON`),
- *  not copy meant to be read as-is (review note) — every other `failureReason` is already a
- *  free-text message from the engine. */
-export function attemptReasonLabel(failureReason: string): string {
+ *  not copy meant to be read as-is — every other `failureReason` is already a free-text message
+ *  from the engine. */
+export function attemptReasonLabel(failureReason: string, failureCode?: string): string {
+  if (failureCode === AGENT_READINESS_TIMEOUT_FAILURE_CODE) {
+    return translate(
+      'auto.components.workflows.run-view.AttemptPanel.reasonAgentReadinessTimeout',
+      'The agent never became ready. It may be waiting on a prompt in its terminal, such as a question about trusting the folder. Open the transcript to see it.'
+    )
+  }
   switch (failureReason) {
     case 'join_skipped':
       return translate(

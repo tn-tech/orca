@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { History, Loader2, ShieldCheck } from 'lucide-react'
+import { Loader2, ShieldCheck } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -14,6 +14,8 @@ import WorkflowEditorProblemNotice from './editor/WorkflowEditorProblemNotice'
 import { hasBlockingWorkflowProblems } from './editor/workflow-validation-merge'
 import FileConflictDialog from './editor/FileConflictDialog'
 import WrapInLoopButton from './editor/WrapInLoopButton'
+import RunHistoryButton from './RunHistoryButton'
+import SaveWorkflowButton from './SaveWorkflowButton'
 import TrustedSourcesDialog from './TrustedSourcesDialog'
 import WorkflowListPane from './WorkflowListPane'
 import WorkflowNameDialog from './WorkflowNameDialog'
@@ -65,6 +67,8 @@ export default function WorkflowsPage(): React.JSX.Element {
   // (FR-036); edge conditions still go through NodeInspector regardless.
   const showAttemptPanel =
     run.snapshot !== null && Boolean(controller.selectedNodeId) && !controller.selectedEdgeId
+  // F5: shared by Save's and Run's disabled-reason tooltips (FR-009).
+  const blockingProblems = hasBlockingWorkflowProblems(controller.problems)
 
   // F4: Delete/Backspace and Cmd/Ctrl+Z, scoped to whatever the canvas currently selects. Not
   // gated on a shown run — Delete and Undo follow the same rule as every other edit here (F4
@@ -104,22 +108,11 @@ export default function WorkflowsPage(): React.JSX.Element {
           </Button>
         ) : null}
         {session.status === 'ready' ? (
-          <Button
-            type="button"
-            size="sm"
-            disabled={
-              (!session.editor.state.dirty && !session.isDraft) ||
-              session.saving ||
-              hasBlockingWorkflowProblems(controller.problems)
-            }
-            title={
-              hasBlockingWorkflowProblems(controller.problems)
-                ? translate(
-                    'auto.components.workflows.WorkflowsPage.saveBlocked',
-                    'Fix the problems below before saving.'
-                  )
-                : undefined
-            }
+          <SaveWorkflowButton
+            dirty={session.editor.state.dirty}
+            isDraft={session.isDraft}
+            saving={session.saving}
+            blockingProblems={blockingProblems}
             onClick={() => {
               if (session.isDraft) {
                 setNamingDraftGeneration((generation) => generation + 1)
@@ -128,10 +121,7 @@ export default function WorkflowsPage(): React.JSX.Element {
                 void session.save()
               }
             }}
-          >
-            {session.saving ? <Loader2 className="animate-spin" /> : null}
-            {translate('auto.components.workflows.WorkflowsPage.save', 'Save')}
-          </Button>
+          />
         ) : null}
       </header>
       <div className="flex flex-1 min-h-0">
@@ -148,7 +138,7 @@ export default function WorkflowsPage(): React.JSX.Element {
           onDraft={controller.draftWorkflow}
           onOpenDraft={controller.openDraft}
         />
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {session.status === 'empty' ? (
             <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
               {translate(
@@ -167,7 +157,7 @@ export default function WorkflowsPage(): React.JSX.Element {
             </div>
           ) : (
             <>
-              <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2 md:px-5">
+              <div className="flex flex-wrap shrink-0 items-center gap-x-2 gap-y-2 border-b border-border px-3 py-2 md:px-5">
                 <AddNodeMenu
                   hasStartNode={session.editor.state.definition.nodes.some(
                     (node) => node.type === 'start'
@@ -195,7 +185,12 @@ export default function WorkflowsPage(): React.JSX.Element {
                             'auto.components.workflows.WorkflowsPage.runBlockedDraft',
                             'Save this draft before running it.'
                           )
-                        : undefined
+                        : blockingProblems
+                          ? translate(
+                              'auto.components.workflows.WorkflowsPage.runBlockedProblems',
+                              'Fix the problems below before running.'
+                            )
+                          : undefined
                     }
                     starting={run.starting}
                     onRun={(objective) => void run.start(objective)}
@@ -211,16 +206,10 @@ export default function WorkflowsPage(): React.JSX.Element {
                   onResume={() => void run.resume()}
                   onCancel={() => void run.stop()}
                 />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
+                <RunHistoryButton
                   disabled={!session.openRef || !controller.repoId}
                   onClick={() => setHistoryOpen(true)}
-                >
-                  <History />
-                  {translate('auto.components.workflows.WorkflowsPage.runHistory', 'History')}
-                </Button>
+                />
               </div>
               <WorkflowEditorProblemNotice
                 problem={session.editor.state.lastProblem}

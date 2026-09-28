@@ -17218,7 +17218,9 @@
           "saveDraftSubmit": "Save",
           "runBlockedDraft": "Save this draft before running it.",
           "runHistory": "History",
-          "runHistoryTitle": "Run history"
+          "runHistoryTitle": "Run history",
+          "historyBlocked": "Save the workflow first.",
+          "runBlockedProblems": "Fix the problems below before running."
         },
         "editor": {
           "AgentNodeArtifactsField": {
@@ -17428,7 +17430,8 @@
             "trigger": "Wrap in Loop"
           },
           "UndoButton": {
-            "trigger": "Undo"
+            "trigger": "Undo",
+            "nothingToUndo": "Nothing to undo yet."
           },
           "workflow-loop-unwrap-command": {
             "notALoop": "Select a Loop node to unwrap."
@@ -17459,7 +17462,8 @@
             "provisioningPromptFallback": "Included in the prompt instead (no workspace location): {{skills}}",
             "reasonJoinSkipped": "Every branch was skipped.",
             "reasonApprovalTimedOut": "The approval timed out with no answer.",
-            "reasonApprovalRejected": "The approval was answered with an option that stops the run."
+            "reasonApprovalRejected": "The approval was answered with an option that stops the run.",
+            "reasonAgentReadinessTimeout": "The agent never became ready. It may be waiting on a prompt in its terminal, such as a question about trusting the folder. Open the transcript to see it."
           },
           "RunToolbar": {
             "stateQueued": "Queued",
@@ -17473,7 +17477,9 @@
             "objectivePlaceholder": "What should this run accomplish?",
             "stop": "Stop",
             "run": "Run",
-            "relayout": "Re-layout"
+            "relayout": "Re-layout",
+            "starting": "Starting the run…",
+            "objectiveRequired": "Enter an objective."
           },
           "JoinBranchOutcomes": {
             "completed": "Completed",
@@ -17706,6 +17712,9 @@
           "cancel": "Cancel",
           "submit": "Draft workflow",
           "close": "Close"
+        },
+        "SaveWorkflowButton": {
+          "nothingToSave": "No changes to save yet."
         }
       }
     },

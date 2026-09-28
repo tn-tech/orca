@@ -3,6 +3,7 @@ import { LayoutGrid, Play, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { translate } from '@/i18n/i18n'
 import type { WorkflowRunState } from '../../../../../shared/workflows/workflow-node-states'
 
@@ -71,10 +72,45 @@ export default function RunToolbar({
   const [objective, setObjective] = useState('')
   const objectiveId = useId()
   const isActive = runState !== undefined && ACTIVE_RUN_STATES.has(runState)
+  const objectiveTrimmed = objective.trim()
+  const runDisabled = !canRun || starting || objectiveTrimmed.length === 0
+  // F5: priority is the external reason (draft/blocking problems, from WorkflowsPage), then the
+  // in-flight start, then the empty objective — each state gets exactly one explanation.
+  const runReason = !canRun
+    ? disabledReason
+    : starting
+      ? translate('auto.components.workflows.run-view.RunToolbar.starting', 'Starting the run…')
+      : objectiveTrimmed.length === 0
+        ? translate(
+            'auto.components.workflows.run-view.RunToolbar.objectiveRequired',
+            'Enter an objective.'
+          )
+        : undefined
+
+  const runButton = (
+    <Button
+      type="button"
+      size="sm"
+      aria-disabled={runDisabled}
+      // Inline style, not a class: <Button>'s contract owns opacity (shadcn/no-restyle), and
+      // `disabled:opacity-50` never triggers since `disabled` is deliberately unset above.
+      style={runDisabled ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+      onClick={(event) => {
+        if (runDisabled) {
+          event.preventDefault()
+          return
+        }
+        onRun(objectiveTrimmed)
+      }}
+    >
+      <Play />
+      {translate('auto.components.workflows.run-view.RunToolbar.run', 'Run')}
+    </Button>
+  )
 
   return (
-    <div className="flex items-center gap-2">
-      <div className="min-w-0 flex-1">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+      <div className="min-w-40 flex-1">
         {isActive ? (
           <p className="truncate text-sm text-foreground" title={runObjective}>
             {runObjective}
@@ -112,17 +148,15 @@ export default function RunToolbar({
             {translate('auto.components.workflows.run-view.RunToolbar.stop', 'Stop')}
           </Button>
         ) : null
+      ) : runReason === undefined ? (
+        runButton
       ) : (
-        <Button
-          type="button"
-          size="sm"
-          disabled={!canRun || starting || objective.trim().length === 0}
-          title={!canRun ? disabledReason : undefined}
-          onClick={() => onRun(objective.trim())}
-        >
-          <Play />
-          {translate('auto.components.workflows.run-view.RunToolbar.run', 'Run')}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>{runButton}</TooltipTrigger>
+          <TooltipContent side="top" sideOffset={4}>
+            {runReason}
+          </TooltipContent>
+        </Tooltip>
       )}
       <Button type="button" variant="outline" size="sm" onClick={onRelayout}>
         <LayoutGrid />

@@ -18,6 +18,11 @@ export type UndoButtonProps = {
  *  STYLEGUIDE's "Shortcut chips inside tooltips" rule — F4 review round 1. Undo follows every
  *  other edit's rule for a shown run (not blocked; see `use-workflows-page-controller.ts`), so
  *  the only disabled state left is "nothing to undo".
+ *
+ *  F5: that disabled state used to give no reason. A native `disabled` button also loses pointer
+ *  events in Chromium (hides this Tooltip) and drops out of the tab order (hides the reason from
+ *  screen readers) — same fix as `action-button.tsx`: `aria-disabled` plus a click guard, not
+ *  `disabled`.
  */
 export default function UndoButton({ canUndo, onUndo }: UndoButtonProps): React.JSX.Element {
   const isMac = getShortcutPlatform() === 'darwin'
@@ -25,14 +30,38 @@ export default function UndoButton({ canUndo, onUndo }: UndoButtonProps): React.
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button type="button" variant="outline" size="sm" disabled={!canUndo} onClick={onUndo}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          aria-disabled={!canUndo}
+          // Inline style, not a class: <Button>'s contract owns opacity (shadcn/no-restyle), and
+          // `disabled:opacity-50` never triggers since `disabled` is deliberately unset above.
+          style={!canUndo ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+          onClick={(event) => {
+            if (!canUndo) {
+              event.preventDefault()
+              return
+            }
+            onUndo()
+          }}
+        >
           <Undo2 />
           {translate('auto.components.workflows.editor.UndoButton.trigger', 'Undo')}
         </Button>
       </TooltipTrigger>
       <TooltipContent side="top" sideOffset={4}>
-        {translate('auto.components.workflows.editor.UndoButton.trigger', 'Undo')}
-        <ShortcutKeyCombo keys={isMac ? ['⌘', 'Z'] : ['Ctrl', 'Z']} className="ml-1.5" />
+        {canUndo ? (
+          <>
+            {translate('auto.components.workflows.editor.UndoButton.trigger', 'Undo')}
+            <ShortcutKeyCombo keys={isMac ? ['⌘', 'Z'] : ['Ctrl', 'Z']} className="ml-1.5" />
+          </>
+        ) : (
+          translate(
+            'auto.components.workflows.editor.UndoButton.nothingToUndo',
+            'Nothing to undo yet.'
+          )
+        )}
       </TooltipContent>
     </Tooltip>
   )

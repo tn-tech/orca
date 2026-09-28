@@ -28,7 +28,7 @@ function IterationRow({ attempt }: { attempt: NodeAttemptView }): React.JSX.Elem
       ) : null}
       {attempt.failureReason ? (
         <p className={cn('mt-1.5 text-[11px]', attemptReasonClassName(attempt.state))}>
-          {attemptReasonLabel(attempt.failureReason)}
+          {attemptReasonLabel(attempt.failureReason, attempt.failureCode)}
         </p>
       ) : null}
     </li>
