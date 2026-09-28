@@ -197,8 +197,11 @@ All listed in `VERSIONED_POST_V6_COLUMNS` and `row-column-lists.ts`.
 
 ### Workflow run
 `queued → running ↔ paused; running → waiting (approval/question/trust pending) → running;
-running|waiting → completed | failed | cancelled`. Terminal states are final; a rerun creates a
-new run referencing `rerun_of_run_id`.
+waiting ↔ paused; running|waiting → completed | failed | cancelled; paused → failed | cancelled;
+queued → failed | cancelled`. A paused run launches no new nodes but keeps its questions
+answerable, and resumes into `waiting` while one is still open; `paused → failed` covers an
+Approval answered while paused with an option that stops the run. Terminal states are final; a
+rerun creates a new run referencing `rerun_of_run_id`.
 
 ### Node attempt
 `pending → provisioning → running → completed | failed`; `running → waiting → running`;

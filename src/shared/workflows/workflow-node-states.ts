@@ -36,11 +36,9 @@ export const ACTIVE_ATTEMPT_STATES: ReadonlySet<WorkflowAttemptState> = new Set(
 export type WorkflowStateMachineKind = 'run' | 'attempt'
 
 /**
- * Run transitions (data-model.md §4), plus controller-ruled additions: `paused -> cancelled`
- * (FR-030 lets users cancel any run), `paused -> failed` (an approval answered while paused
- * stops the run, or an engine error), `waiting <-> paused` (a run waiting on a question can be
- * paused, and resumes into waiting while one is still open) and `queued -> cancelled|failed`
- * (host-unreachable refusal before start). Terminal states (completed/failed/cancelled) have no outgoing edges.
+ * Run transitions (data-model.md §4). A paused run can still fail (an Approval answered while
+ * paused stops the run) and resumes into `waiting` while a question is open. `queued` can end
+ * directly when its host refuses the run before start. Terminal states have no outgoing edges.
  */
 const RUN_TRANSITIONS: Record<string, readonly WorkflowRunState[]> = {
   queued: ['running', 'cancelled', 'failed'],
