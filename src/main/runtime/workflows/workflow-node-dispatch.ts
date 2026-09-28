@@ -162,6 +162,8 @@ export type DispatchWorkflowNodeArgs = {
    * it, a trust question fails the node.
    */
   onTrustRequired?: (question: WorkflowSkillTrustQuestion) => NodeAttemptView | undefined
+  /** The attempt is already `provisioning`: a restart interrupted it before worker-start. */
+  resumeProvisioning?: boolean
 }
 
 export type DispatchWorkflowNodeOutcome =
@@ -201,7 +203,9 @@ export async function dispatchWorkflowNode(
     return { ok: false, attempt, failureReason: reason }
   }
 
-  attemptStore.transitionWorkflowAttempt(attemptId, 'provisioning')
+  if (!args.resumeProvisioning) {
+    attemptStore.transitionWorkflowAttempt(attemptId, 'provisioning')
+  }
 
   if (wantsChildWorkspace && workspacePolicy === 'in-place') {
     return fail(childWorkspaceDisallowedMessage(node.id))

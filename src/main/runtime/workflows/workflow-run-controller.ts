@@ -10,24 +10,17 @@ import { AgentAnswerDeliveryBackoff } from './workflow-agent-answer-delivery'
 import { settleAgentQuestions } from './workflow-agent-question-settlement'
 import { raiseAgentQuestion } from './workflow-agent-questions'
 import { settleApprovals } from './workflow-approval-gates'
-import {
-  deliverFollowUps,
-  failUndeliveredFollowUps,
-  resolveFollowUpWorker,
-  type FollowUpDeliveryContext
-} from './workflow-follow-up-delivery'
+import { AttemptLivenessSchedule } from './workflow-attempt-liveness'
+import { recoverInterruptedAttempts } from './workflow-attempt-recovery'
+import { deliverFollowUps, failUndeliveredFollowUps } from './workflow-follow-up-delivery'
 import type { TerminalPromptProgress } from './workflow-follow-up-interrupt'
-import {
-  createWorkflowOrchestrationClient,
-  createWorkflowWorkerInputClient,
-  type WorkflowOrchestrationClient,
-  type WorkflowOrchestrationDispatcher
-} from './workflow-orchestration-client'
+import type { WorkflowOrchestrationDispatcher } from './workflow-orchestration-client'
 import {
   armQuestionDeadlineTimer,
   type WorkflowQuestionListener
 } from './workflow-question-deadlines'
 import { advanceRun } from './workflow-run-advance'
+import { openControllerSession, type ControllerSession } from './workflow-run-controller-session'
 import { classifyRunMail } from './workflow-run-mailbox-message'
 import {
   resumeAnsweredTrustWaits,
@@ -67,14 +60,6 @@ export type WorkflowRunControllerDeps = {
 }
 
 const TERMINAL_RUN_STATES = new Set<WorkflowRunState>(['completed', 'failed', 'cancelled'])
-type ControllerSession = {
-  engineRunId: string
-  consumerGeneration: number
-  client: WorkflowOrchestrationClient
-  launch: WorkflowNodeLaunchContext
-  followUps: FollowUpDeliveryContext
-}
-
 export class WorkflowRunController {
   private readonly abort = new AbortController()
   private wakeSignal = new AbortController()
@@ -83,6 +68,7 @@ export class WorkflowRunController {
   private readonly followUpBackoff = new AgentAnswerDeliveryBackoff()
   /** A pause held an advance back (FR-030); it runs once the run is no longer paused. */
   private advanceOnResume = false
+  private liveness = new AttemptLivenessSchedule(false)
 
   constructor(private readonly deps: WorkflowRunControllerDeps) {
     this.recorder = new WorkflowRunRecorder(deps.db, deps.runtime, deps.workflowRunId)
@@ -105,7 +91,19 @@ export class WorkflowRunController {
       await releaseRunSkills(run.id, () => this.deps.resolveWorkspace(run))
       return run.state
     }
-    const session = await this.openSession(run)
+    const session = await openControllerSession(
+      {
+        ...this.deps,
+        recorder: this.recorder,
+        signal: this.abort.signal,
+        followUpBackoff: this.followUpBackoff,
+        sendTerminalPrompt: (handle, prompt, progress) =>
+          this.deps.runtime.sendTerminalAgentPrompt(handle, prompt, progress)
+      },
+      run
+    )
+    // A rehydrated run's worker verdicts predate the restart, so its first idle re-reads them.
+    this.liveness = new AttemptLivenessSchedule(run.state !== 'queued')
     if (run.state === 'queued') {
       seedRerunAttempts(this.deps.db, this.recorder, run)
       this.recorder.transitionRun('running', 'run_started', {
@@ -133,50 +131,6 @@ export class WorkflowRunController {
     return run
   }
 
-  private async openSession(run: RunSnapshot): Promise<ControllerSession> {
-    const { db } = this.deps
-    const engineRun =
-      db.getRunForWorkflowRun(run.id) ??
-      db.createWorkflowEngineRun({ workflowRunId: run.id, objective: run.objective })
-    const workspace = await this.deps.resolveWorkspace(run)
-    const placementWorktreeId = workspace.worktreeId ?? run.worktreeId
-    const engine = {
-      dispatcher: this.deps.dispatcher,
-      principal: {
-        kind: 'workflow-engine' as const,
-        workflowRunId: run.id,
-        ...(placementWorktreeId ? { worktreeId: placementWorktreeId } : {})
-      }
-    }
-    const client = createWorkflowOrchestrationClient(engine)
-    return {
-      engineRunId: engineRun.id,
-      consumerGeneration: engineRun.consumer_generation,
-      client,
-      launch: {
-        db,
-        recorder: this.recorder,
-        client,
-        workflowName: run.workflowName,
-        objective: run.objective,
-        definition: run.workflowSnapshot,
-        workspace,
-        placementWorktreeId,
-        signal: this.abort.signal
-      },
-      followUps: {
-        db,
-        recorder: this.recorder,
-        client,
-        workerInput: createWorkflowWorkerInputClient(engine),
-        sendTerminalPrompt: (handle, prompt, progress) =>
-          this.deps.runtime.sendTerminalAgentPrompt(handle, prompt, progress),
-        resolveWorker: (dispatchId) => resolveFollowUpWorker(db, dispatchId),
-        backoff: this.followUpBackoff
-      }
-    }
-  }
-
   private async consumeMailbox(session: ControllerSession): Promise<WorkflowRunState> {
     const { db, runtime } = this.deps
     const mailbox = { runId: session.engineRunId, consumerGeneration: session.consumerGeneration }
@@ -195,6 +149,9 @@ export class WorkflowRunController {
         await this.advance(session)
         continue
       }
+      if (this.liveness.isDue(session.launch)) {
+        await this.liveness.sweep(session.launch, session.engineRunId)
+      }
       // Why: the backlog read and waiter registration share one tick, so no wake is lost between them.
       const batch = db.getOrCreateRunDelivery(mailbox)
       if (batch) {
@@ -208,7 +165,11 @@ export class WorkflowRunController {
         continue
       }
       const wake = this.wakeSignal
-      const retries = [this.answerBackoff.nextRetryAt(), this.followUpBackoff.nextRetryAt()]
+      const retries = [
+        this.answerBackoff.nextRetryAt(),
+        this.followUpBackoff.nextRetryAt(),
+        this.liveness.nextAt()
+      ]
       const nextRetryAt = retries.filter((at): at is number => at !== undefined)
       const disarm = armQuestionDeadlineTimer(
         db,
@@ -286,6 +247,7 @@ export class WorkflowRunController {
 
   /** Advances the run until the frontier is quiet, then settles it. */
   private async advance(session: ControllerSession): Promise<void> {
+    await recoverInterruptedAttempts(session.launch)
     this.advanceOnResume = !(await advanceRun(session.launch))
     settleRunIfQuiet(this.deps.db, this.recorder)
   }

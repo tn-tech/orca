@@ -112,16 +112,21 @@ function startLoop(ctx: WorkflowNodeLaunchContext, node: Node): void {
   ctx.recorder.transitionAttempt(attempt.id, 'running')
 }
 
-async function launchBriefNode(
+/**
+ * Writes a `pending` attempt's brief and creates its Task; `undefined` once the attempt failed.
+ * The Task create carries a per-attempt request id, so a restart that re-drives the attempt
+ * replays the Task the host already created instead of making a second one.
+ */
+export async function prepareBriefAttempt(
   ctx: WorkflowNodeLaunchContext,
   node: BriefNode,
-  attempts: readonly NodeAttemptView[],
-  iteration: number
-): Promise<void> {
-  const attempt = ctx.recorder.createAttempt(node, iteration)
+  attempt: NodeAttemptView,
+  allAttempts: readonly NodeAttemptView[]
+): Promise<string | undefined> {
+  const attempts = allAttempts.filter((candidate) => candidate.id !== attempt.id)
+  const { iteration } = attempt
   const loopPrevious = loopPreviousInputs(ctx.definition, attempts, node.id, iteration)
   const joinBranches = joinBranchesInput(ctx.definition, attempts, node.id)
-  let taskId: string
   try {
     const launch = resolveNodeLaunch(node, ctx.definition.roles)
     const skills = nodeSkills(node, ctx.definition.roles)
@@ -158,12 +163,13 @@ async function launchBriefNode(
         ...(joinBranches === undefined ? {} : { joinBranches })
       }
     })
-    taskId = await createNodeTask(ctx.client, {
+    const taskId = await createNodeTask(ctx.client, {
       definition: ctx.definition,
       attempts,
       nodeId: node.id,
       iteration: attempt.iteration,
-      spec: brief.taskSpec
+      spec: brief.taskSpec,
+      requestId: `workflow-task:${attempt.id}`
     })
     ctx.db.updateWorkflowAttempt(attempt.id, {
       taskId,
@@ -171,11 +177,24 @@ async function launchBriefNode(
       resultPath: brief.resultPath,
       ...(ctx.placementWorktreeId ? { workspaceWorktreeId: ctx.placementWorktreeId } : {})
     })
+    return taskId
   } catch (error) {
     ctx.recorder.failBeforeDispatch(attempt.id, errorMessage(error))
-    return
+    return undefined
   }
-  await dispatchBriefAttempt(ctx, node, attempt.id, taskId)
+}
+
+async function launchBriefNode(
+  ctx: WorkflowNodeLaunchContext,
+  node: BriefNode,
+  attempts: readonly NodeAttemptView[],
+  iteration: number
+): Promise<void> {
+  const attempt = ctx.recorder.createAttempt(node, iteration)
+  const taskId = await prepareBriefAttempt(ctx, node, attempt, attempts)
+  if (taskId) {
+    await dispatchBriefAttempt(ctx, node, attempt.id, taskId)
+  }
 }
 
 /**

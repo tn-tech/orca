@@ -34,6 +34,8 @@ export async function createNodeTask(
     nodeId: string
     iteration: number
     spec: string
+    /** Pins the create's durable receipt, so a replay returns the Task already created. */
+    requestId?: string
   }
 ): Promise<string> {
   const node = args.definition.nodes.find((candidate) => candidate.id === args.nodeId)
@@ -56,13 +58,16 @@ export async function createNodeTask(
     )
     .map(({ source }) => source?.taskId)
     .filter((taskId): taskId is string => taskId !== undefined)
-  const result = await port.call('orchestration.taskCreate', {
+  const params = {
     spec: args.spec,
     taskTitle: node.title,
     deps: JSON.stringify([...new Set(deps)]),
     workflowNodeId: node.id,
     workflowIteration: args.iteration
-  })
+  }
+  const result = args.requestId
+    ? await port.call('orchestration.taskCreate', params, { requestId: args.requestId })
+    : await port.call('orchestration.taskCreate', params)
   const taskId = taskIdFromResult(result)
   if (!taskId) {
     throw new Error(`orchestration.taskCreate returned no task id for node ${node.id}.`)

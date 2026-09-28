@@ -51,9 +51,11 @@ export async function dispatchBriefAttempt(
   ctx: WorkflowNodeLaunchContext,
   node: BriefNode,
   attemptId: string,
-  taskId: string
+  taskId: string,
+  options: { resumeProvisioning?: boolean } = {}
 ): Promise<void> {
   const outcome = await dispatchWorkflowNode({
+    ...options,
     port: ctx.client,
     attemptStore: ctx.recorder.dispatchStore(),
     runId: ctx.recorder.runId,

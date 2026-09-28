@@ -15,6 +15,7 @@ import { agentSupportsModel, isKnownAgent } from './workflow-agent-catalog-suppo
 import { disallowedSourceProblems, throwSourceNotAllowedError } from './workflow-allowlist-refusal'
 import { workflowCallerIdentity } from './workflow-caller-identity'
 import { readNamedWorkflow } from './workflow-source-resolution'
+import { assertRepoHostReachable } from '../../../workflows/workflow-run-host-access'
 import { startRerun } from '../../../workflows/workflow-rerun'
 import { pauseWorkflowRun, resumeWorkflowRun } from '../../../workflows/workflow-run-control'
 import type { Repo } from '../../../../../shared/repo-types'
@@ -40,6 +41,7 @@ export const WORKFLOW_RUN_METHODS = [
     handler: async (params, ctx) => {
       const { runtime } = ctx
       const repo = await runtime.showRepo(params.repo)
+      assertRepoHostReachable(repo)
       const named = await readNamedWorkflow(repo, params.name, params.source)
       if (!named.definition) {
         throw new OrchestrationError('workflow_invalid', 'workflow_invalid', {

@@ -13,6 +13,7 @@ import { RpcDispatcher } from '../rpc/dispatcher'
 import { ORCHESTRATION_METHODS } from '../rpc/methods/orchestration'
 import { WORKFLOW_ENGINE_WORKER_INPUT_METHODS } from '../rpc/methods/workflows/workflow-engine-worker-input-methods'
 import { localWorkflowFilesystem } from './workflow-file-store-filesystem'
+import { paneKeyFor, reportingStatusEvidence } from './workflow-worker-status-test-fixtures'
 import { WorkflowRunController, type WorkflowRunControllerDeps } from './workflow-run-controller'
 
 export const RUN_WORKTREE_ID = 'repo::run'
@@ -69,15 +70,11 @@ export const TWO_NODE_WORKFLOW: Workflow = {
   layout: {}
 }
 
-// Why: the worker number keeps parallel workers on distinct panes (one active dispatch per pane).
-function paneKeyFor(handle: string): string {
-  const suffix = (/(\d+)$/.exec(handle)?.[1] ?? String(handle.length)).padStart(12, '0')
-  return `tab_${handle}:bbbbbbbb-bbbb-4bbb-8bbb-${suffix}`
-}
-
 export type ControllerHarnessOptions = {
   /** With a store, worker placement resolves through the runtime's real workspace selectors. */
   store?: RuntimeStore
+  /** `silent` workers publish no agent status, so worker-list cannot call them live. */
+  agentStatus?: 'reporting' | 'silent'
 }
 
 export function createControllerHarness(
@@ -107,6 +104,11 @@ export function createControllerHarness(
     handle.startsWith('term_') ? `runtime_test:${handle}:1` : null
   )
   vi.spyOn(runtime, 'validateOrchestrationAgentLauncher').mockImplementation(() => {})
+  if (options.agentStatus !== 'silent') {
+    vi.spyOn(runtime, 'getOrchestrationFleetAgentStatusSnapshot').mockImplementation(() =>
+      reportingStatusEvidence(workerHandles, RUN_WORKTREE_ID)
+    )
+  }
   if (!options.store) {
     // Partial fake: worker-start reads only the id of the run workspace.
     Object.assign(runtime, {

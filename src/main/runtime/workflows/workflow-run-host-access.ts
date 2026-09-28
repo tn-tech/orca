@@ -39,6 +39,14 @@ function orcaIgnoreTargetFor(repo: Repo): OrcaIgnoreTarget {
   return { host: 'remote', fsProvider, repoPath: repo.path, connectionId: repo.connectionId }
 }
 
+/** Refuses before anything is read or created: an SSH repo whose host is gone has no local
+ *  fallback (FR-038), so reading its files locally could answer for the wrong repository. */
+export function assertRepoHostReachable(repo: Pick<Repo, 'connectionId'>): void {
+  if (repo.connectionId && !getSshFilesystemProvider(repo.connectionId)) {
+    throw new Error(WORKFLOW_HOST_UNREACHABLE_CODE)
+  }
+}
+
 export function isHostUnreachableError(error: unknown): boolean {
   return error instanceof Error && error.message === WORKFLOW_HOST_UNREACHABLE_CODE
 }
