@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { LoopNode, Workflow } from '../../../../../shared/workflows/workflow-definition-types'
-import { loopParentMap, toAbsoluteNodePosition, toFlowEdges } from './WorkflowCanvas'
+import {
+  loopParentMap,
+  resolveEdgeSourceId,
+  toAbsoluteNodePosition,
+  toFlowEdges
+} from './WorkflowCanvas'
 
 function loopNode(patch: Partial<LoopNode> = {}): LoopNode {
   return {
@@ -90,5 +95,41 @@ describe('toFlowEdges', () => {
     expect(first.selected).toBe(false)
     expect(second.selected).toBe(false)
     expect(first.style?.stroke).toBe(second.style?.stroke)
+  })
+
+  it('sources a Loop exit edge from the Loop, not the body node (F10 round 1: only LoopNode has an "exit" handle)', () => {
+    const exitEdgeDefinition: Workflow = {
+      ...definition,
+      edges: [{ id: 'exit-edge', from: 'agentInLoop', to: 'end', fromPort: 'exit' }]
+    }
+    const parentOf = new Map([['agentInLoop', 'loop']])
+
+    const [flowEdge] = toFlowEdges(exitEdgeDefinition, undefined, new Map(), parentOf)
+
+    expect(flowEdge.source).toBe('loop')
+    expect(flowEdge.sourceHandle).toBe('exit')
+    expect(flowEdge.target).toBe('end')
+  })
+})
+
+describe('resolveEdgeSourceId (mirrors the engine loopExitSourceId, workflow-frontier.ts)', () => {
+  const parentOf = new Map([['agentInLoop', 'loop']])
+
+  it('resolves an exit edge to its owning Loop id', () => {
+    expect(resolveEdgeSourceId(parentOf, { from: 'agentInLoop', fromPort: 'exit' })).toBe('loop')
+  })
+
+  it('leaves a non-exit edge unresolved (its own from stands)', () => {
+    expect(resolveEdgeSourceId(parentOf, { from: 'agentInLoop', fromPort: undefined })).toBe(
+      'agentInLoop'
+    )
+  })
+
+  it('leaves a Router/Approval choice edge unresolved (fromPort names the choice, not "exit")', () => {
+    expect(resolveEdgeSourceId(parentOf, { from: 'router', fromPort: 'Option 1' })).toBe('router')
+  })
+
+  it('falls back to the raw from id when no Loop owns it (malformed data)', () => {
+    expect(resolveEdgeSourceId(new Map(), { from: 'orphan', fromPort: 'exit' })).toBe('orphan')
   })
 })

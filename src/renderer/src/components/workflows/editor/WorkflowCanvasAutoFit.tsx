@@ -9,13 +9,8 @@ export type WorkflowCanvasAutoFitProps = {
   containerRef: RefObject<HTMLDivElement | null>
 }
 
-/**
- * F10: `freeNodePosition` (`workflow-new-node-defaults.ts`) places a new node below the existing
- * layout, which can land well outside the current viewport — and `<ReactFlow>`'s `fitView` prop
- * only runs once, on mount. Diffs the rendered node id set every render; a genuinely new id that
- * isn't already on screen gets panned/zoomed into view. Rendered as a child of `<ReactFlow>` so
- * `useReactFlow` has the context it needs, same as `<Controls>`/`<Background>`.
- */
+/** F10: pans a genuinely new, off-screen node into view (`fitView` only runs once, on mount).
+ *  Rendered as a child of `<ReactFlow>` so `useReactFlow` has context, same as `<Controls>`. */
 export default function WorkflowCanvasAutoFit({
   nodeIds,
   containerRef
@@ -49,7 +44,7 @@ export default function WorkflowCanvasAutoFit({
       maxX: bottomRight.x,
       maxY: bottomRight.y
     }
-    const outOfView = addedNodes.some((node) =>
+    const outOfViewNode = addedNodes.find((node) =>
       isNodeCenterOutOfView(
         {
           x: node.position.x,
@@ -60,8 +55,16 @@ export default function WorkflowCanvasAutoFit({
         visibleRect
       )
     )
-    if (outOfView) {
-      void reactFlow.fitView({ padding: 0.2, duration: 300 })
+    if (outOfViewNode) {
+      const width = outOfViewNode.measured?.width ?? outOfViewNode.width ?? WORKFLOW_NODE_WIDTH
+      const height = outOfViewNode.measured?.height ?? outOfViewNode.height ?? WORKFLOW_NODE_HEIGHT
+      // F10 round 1 review, Minor #1: pan to the node at the zoom the user already chose, rather
+      // than `fitView`'s whole-graph refit — that would reset a deliberately zoomed-in view.
+      void reactFlow.setCenter(
+        outOfViewNode.position.x + width / 2,
+        outOfViewNode.position.y + height / 2,
+        { zoom: reactFlow.getZoom(), duration: 300 }
+      )
     }
   }, [nodeIds, reactFlow, containerRef])
 

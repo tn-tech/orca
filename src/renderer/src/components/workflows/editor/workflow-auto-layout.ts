@@ -17,16 +17,39 @@ export const WORKFLOW_LOOP_PADDING = 40
 const RANK_SEPARATION = 96
 const NODE_SEPARATION = 56
 
-/** One more info row (a label + the `gap-1` above it) beyond the base two-row card. */
+/** One more info row (a label + the `gap-1` above it) beyond the base two-row card. Doesn't cover
+ *  the run-view-only `workspaceLabel` row (`AgentNode.tsx`/`RouterNode.tsx`/`ReflectionNode.tsx`):
+ *  that row exists only on a live attempt, not on the persisted `Node` this function reads, so a
+ *  running node's card can render a little taller than this reserves — `minHeight` on those
+ *  components (not an exact `height`) keeps that a harmless bit of extra whitespace, not a
+ *  hidden-edge regression. */
 const EXTRA_INFO_ROW_HEIGHT = 18
-/** One Router/Approval choice row, including the list's `space-y-1` gap. */
-const CHOICE_ROW_HEIGHT = 28
-/** The choice list's own `mt-1` top margin, before its first row. */
-const CHOICE_LIST_TOP_MARGIN = 8
+/**
+ * One Router/Approval choice row's full vertical pitch: `<li>` is `py-1` (8) + a 1px border on
+ * each side (2) + a `text-xs` line (16) = 26px, and the list (`mt-1 space-y-1`) adds a 4px gap
+ * before every row except the first. Distributed per row that's `4/N + 26 + 4*(N-1)/N`, which
+ * isn't constant — but the list's total height *is* linear: `4 + 26N + 4(N-1) = 30N` (the leading
+ * `mt-1` exactly offsets the one-fewer-gap), so 30px/row with no separate constant reproduces the
+ * real total exactly for every N (F10 round 1 review, Important #3: the previous 28px pitch plus
+ * an 8px top-margin constant under-reserved a 6+-choice Router and a 4+-option Approval).
+ */
+const CHOICE_ROW_HEIGHT = 30
+
+export type MeasuredNodeSize = { width: number; height: number }
 
 export type AutoLayoutOptions = {
   /** Positions restored after layout instead of the dagre-computed one (FR-010: manual drags). */
   pinned?: Readonly<Record<string, { x: number; y: number }>>
+  /** The layout as it stood before this Re-layout run (`Workflow.layout`, not just `pinned`'s
+   *  subset). Used only to anchor a pinned Loop-body node to its Loop's pre-layout position, so a
+   *  dragged body node moves with an unpinned Loop instead of staying at a stale absolute spot
+   *  (F10 round 1 review, Important #2). */
+  currentLayout?: Layout
+  /** React Flow's real measured size for a node, when one has been painted (controller ruling,
+   *  F10 round 1 review, Important #3: "use measured sizes when available, fall back to the
+   *  estimate only for unmeasured nodes"). Checked before `measureWorkflowNodeSize` for every
+   *  non-Loop kind; a Loop's own box is still always derived from its body (see below). */
+  measuredSizes?: ReadonlyMap<string, MeasuredNodeSize>
   direction?: 'LR' | 'TB'
 }
 
@@ -36,8 +59,10 @@ export type AutoLayoutOptions = {
  * dagre never reserved room for it and a bypass edge ran straight underneath — the "Start -> End
  * vanishes" report). Every node component whose content can grow past the base card
  * (`AgentNode`/`RouterNode`/`ApprovalNode`) calls this for its own box instead of a bare constant,
- * so the layout box and the rendered box can't drift apart again. A Loop's own box isn't measured
- * here — `computeLoopContainerBounds` derives it from the body's own layout.
+ * so the layout box and the rendered box can't drift apart again. This is the *estimate* —
+ * `computeAutoLayout` prefers `options.measuredSizes` over it whenever one's available. A Loop's
+ * own box isn't measured here — `computeLoopContainerBounds` derives it from the body's own
+ * layout.
  */
 export function measureWorkflowNodeSize(node: WorkflowNode): { width: number; height: number } {
   const width = WORKFLOW_NODE_WIDTH
@@ -48,18 +73,13 @@ export function measureWorkflowNodeSize(node: WorkflowNode): { width: number; he
         height: WORKFLOW_NODE_HEIGHT + (node.overrides?.model ? EXTRA_INFO_ROW_HEIGHT : 0)
       }
     case 'router':
-      return {
-        width,
-        height:
-          WORKFLOW_NODE_HEIGHT + CHOICE_LIST_TOP_MARGIN + node.choices.length * CHOICE_ROW_HEIGHT
-      }
+      return { width, height: WORKFLOW_NODE_HEIGHT + node.choices.length * CHOICE_ROW_HEIGHT }
     case 'approval':
       return {
         width,
         height:
           WORKFLOW_NODE_HEIGHT +
           EXTRA_INFO_ROW_HEIGHT + // the timeout row, always shown alongside the question
-          CHOICE_LIST_TOP_MARGIN +
           node.options.length * CHOICE_ROW_HEIGHT
       }
     // These all render the base two-row card (or, for 'loop', aren't sized here at all —
@@ -107,9 +127,14 @@ export function computeAutoLayout(
 ): Layout {
   const direction = options.direction ?? 'LR'
   const pinned = options.pinned ?? {}
+  const currentLayout = options.currentLayout ?? {}
+  const measuredSizes = options.measuredSizes
   const parentOf = loopParentMap(nodes)
   const nodeById = new Map(nodes.map((node) => [node.id, node]))
   const topLevelNodes = nodes.filter((node) => !parentOf.has(node.id))
+
+  const sizeOf = (node: WorkflowNode): { width: number; height: number } =>
+    measuredSizes?.get(node.id) ?? measureWorkflowNodeSize(node)
 
   const loopBounds = new Map<string, { width: number; height: number }>()
   const loopBodyLayout = new Map<string, Layout>()
@@ -122,9 +147,10 @@ export function computeAutoLayout(
       .filter((bodyNode): bodyNode is WorkflowNode => bodyNode !== undefined)
     const bodyIds = new Set(bodyNodes.map((bodyNode) => bodyNode.id))
     const internalEdges = edges.filter((edge) => bodyIds.has(edge.from) && bodyIds.has(edge.to))
-    // Unpinned pass: a pinned body node's real position is restored only in the final merge
-    // below, same as a pinned top-level node never skews how its unpinned siblings are placed.
-    const nested = computeAutoLayout(bodyNodes, internalEdges, { direction })
+    // Unpinned pass over every body node (pinned or not) — a pinned body node's dagre-computed
+    // position here is only ever used to decide where its *unpinned* siblings land; its own entry
+    // gets overwritten below with its true position, anchored to this Loop.
+    const nested = computeAutoLayout(bodyNodes, internalEdges, { direction, measuredSizes })
     const xs = Object.values(nested).map((position) => position.x)
     const ys = Object.values(nested).map((position) => position.y)
     const originX = xs.length > 0 ? Math.min(...xs) : 0
@@ -136,23 +162,38 @@ export function computeAutoLayout(
         y: position.y - originY + WORKFLOW_LOOP_PADDING
       }
     }
+    // F10 round 1 review, Important #2: a pinned body node's `pinned[id]` is an absolute canvas
+    // position captured before this Re-layout — stale once dagre moves the Loop. Re-anchor it to
+    // an offset from the Loop's *pre*-layout position (`currentLayout`) instead, in the same
+    // loop-local frame `normalized` already uses, so the final merge below can treat every body
+    // node (pinned or not) the same way: this Loop's new position plus a loop-relative offset.
+    const loopPreviousPosition = currentLayout[node.id] ?? { x: 0, y: 0 }
+    for (const bodyNode of bodyNodes) {
+      const pinnedAbsolute = pinned[bodyNode.id]
+      if (pinnedAbsolute) {
+        normalized[bodyNode.id] = {
+          x: pinnedAbsolute.x - loopPreviousPosition.x,
+          y: pinnedAbsolute.y - loopPreviousPosition.y
+        }
+      }
+    }
     loopBounds.set(
       node.id,
       computeLoopContainerBounds(
         { x: 0, y: 0 },
         bodyNodes.map((bodyNode) => ({
           ...normalized[bodyNode.id],
-          ...measureWorkflowNodeSize(bodyNode)
+          ...sizeOf(bodyNode)
         }))
       )
     )
     loopBodyLayout.set(node.id, normalized)
   }
 
-  const sizeOf = (node: WorkflowNode): { width: number; height: number } =>
+  const sizeOfTopLevel = (node: WorkflowNode): { width: number; height: number } =>
     node.type === 'loop'
       ? (loopBounds.get(node.id) ?? { width: WORKFLOW_NODE_WIDTH, height: WORKFLOW_NODE_HEIGHT })
-      : measureWorkflowNodeSize(node)
+      : sizeOf(node)
 
   const graph = new dagre.graphlib.Graph()
   graph.setGraph({
@@ -163,7 +204,7 @@ export function computeAutoLayout(
   graph.setDefaultEdgeLabel(() => ({}))
 
   for (const node of topLevelNodes) {
-    graph.setNode(node.id, sizeOf(node))
+    graph.setNode(node.id, sizeOfTopLevel(node))
   }
   const topLevelIds = new Set(topLevelNodes.map((node) => node.id))
   for (const edge of edges) {
@@ -185,7 +226,7 @@ export function computeAutoLayout(
       layout[node.id] = pinnedPosition
       continue
     }
-    const size = sizeOf(node)
+    const size = sizeOfTopLevel(node)
     const positioned = graph.node(node.id)
     layout[node.id] = {
       x: (positioned?.x ?? 0) - size.width / 2,
@@ -195,7 +236,12 @@ export function computeAutoLayout(
   for (const [loopId, bodyLayout] of loopBodyLayout) {
     const origin = layout[loopId] ?? { x: 0, y: 0 }
     for (const [id, relative] of Object.entries(bodyLayout)) {
-      layout[id] = pinned[id] ?? { x: origin.x + relative.x, y: origin.y + relative.y }
+      // `relative` is already this Loop's new-position-relative offset for both a pinned body
+      // node (re-anchored above) and an unpinned one (dagre's own nested placement) — using
+      // `pinned[id]` directly here, instead, is exactly the F10 round 1 review Important #2 bug:
+      // it would restore the node's stale pre-layout *absolute* position, orphaned from wherever
+      // this Loop just moved to.
+      layout[id] = { x: origin.x + relative.x, y: origin.y + relative.y }
     }
   }
   return layout

@@ -78,14 +78,11 @@ function chooseLaneY(blockers: readonly Box[], y1: number, y2: number): number {
 }
 
 /**
- * A y-coordinate to bend an edge's path through, for every edge whose straight line (box-center to
- * box-center, an approximation good enough to detect this) would otherwise pass behind another
- * node's box (F10: "the Start -> End vanishes" report — a skip edge sharing its row with the
- * nodes it bypasses runs straight underneath their opaque cards, since React Flow renders edges
- * below nodes). Edges the map has no entry for render their normal, unbent path.
- * Recomputed from the current `layout` (dagre-fresh or hand-dragged) rather than reused from
- * dagre's own internal routing, so it stays correct after a manual drag too, not only right after
- * "Re-layout".
+ * A y-coordinate to bend an edge's path through, for every edge whose (box-center to box-center)
+ * straight line would otherwise pass behind another node's box — React Flow renders edges below
+ * nodes, so an unbent skip edge sharing its row with the nodes it bypasses runs hidden underneath
+ * them ("Start -> End vanishes", F10). Recomputed from the current `layout` rather than reused
+ * from dagre's own routing, so it's correct after a manual drag too, not only after "Re-layout".
  */
 export function computeEdgeBendLanes(
   nodes: readonly WorkflowNode[],
@@ -105,6 +102,8 @@ export function computeEdgeBendLanes(
     if (!fromBox || !toBox || fromId === toId) {
       continue
     }
+    // Right-edge-of-source -> left-edge-of-target: assumes `direction: 'LR'` (`computeAutoLayout`
+    // also accepts 'TB', with no current caller — F10 round 1 review, Minor #5).
     const x1 = fromBox.x + fromBox.width
     const y1 = fromBox.y + fromBox.height / 2
     const x2 = toBox.x

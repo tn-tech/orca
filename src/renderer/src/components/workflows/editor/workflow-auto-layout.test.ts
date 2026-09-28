@@ -167,7 +167,89 @@ describe('measureWorkflowNodeSize', () => {
   })
 })
 
+describe('measureWorkflowNodeSize: pinned pixel estimates (F10 round 1 review, Important #3)', () => {
+  it('pins a 6-choice Router at the corrected 30px-per-row pitch, not the old 28px one', () => {
+    const size = measureWorkflowNodeSize({
+      id: 'r',
+      type: 'router',
+      title: 'Router',
+      prompt: 'choose',
+      choices: ['1', '2', '3', '4', '5', '6']
+    })
+    expect(size.height).toBe(WORKFLOW_NODE_HEIGHT + 30 * 6)
+  })
+
+  it('pins a 5-option Approval at the corrected pitch plus its timeout row', () => {
+    const size = measureWorkflowNodeSize({
+      id: 'ap',
+      type: 'approval',
+      title: 'Approval',
+      question: 'Approve?',
+      options: ['1', '2', '3', '4', '5'],
+      timeoutMs: 1,
+      escalationGraceMs: 1
+    })
+    expect(size.height).toBe(WORKFLOW_NODE_HEIGHT + 18 + 30 * 5)
+  })
+})
+
+describe('computeAutoLayout: measured sizes preferred over the estimate (F10 round 1 review, Important #3)', () => {
+  function startLoopBody(): { nodes: Node[]; edges: Edge[] } {
+    const start = startNode('start')
+    const body = agentNode('body')
+    const loop: LoopNode = {
+      id: 'loop',
+      type: 'loop',
+      title: 'Loop',
+      body: { nodeIds: ['body'] },
+      entryNodeId: 'body',
+      exitNodeId: 'body',
+      maxIterations: 3,
+      exitCondition: { path: 'approved', op: 'truthy' },
+      onCapReached: 'fail'
+    }
+    return { nodes: [start, loop, body], edges: [edge('e1', 'start', 'loop')] }
+  }
+
+  it('sizes a Loop container from its body node measured size, not the estimate', () => {
+    const { nodes, edges } = startLoopBody()
+    // Far taller than measureWorkflowNodeSize would ever estimate for a model-less Agent — with
+    // a single node per rank, dagre aligns "start" to whatever center its one successor ("loop")
+    // ends up at, so a much taller Loop box (driven by this measured body size) visibly shifts
+    // "start" instead of leaving it where the ~64px estimate would.
+    const measuredSizes = new Map([['body', { width: 220, height: 500 }]])
+
+    const withEstimate = computeAutoLayout(nodes, edges)
+    const withMeasured = computeAutoLayout(nodes, edges, { measuredSizes })
+
+    expect(Math.abs(withMeasured.start.y - withEstimate.start.y)).toBeGreaterThan(200)
+  })
+
+  it('falls back to the estimate for a node absent from measuredSizes', () => {
+    const tall = agentNode('tall', { model: 'gpt-5.6-luna' })
+    const nodes = [startNode('start'), tall]
+    const edges = [edge('e1', 'start', 'tall')]
+
+    const withoutOption = computeAutoLayout(nodes, edges)
+    const withEmptyMeasured = computeAutoLayout(nodes, edges, { measuredSizes: new Map() })
+
+    expect(withEmptyMeasured).toEqual(withoutOption)
+  })
+})
+
 describe('computeAutoLayout: real per-kind sizes', () => {
+  it('actually reserves a taller box for an Agent with a model set, not just the base estimate (F10 round 1 review, Minor #6 — the old flat-64px reservation moved "start" identically either way)', () => {
+    const withModel = computeAutoLayout(
+      [startNode('start'), agentNode('tall', { model: 'gpt-5.6-luna' })],
+      [edge('e1', 'start', 'tall')]
+    )
+    const withoutModel = computeAutoLayout(
+      [startNode('start'), agentNode('tall')],
+      [edge('e1', 'start', 'tall')]
+    )
+    expect(withModel.start.y).not.toEqual(withoutModel.start.y)
+  })
+
   it('gives an Agent with a model set enough vertical room not to overlap a sibling at the same rank', () => {
     const tall = agentNode('tall', { model: 'gpt-5.6-luna' })
     const short = agentNode('short')
@@ -247,5 +329,57 @@ describe('computeAutoLayout: Loop containers (F10)', () => {
       siblingBox.y + siblingBox.height <= loopBox.y
     )
     expect(overlaps).toBe(false)
+  })
+
+  it('carries a manually-dragged body node along with its (unpinned) Loop after Re-layout moves the Loop (F10 round 1 review, Important #2)', () => {
+    const bodyA = agentNode('bodyA')
+    const bodyB = agentNode('bodyB')
+    const loop: LoopNode = {
+      id: 'loop',
+      type: 'loop',
+      title: 'Loop',
+      body: { nodeIds: ['bodyA', 'bodyB'] },
+      entryNodeId: 'bodyA',
+      exitNodeId: 'bodyB',
+      maxIterations: 3,
+      exitCondition: { path: 'approved', op: 'truthy' },
+      onCapReached: 'fail'
+    }
+    const nodes = [startNode('start'), loop, bodyA, bodyB, endNode('end')]
+    const edges = [
+      edge('e1', 'start', 'loop'),
+      edge('e2', 'bodyA', 'bodyB'),
+      { id: 'e3', from: 'bodyB', to: 'end', fromPort: 'exit' }
+    ]
+    // The user dragged bodyA far from bodyB inside the Loop; the Loop itself was never dragged.
+    const currentLayout = {
+      start: { x: -300, y: 0 },
+      loop: { x: 0, y: 0 },
+      bodyA: { x: 500, y: 500 },
+      bodyB: { x: 40, y: 40 },
+      end: { x: 900, y: 0 }
+    }
+
+    const layout = computeAutoLayout(nodes, edges, {
+      pinned: { bodyA: currentLayout.bodyA },
+      currentLayout
+    })
+
+    // The Loop actually moved (otherwise this test proves nothing about the fix).
+    expect(layout.loop).not.toEqual(currentLayout.loop)
+    // bodyA's offset from the Loop is preserved, not its stale absolute position.
+    const oldOffset = {
+      x: currentLayout.bodyA.x - currentLayout.loop.x,
+      y: currentLayout.bodyA.y - currentLayout.loop.y
+    }
+    const newOffset = { x: layout.bodyA.x - layout.loop.x, y: layout.bodyA.y - layout.loop.y }
+    expect(newOffset).toEqual(oldOffset)
+    // The container still contains both body nodes — no negative/detached frame.
+    const bounds = computeLoopContainerBounds(layout.loop, [
+      { ...layout.bodyA, ...measureWorkflowNodeSize(bodyA) },
+      { ...layout.bodyB, ...measureWorkflowNodeSize(bodyB) }
+    ])
+    expect(bounds.width).toBeGreaterThan(0)
+    expect(bounds.height).toBeGreaterThan(0)
   })
 })

@@ -17,7 +17,7 @@ import {
   type OnNodesChange,
   type OnSelectionChangeFunc
 } from '@xyflow/react'
-import type { Workflow } from '../../../../../shared/workflows/workflow-definition-types'
+import type { Edge, Workflow } from '../../../../../shared/workflows/workflow-definition-types'
 import { resolveSelectChange, resolveSelectionChange } from './workflow-canvas-selection-change'
 import { loopParentMap } from './workflow-auto-layout'
 import { computeEdgeBendLanes } from './workflow-edge-routing'
@@ -37,6 +37,7 @@ import ReflectionNode from './nodes/ReflectionNode'
 import RouterNode from './nodes/RouterNode'
 import StartNode from './nodes/StartNode'
 import WorkflowCanvasAutoFit from './WorkflowCanvasAutoFit'
+import WorkflowCanvasMeasurementSync from './WorkflowCanvasMeasurementSync'
 import WorkflowDagEdge from './WorkflowDagEdge'
 
 const NODE_TYPES: NodeTypes = {
@@ -101,23 +102,33 @@ export function toAbsoluteNodePosition(
   return { x: reportedPosition.x + parentPosition.x, y: reportedPosition.y + parentPosition.y }
 }
 
+/** Mirrors the engine's `loopExitSourceId` (workflow-frontier.ts) for rendering: `from` on a Loop
+ *  exit edge stays the inner body node (`reconnectEdgesForLoop`), but only `LoopNode` has an
+ *  `exit` handle — without this, React Flow can't resolve the handle and drops the edge (F10
+ *  round 1). */
+export function resolveEdgeSourceId(
+  parentOf: ReadonlyMap<string, string>,
+  edge: Pick<Edge, 'from' | 'fromPort'>
+): string {
+  return edge.fromPort === 'exit' ? (parentOf.get(edge.from) ?? edge.from) : edge.from
+}
+
 /** F4: an edge must look selected once clicked, not just report `selected` to React Flow — the
  *  default theme's `.selected` class loses to this inline `style`, so the color has to change here.
- *  F10: every edge renders as the custom `dag` type (`WorkflowDagEdge.tsx`), which bends through
- *  `bendLanes`' lane for that edge id (`computeEdgeBendLanes`) or falls back to the same bezier
- *  the built-in default edge draws — so a bypass edge can't run hidden behind a node between its
- *  endpoints ("Start -> End vanishes"). */
+ *  Every edge renders as the custom `dag` type (`WorkflowDagEdge.tsx`), bent through `bendLanes`'
+ *  lane for it (`computeEdgeBendLanes`) or the default bezier when there's none (F10). */
 export function toFlowEdges(
   definition: Workflow,
   selectedEdgeId: string | undefined,
-  bendLanes: ReadonlyMap<string, number> = new Map()
+  bendLanes: ReadonlyMap<string, number> = new Map(),
+  parentOf: ReadonlyMap<string, string> = new Map()
 ): FlowEdge[] {
   return definition.edges.map((edge) => {
     const selected = edge.id === selectedEdgeId
     return {
       id: edge.id,
       type: 'dag',
-      source: edge.from,
+      source: resolveEdgeSourceId(parentOf, edge),
       target: edge.to,
       sourceHandle: edge.fromPort,
       label: edge.fromPort,
@@ -166,8 +177,8 @@ export default function WorkflowCanvas({
     [definition.nodes, definition.edges, definition.layout]
   )
   const edges = useMemo(
-    () => toFlowEdges(definition, selectedEdgeId, bendLanes),
-    [definition, selectedEdgeId, bendLanes]
+    () => toFlowEdges(definition, selectedEdgeId, bendLanes, parentOf),
+    [definition, selectedEdgeId, bendLanes, parentOf]
   )
   const nodeIds = useMemo(() => nodes.map((node) => node.id), [nodes])
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -270,6 +281,7 @@ export default function WorkflowCanvas({
           className="!border-border !bg-card !text-card-foreground [&_button]:!border-border [&_button]:!bg-card [&_button]:!fill-current [&_button:hover]:!bg-accent"
         />
         <WorkflowCanvasAutoFit nodeIds={nodeIds} containerRef={containerRef} />
+        <WorkflowCanvasMeasurementSync />
       </ReactFlow>
     </div>
   )

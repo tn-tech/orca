@@ -27,9 +27,28 @@ function buildBendPath(
 }
 
 /** F10: renders the same bezier React Flow's default edge would when `data.laneY` is unset, or a
- *  path bent through that lane when a sibling node would otherwise sit behind a straight line. */
-export default function WorkflowDagEdge(props: EdgeProps<WorkflowDagFlowEdge>): React.JSX.Element {
-  const { sourceX, sourceY, targetX, targetY, data } = props
+ *  path bent through that lane when a sibling node would otherwise sit behind a straight line.
+ *  F10 round 1: `<BaseEdge>` forwards unknown props onto the DOM `<path>`, so this destructures
+ *  only the fields `<BaseEdge>` itself declares (same subset React Flow's own built-in edges use)
+ *  instead of spreading the full `EdgeProps` — `sourceX`/`data`/`selected`/… never reach the DOM. */
+export default function WorkflowDagEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  data,
+  style,
+  markerStart,
+  markerEnd,
+  label,
+  labelStyle,
+  labelShowBg,
+  labelBgStyle,
+  labelBgPadding,
+  labelBgBorderRadius,
+  interactionWidth
+}: EdgeProps<WorkflowDagFlowEdge>): React.JSX.Element {
   const laneY = data?.laneY
   const [bezierPath, bezierLabelX, bezierLabelY] = getBezierPath({
     sourceX,
@@ -42,5 +61,22 @@ export default function WorkflowDagEdge(props: EdgeProps<WorkflowDagFlowEdge>): 
   const labelX = laneY === undefined ? bezierLabelX : (sourceX + targetX) / 2
   const labelY = laneY === undefined ? bezierLabelY : laneY
 
-  return <BaseEdge {...props} path={path} labelX={labelX} labelY={labelY} />
+  return (
+    <BaseEdge
+      id={id}
+      path={path}
+      labelX={labelX}
+      labelY={labelY}
+      label={label}
+      labelStyle={labelStyle}
+      labelShowBg={labelShowBg}
+      labelBgStyle={labelBgStyle}
+      labelBgPadding={labelBgPadding}
+      labelBgBorderRadius={labelBgBorderRadius}
+      interactionWidth={interactionWidth}
+      style={style}
+      markerStart={markerStart}
+      markerEnd={markerEnd}
+    />
+  )
 }

@@ -7,8 +7,13 @@ import type {
   Workflow
 } from '../../../../../shared/workflows/workflow-definition-types'
 import { findCyclicEdge } from '../../../../../shared/workflows/workflow-graph-cycles'
-import { WORKFLOW_LOOP_PADDING } from './workflow-auto-layout'
+import {
+  computeLoopContainerBounds,
+  measureWorkflowNodeSize,
+  WORKFLOW_LOOP_PADDING
+} from './workflow-auto-layout'
 import type { WorkflowEditorCommandResult, WorkflowEditorProblem } from './workflow-editor-commands'
+import { nudgeOverlappingSiblings, type Box } from './workflow-loop-neighbour-nudge'
 
 /** Node types with no port semantics of their own (data-model.md §1): safe to wrap, because
  *  forcing their outgoing edge to the Loop's `exit` port can't collide with a Router/Approval/
@@ -250,6 +255,16 @@ export function wrapNodesInLoopInDefinition(
     onCapReached: 'fail'
   }
 
+  const loopPosition = loopContainerPosition(definition.layout, uniqueIds)
+  const wrappedBoxes = selectedNodes.map((node) => ({
+    ...(definition.layout[node.id] ?? { x: 0, y: 0 }),
+    ...measureWorkflowNodeSize(node)
+  }))
+  const loopBox: Box = {
+    ...loopPosition,
+    ...computeLoopContainerBounds(loopPosition, wrappedBoxes)
+  }
+
   return {
     ok: true,
     definition: {
@@ -257,8 +272,8 @@ export function wrapNodesInLoopInDefinition(
       nodes: [...definition.nodes, loopNode],
       edges: reconnectEdgesForLoop(definition.edges, selected, loopId),
       layout: {
-        ...definition.layout,
-        [loopId]: loopContainerPosition(definition.layout, uniqueIds)
+        ...nudgeOverlappingSiblings(definition, selected, loopBox),
+        [loopId]: loopPosition
       }
     }
   }
