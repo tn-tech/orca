@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react'
+import React, { useCallback, useMemo, useRef } from 'react'
 import '@xyflow/react/dist/style.css'
 import {
   Background,
@@ -9,6 +9,7 @@ import {
   type Connection,
   type Edge as FlowEdge,
   type EdgeMouseHandler,
+  type EdgeTypes,
   type NodeMouseHandler,
   type NodeTypes,
   type OnConnect,
@@ -18,6 +19,8 @@ import {
 } from '@xyflow/react'
 import type { Workflow } from '../../../../../shared/workflows/workflow-definition-types'
 import { resolveSelectChange, resolveSelectionChange } from './workflow-canvas-selection-change'
+import { loopParentMap } from './workflow-auto-layout'
+import { computeEdgeBendLanes } from './workflow-edge-routing'
 import {
   toFlowNodes,
   type WorkflowCanvasNodeIterations,
@@ -33,6 +36,8 @@ import LoopNode from './nodes/LoopNode'
 import ReflectionNode from './nodes/ReflectionNode'
 import RouterNode from './nodes/RouterNode'
 import StartNode from './nodes/StartNode'
+import WorkflowCanvasAutoFit from './WorkflowCanvasAutoFit'
+import WorkflowDagEdge from './WorkflowDagEdge'
 
 const NODE_TYPES: NodeTypes = {
   agent: AgentNode,
@@ -44,6 +49,10 @@ const NODE_TYPES: NodeTypes = {
   approval: ApprovalNode,
   reflection: ReflectionNode
 }
+
+const EDGE_TYPES: EdgeTypes = { dag: WorkflowDagEdge }
+
+export { loopParentMap }
 
 export type {
   WorkflowCanvasNodeIterations,
@@ -70,19 +79,6 @@ export type WorkflowCanvasProps = {
   onConnect?: (connection: WorkflowCanvasConnection) => void
 }
 
-/** Body-node id -> owning Loop id, so those nodes render as React Flow children (T078). */
-export function loopParentMap(nodes: Workflow['nodes']): Map<string, string> {
-  const map = new Map<string, string>()
-  for (const node of nodes) {
-    if (node.type === 'loop') {
-      for (const childId of node.body.nodeIds) {
-        map.set(childId, node.id)
-      }
-    }
-  }
-  return map
-}
-
 /**
  * React Flow reports a child node's position relative to its parent (`parentId`), but
  * `definition.layout` is absolute canvas coordinates for every node alike (review round 1,
@@ -106,17 +102,27 @@ export function toAbsoluteNodePosition(
 }
 
 /** F4: an edge must look selected once clicked, not just report `selected` to React Flow — the
- *  default theme's `.selected` class loses to this inline `style`, so the color has to change here. */
-export function toFlowEdges(definition: Workflow, selectedEdgeId: string | undefined): FlowEdge[] {
+ *  default theme's `.selected` class loses to this inline `style`, so the color has to change here.
+ *  F10: every edge renders as the custom `dag` type (`WorkflowDagEdge.tsx`), which bends through
+ *  `bendLanes`' lane for that edge id (`computeEdgeBendLanes`) or falls back to the same bezier
+ *  the built-in default edge draws — so a bypass edge can't run hidden behind a node between its
+ *  endpoints ("Start -> End vanishes"). */
+export function toFlowEdges(
+  definition: Workflow,
+  selectedEdgeId: string | undefined,
+  bendLanes: ReadonlyMap<string, number> = new Map()
+): FlowEdge[] {
   return definition.edges.map((edge) => {
     const selected = edge.id === selectedEdgeId
     return {
       id: edge.id,
+      type: 'dag',
       source: edge.from,
       target: edge.to,
       sourceHandle: edge.fromPort,
       label: edge.fromPort,
       selected,
+      data: { laneY: bendLanes.get(edge.id) },
       style: {
         stroke: selected ? 'var(--ring)' : 'var(--border)',
         strokeWidth: selected ? 2.5 : 1
@@ -155,7 +161,16 @@ export default function WorkflowCanvas({
       ),
     [definition, nodeStatuses, nodeIterations, nodeWorkspaces, selectedNodeId, parentOf]
   )
-  const edges = useMemo(() => toFlowEdges(definition, selectedEdgeId), [definition, selectedEdgeId])
+  const bendLanes = useMemo(
+    () => computeEdgeBendLanes(definition.nodes, definition.edges, definition.layout),
+    [definition.nodes, definition.edges, definition.layout]
+  )
+  const edges = useMemo(
+    () => toFlowEdges(definition, selectedEdgeId, bendLanes),
+    [definition, selectedEdgeId, bendLanes]
+  )
+  const nodeIds = useMemo(() => nodes.map((node) => node.id), [nodes])
+  const containerRef = useRef<HTMLDivElement | null>(null)
 
   const handleNodesChange: OnNodesChange<WorkflowFlowNode> = useCallback(
     (changes) => {
@@ -229,11 +244,12 @@ export default function WorkflowCanvas({
   )
 
   return (
-    <div className="relative h-full w-full bg-background">
+    <div ref={containerRef} className="relative h-full w-full bg-background">
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={NODE_TYPES}
+        edgeTypes={EDGE_TYPES}
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
         onConnect={handleConnect}
@@ -253,6 +269,7 @@ export default function WorkflowCanvas({
           showInteractive={false}
           className="!border-border !bg-card !text-card-foreground [&_button]:!border-border [&_button]:!bg-card [&_button]:!fill-current [&_button:hover]:!bg-accent"
         />
+        <WorkflowCanvasAutoFit nodeIds={nodeIds} containerRef={containerRef} />
       </ReactFlow>
     </div>
   )

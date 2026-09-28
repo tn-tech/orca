@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
 import type { AgentNode as AgentNodeDefinition } from '../../../../../../shared/workflows/workflow-definition-types'
 import type { WorkflowAttemptState } from '../../../../../../shared/workflows/workflow-node-states'
-import { WORKFLOW_NODE_HEIGHT, WORKFLOW_NODE_WIDTH } from '../workflow-auto-layout'
+import { measureWorkflowNodeSize } from '../workflow-auto-layout'
 import { workflowNodeStatusDotClassName } from './workflow-node-run-status-style'
 
 export type WorkflowAgentNodeData = {
@@ -30,6 +30,9 @@ export default function AgentNode({
   const agentText =
     agentLabel ??
     translate('auto.components.workflows.editor.AgentNode.noAgent', 'No agent selected')
+  // F10: same formula `computeAutoLayout` reserves space with, so this card can't render taller
+  // than the box dagre laid it out in (root cause of the "Start -> End vanishes" report).
+  const { width, height } = measureWorkflowNodeSize(definitionNode)
 
   return (
     <div
@@ -37,7 +40,7 @@ export default function AgentNode({
         'flex flex-col gap-1 rounded-lg border border-border bg-card px-3 py-2 text-card-foreground shadow-xs',
         selected && 'ring-2 ring-ring ring-offset-1 ring-offset-background'
       )}
-      style={{ width: WORKFLOW_NODE_WIDTH, minHeight: WORKFLOW_NODE_HEIGHT }}
+      style={{ width, minHeight: height }}
     >
       <Handle
         type="target"

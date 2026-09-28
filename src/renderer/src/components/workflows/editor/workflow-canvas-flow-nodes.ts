@@ -5,7 +5,7 @@ import type {
   Workflow
 } from '../../../../../shared/workflows/workflow-definition-types'
 import type { WorkflowAttemptState } from '../../../../../shared/workflows/workflow-node-states'
-import { computeLoopContainerBounds } from './workflow-auto-layout'
+import { computeLoopContainerBounds, measureWorkflowNodeSize } from './workflow-auto-layout'
 import type { WorkflowApprovalFlowNode } from './nodes/ApprovalNode'
 import type { WorkflowAgentFlowNode } from './nodes/AgentNode'
 import type { WorkflowEndFlowNode } from './nodes/EndNode'
@@ -61,6 +61,7 @@ export function toFlowNodes(
     definition.nodes.filter((node) => !parentOf.has(node.id)),
     definition.nodes.filter((node) => parentOf.has(node.id))
   ]
+  const nodeById = new Map(definition.nodes.map((node) => [node.id, node]))
 
   const flowNodes: WorkflowFlowNode[] = []
   for (const node of [...ownNodes, ...bodyNodes]) {
@@ -132,7 +133,13 @@ export function toFlowNodes(
     } else if (node.type === 'loop') {
       const bounds = computeLoopContainerBounds(
         absolutePosition,
-        node.body.nodeIds.map((id) => definition.layout[id] ?? { x: 0, y: 0 })
+        node.body.nodeIds.map((id) => {
+          const bodyNode = nodeById.get(id)
+          return {
+            ...(definition.layout[id] ?? { x: 0, y: 0 }),
+            ...(bodyNode ? measureWorkflowNodeSize(bodyNode) : {})
+          }
+        })
       )
       flowNodes.push({
         id: node.id,

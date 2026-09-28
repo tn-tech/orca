@@ -6,7 +6,7 @@ import { translate } from '@/i18n/i18n'
 import { createBrowserUuid } from '@/lib/browser-uuid'
 import type { ApprovalNode as ApprovalNodeDefinition } from '../../../../../../shared/workflows/workflow-definition-types'
 import type { WorkflowAttemptState } from '../../../../../../shared/workflows/workflow-node-states'
-import { WORKFLOW_NODE_WIDTH } from '../workflow-auto-layout'
+import { measureWorkflowNodeSize } from '../workflow-auto-layout'
 import { routableChoiceIndices } from '../workflow-router-choices'
 import { workflowNodeStatusDotClassName } from './workflow-node-run-status-style'
 
@@ -51,6 +51,9 @@ export default function ApprovalNode({
     rowKeysRef.current.push(createBrowserUuid())
   }
   rowKeysRef.current.length = definitionNode.options.length
+  // F10: same formula `computeAutoLayout` reserves space with (grows with the option count), so
+  // this card can't render taller than the box dagre laid it out in.
+  const { width, height } = measureWorkflowNodeSize(definitionNode)
 
   return (
     <div
@@ -58,7 +61,7 @@ export default function ApprovalNode({
         'flex flex-col gap-1 rounded-lg border border-border bg-card px-3 py-2 text-card-foreground shadow-xs',
         selected && 'ring-2 ring-ring ring-offset-1 ring-offset-background'
       )}
-      style={{ width: WORKFLOW_NODE_WIDTH }}
+      style={{ width, minHeight: height }}
     >
       <Handle
         type="target"

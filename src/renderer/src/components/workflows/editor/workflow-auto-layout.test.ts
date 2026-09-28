@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import type { Edge, Node } from '../../../../../shared/workflows/workflow-definition-types'
+import type {
+  AgentNode,
+  Edge,
+  LoopNode,
+  Node
+} from '../../../../../shared/workflows/workflow-definition-types'
 import {
   computeAutoLayout,
   computeLoopContainerBounds,
+  measureWorkflowNodeSize,
   WORKFLOW_LOOP_PADDING,
   WORKFLOW_NODE_HEIGHT,
   WORKFLOW_NODE_WIDTH
@@ -14,6 +20,20 @@ function startNode(id: string): Node {
 
 function endNode(id: string): Node {
   return { id, type: 'end', title: 'End' }
+}
+
+function agentNode(id: string, overrides?: AgentNode['overrides']): AgentNode {
+  return {
+    id,
+    type: 'agent',
+    title: id,
+    prompt: 'do the thing',
+    workspace: 'run',
+    resultContract: { type: 'object' },
+    artifacts: [],
+    question: { timeoutMs: 1, escalationGraceMs: 1 },
+    overrides
+  }
 }
 
 function edge(id: string, from: string, to: string): Edge {
@@ -93,5 +113,139 @@ describe('computeLoopContainerBounds', () => {
       width: WORKFLOW_NODE_WIDTH + WORKFLOW_LOOP_PADDING * 2,
       height: WORKFLOW_NODE_HEIGHT + WORKFLOW_LOOP_PADDING * 2
     })
+  })
+})
+
+describe('measureWorkflowNodeSize', () => {
+  it('renders an Agent with no model at the base card height (F10 root cause: AgentNode.tsx:40)', () => {
+    expect(measureWorkflowNodeSize(agentNode('a')).height).toBe(WORKFLOW_NODE_HEIGHT)
+  })
+
+  it('renders an Agent with overrides.model set taller than the base card height', () => {
+    const size = measureWorkflowNodeSize(agentNode('a', { model: 'gpt-5.6-luna' }))
+    expect(size.height).toBeGreaterThan(WORKFLOW_NODE_HEIGHT)
+  })
+
+  it('grows a Router with its choice count', () => {
+    const oneChoice = measureWorkflowNodeSize({
+      id: 'r',
+      type: 'router',
+      title: 'Router',
+      prompt: 'choose',
+      choices: ['Option 1']
+    })
+    const threeChoices = measureWorkflowNodeSize({
+      id: 'r',
+      type: 'router',
+      title: 'Router',
+      prompt: 'choose',
+      choices: ['Option 1', 'Option 2', 'Option 3']
+    })
+    expect(threeChoices.height).toBeGreaterThan(oneChoice.height)
+  })
+
+  it('grows an Approval with its option count, and is taller than a Router with the same count', () => {
+    const approval = measureWorkflowNodeSize({
+      id: 'ap',
+      type: 'approval',
+      title: 'Approval',
+      question: 'Approve?',
+      options: ['Approve'],
+      timeoutMs: 1,
+      escalationGraceMs: 1
+    })
+    const router = measureWorkflowNodeSize({
+      id: 'r',
+      type: 'router',
+      title: 'Router',
+      prompt: 'choose',
+      choices: ['Option 1']
+    })
+    // Approval always shows a timeout row alongside its question; Router doesn't have an
+    // equivalent third row.
+    expect(approval.height).toBeGreaterThan(router.height)
+  })
+})
+
+describe('computeAutoLayout: real per-kind sizes', () => {
+  it('gives an Agent with a model set enough vertical room not to overlap a sibling at the same rank', () => {
+    const tall = agentNode('tall', { model: 'gpt-5.6-luna' })
+    const short = agentNode('short')
+    const nodes = [startNode('start'), tall, short]
+    const edges = [edge('e1', 'start', 'tall'), edge('e2', 'start', 'short')]
+
+    const layout = computeAutoLayout(nodes, edges)
+
+    const tallBox = {
+      top: layout.tall.y,
+      bottom: layout.tall.y + measureWorkflowNodeSize(tall).height
+    }
+    const shortBox = {
+      top: layout.short.y,
+      bottom: layout.short.y + measureWorkflowNodeSize(short).height
+    }
+    const noOverlap = tallBox.bottom <= shortBox.top || shortBox.bottom <= tallBox.top
+    expect(noOverlap).toBe(true)
+  })
+})
+
+describe('computeAutoLayout: Loop containers (F10)', () => {
+  function loopWrapping(id: string, bodyId: string): LoopNode {
+    return {
+      id,
+      type: 'loop',
+      title: 'Loop',
+      body: { nodeIds: [bodyId] },
+      entryNodeId: bodyId,
+      exitNodeId: bodyId,
+      maxIterations: 3,
+      exitCondition: { path: 'approved', op: 'truthy' },
+      onCapReached: 'fail'
+    }
+  }
+
+  it('places the Loop body inside a container anchored at the Loop node final position', () => {
+    const body = agentNode('body')
+    const loop = loopWrapping('loop', 'body')
+    const nodes = [startNode('start'), loop, body, endNode('end')]
+    const edges = [edge('e1', 'start', 'loop'), edge('e2', 'body', 'end')]
+
+    const layout = computeAutoLayout(nodes, edges)
+    const bounds = computeLoopContainerBounds(layout.loop, [
+      { ...layout.body, ...measureWorkflowNodeSize(body) }
+    ])
+
+    // The body sits inside the container's box, not off wherever an independent flat layout of
+    // "body" (as if it were an ordinary top-level node with its own edges) would have put it.
+    expect(layout.body.x).toBeGreaterThanOrEqual(layout.loop.x)
+    expect(layout.body.y).toBeGreaterThanOrEqual(layout.loop.y)
+    expect(layout.body.x + measureWorkflowNodeSize(body).width).toBeLessThanOrEqual(
+      layout.loop.x + bounds.width
+    )
+    expect(bounds.width).toBeGreaterThan(0)
+    expect(bounds.height).toBeGreaterThan(0)
+  })
+
+  it('does not overlap the Loop container with a sibling node dagre placed at the same rank', () => {
+    const body = agentNode('body')
+    const loop = loopWrapping('loop', 'body')
+    const sibling = agentNode('sibling')
+    const nodes = [startNode('start'), loop, body, sibling]
+    const edges = [edge('e1', 'start', 'loop'), edge('e2', 'start', 'sibling')]
+
+    const layout = computeAutoLayout(nodes, edges)
+    const loopBounds = computeLoopContainerBounds(layout.loop, [
+      { ...layout.body, ...measureWorkflowNodeSize(body) }
+    ])
+    const loopBox = { ...layout.loop, ...loopBounds }
+    const siblingBox = { ...layout.sibling, ...measureWorkflowNodeSize(sibling) }
+
+    const overlaps = !(
+      loopBox.x + loopBox.width <= siblingBox.x ||
+      siblingBox.x + siblingBox.width <= loopBox.x ||
+      loopBox.y + loopBox.height <= siblingBox.y ||
+      siblingBox.y + siblingBox.height <= loopBox.y
+    )
+    expect(overlaps).toBe(false)
   })
 })

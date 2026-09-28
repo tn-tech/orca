@@ -1,7 +1,7 @@
 import { createBrowserUuid } from '@/lib/browser-uuid'
 import { translate } from '@/i18n/i18n'
 import type { Layout, Node } from '../../../../../shared/workflows/workflow-definition-types'
-import { computeLoopContainerBounds, WORKFLOW_NODE_HEIGHT } from './workflow-auto-layout'
+import { computeLoopContainerBounds, measureWorkflowNodeSize } from './workflow-auto-layout'
 
 /**
  * Node kinds the "Add node" menu offers (`WorkflowCanvas.tsx`'s `NODE_TYPES`, minus Loop). A
@@ -30,29 +30,38 @@ const DEFAULT_TIMEOUT_MS = 600_000
 const DEFAULT_ESCALATION_GRACE_MS = 300_000
 
 /** The absolute bottom edge of `node`'s rendered box: a Loop renders as a container sized around
- *  its body nodes (`computeLoopContainerBounds`, review round 1 minor #1 — can be much taller than
- *  `WORKFLOW_NODE_HEIGHT`), every other kind renders at the fixed node height. */
-function nodeBottom(node: Node, layout: Layout): number {
+ *  its body nodes' own boxes (`computeLoopContainerBounds`, review round 1 minor #1 — can be much
+ *  taller than the base node height), every other kind renders at its `measureWorkflowNodeSize`
+ *  box (F10: an Agent with `overrides.model` set, or a Router/Approval with choices, both render
+ *  taller than the base card). */
+function nodeBottom(node: Node, nodesById: ReadonlyMap<string, Node>, layout: Layout): number {
   const position = layout[node.id] ?? { x: 0, y: 0 }
   if (node.type !== 'loop') {
-    return position.y + WORKFLOW_NODE_HEIGHT
+    return position.y + measureWorkflowNodeSize(node).height
   }
-  const bodyPositions = node.body.nodeIds.map((id) => layout[id] ?? { x: 0, y: 0 })
+  const bodyPositions = node.body.nodeIds.map((id) => {
+    const bodyNode = nodesById.get(id)
+    return {
+      ...(layout[id] ?? { x: 0, y: 0 }),
+      ...(bodyNode ? measureWorkflowNodeSize(bodyNode) : {})
+    }
+  })
   return position.y + computeLoopContainerBounds(position, bodyPositions).height
 }
 
 /** A spot below every existing node's box, so a freshly added node never lands on top of one —
- *  including an expanded Loop container, not just its own layout entry. `WorkflowCanvas.tsx`'s
- *  `fitView` only runs on mount, not after this, so this only needs to avoid overlap, not
- *  guarantee the new node is in the current viewport. */
+ *  including an expanded Loop container, not just its own layout entry. `WorkflowCanvas.tsx`
+ *  pans/fits a node added off the current viewport into view (`WorkflowCanvasAutoFit.tsx`), so
+ *  this only needs to avoid overlap, not guarantee the new node is already on screen. */
 export function freeNodePosition(nodes: readonly Node[], layout: Layout): { x: number; y: number } {
   const positions = Object.values(layout)
   if (positions.length === 0) {
     return { x: 0, y: 0 }
   }
+  const nodesById = new Map(nodes.map((node) => [node.id, node]))
   return {
     x: Math.min(...positions.map((position) => position.x)),
-    y: Math.max(...nodes.map((node) => nodeBottom(node, layout))) + NEW_NODE_GAP
+    y: Math.max(...nodes.map((node) => nodeBottom(node, nodesById, layout))) + NEW_NODE_GAP
   }
 }
 
