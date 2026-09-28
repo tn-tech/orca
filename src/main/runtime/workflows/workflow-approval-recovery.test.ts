@@ -10,6 +10,7 @@ import {
 import { APPROVAL_TIMED_OUT_REASON } from './workflow-approval-deadlines'
 import { resolveApproval } from './workflow-approval-gates'
 import { approvalDriver, approvalNode, approvalWorkflow } from './workflow-approval-test-fixtures'
+import { readPath } from './workflow-follow-up-interrupt'
 import { createControllerHarness, waitUntil } from './workflow-run-controller-test-harness'
 import { WorkflowRunRecorder } from './workflow-run-recorder'
 
@@ -123,7 +124,7 @@ describe('Approval recovery', () => {
     interceptOnce(
       (request) =>
         request.method === 'orchestration.taskUpdate' &&
-        Reflect.get(Object(request.params), 'status') === 'failed',
+        readPath(request.params, ['status']) === 'failed',
       async () => {
         throw new Error('runtime stopped')
       }

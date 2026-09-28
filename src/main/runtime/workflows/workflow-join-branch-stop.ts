@@ -61,9 +61,12 @@ export function remainingBranchNodes(
   return { unstarted, active }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 function receiptField(receipt: unknown, key: string): JsonValue {
-  const value: unknown =
-    typeof receipt === 'object' && receipt !== null ? Reflect.get(receipt, key) : undefined
+  const value: unknown = isRecord(receipt) ? receipt[key] : undefined
   return typeof value === 'string' ? value : null
 }
 

@@ -8,6 +8,7 @@ import type { NodeAttemptView, RunSnapshot } from '../../../shared/workflows/wor
 import { approvalDriver } from './workflow-approval-test-fixtures'
 import { DRAFT_PLANNER_RUN_VERSION } from './workflow-draft-planner'
 import { WorkflowEngine } from './workflow-engine'
+import { readPath } from './workflow-follow-up-interrupt'
 import { startRerun, type WorkflowRerunDeps } from './workflow-rerun'
 import {
   createControllerHarness,
@@ -272,9 +273,7 @@ describe('workflow rerun from a node (FR-030, US8 AS2)', () => {
     expect(attemptsOf(rerun.id, 'implement')[0]?.iteration).toBe(0)
     expect(attemptsOf(rerun.id, 'review')).toEqual([])
     const copied = h.db.listWorkflowEventsOfKind(rerun.id, 'attempt_copied')
-    expect(copied.map((event) => Reflect.get(Object(event.payloadJson), 'nodeId'))).toEqual([
-      'start'
-    ])
+    expect(copied.map((event) => readPath(event.payloadJson, ['nodeId']))).toEqual(['start'])
   })
 
   it('refuses planner runs, runs that did not fail, unknown nodes and a busy workspace', async () => {

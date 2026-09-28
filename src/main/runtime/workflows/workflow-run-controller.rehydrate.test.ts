@@ -20,6 +20,7 @@ import {
   WORKER_EXITED_WITHOUT_REPORT_REASON
 } from './workflow-attempt-liveness'
 import { WorkflowEngine } from './workflow-engine'
+import { readPath } from './workflow-follow-up-interrupt'
 import {
   createControllerHarness,
   RUN_WORKTREE_ID,
@@ -122,7 +123,7 @@ describe('WorkflowRunController rehydration and dispatch liveness', () => {
         _meta: { runtimeId: 'test' }
       }
     }
-    const runId: unknown = Reflect.get(Object(request.params), 'run')
+    const runId: unknown = readPath(request.params, ['run'])
     const dispatches = h.db
       .listWorkflowAttempts(h.db.listActiveWorkflowRuns()[0]?.id ?? '')
       .flatMap((candidate) => (candidate.dispatchId ? [candidate.dispatchId] : []))

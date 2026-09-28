@@ -7,6 +7,7 @@ import type { AgentNode, Workflow } from '../../../shared/workflows/workflow-def
 import type { RunQuestionView } from '../../../shared/workflows/workflow-run-types'
 import { OrchestrationError } from '../orchestration/orchestration-error'
 import { AGENT_QUESTION_TIMED_OUT_REASON, answerAgentQuestion } from './workflow-agent-questions'
+import { readPath } from './workflow-follow-up-interrupt'
 import {
   AGENT_QUESTION_ASK_WAIT_MARGIN_MS,
   agentQuestionDeadlines
@@ -157,7 +158,7 @@ describe('agent questions during a run', () => {
     })
     expect(question?.questionMessageId).toBeDefined()
     expect(question?.optionsJson).toMatchObject({ options: ['postgres', 'sqlite'] })
-    expect(typeof Reflect.get(Object(question?.optionsJson), 'context')).toBe('string')
+    expect(typeof readPath(question?.optionsJson, ['context'])).toBe('string')
     expect(raised.map((q) => q.id)).toEqual([question?.id])
     expect(h.notifyWorkflowRunChanged).toHaveBeenCalledWith({ runId: run.id, reason: 'question' })
     expect(d.eventKinds(run.id)).toContain('agent_question_raised')

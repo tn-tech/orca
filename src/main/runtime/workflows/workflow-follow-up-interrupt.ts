@@ -67,13 +67,17 @@ function followUpOperationId(message: RunMessageView): string {
   return `${String(Date.parse(message.createdAt)).padStart(13, '0')}-${digest.slice(0, 32)}`
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 export function readPath(value: unknown, keys: readonly string[]): unknown {
   let current = value
   for (const key of keys) {
-    if (typeof current !== 'object' || current === null) {
+    if (!isRecord(current)) {
       return undefined
     }
-    current = Reflect.get(current, key)
+    current = current[key]
   }
   return current
 }

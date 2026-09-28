@@ -26,6 +26,10 @@ function isInterrupted(attempt: NodeAttemptView): boolean {
   return WORKER_DISPATCH_NODE_TYPES.has(attempt.nodeType) && INTERRUPTED_STATES.has(attempt.state)
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 function parseJson(text: string | null | undefined): unknown {
   try {
     return text ? JSON.parse(text) : undefined
@@ -41,10 +45,7 @@ function persistedStartReceipt(ctx: WorkflowNodeLaunchContext, dispatchId: strin
   const effects = parseJson(worker?.effects)
   return {
     dispatchId,
-    launch:
-      typeof startOptions === 'object' && startOptions !== null
-        ? Reflect.get(startOptions, 'launch')
-        : undefined,
+    launch: isRecord(startOptions) ? startOptions.launch : undefined,
     // The row's own worktree is the fallback when the crash came before its effects were written.
     effects: [
       ...(Array.isArray(effects) ? effects : []),
@@ -60,11 +61,7 @@ function hasWorkerReport(ctx: WorkflowNodeLaunchContext, dispatchId: string): bo
   }
   return ctx.db.getRunMailboxHistory(engineRun.id, 500, ['worker_done']).some((message) => {
     const payload = parseJson(message.payload)
-    return (
-      typeof payload === 'object' &&
-      payload !== null &&
-      Reflect.get(payload, 'dispatchId') === dispatchId
-    )
+    return isRecord(payload) && payload.dispatchId === dispatchId
   })
 }
 

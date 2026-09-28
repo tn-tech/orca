@@ -11,6 +11,7 @@ import {
   type FollowUpDeliveryContext,
   type FollowUpWorker
 } from './workflow-follow-up-delivery'
+import { readPath } from './workflow-follow-up-interrupt'
 import type {
   WorkflowOrchestrationClient,
   WorkflowWorkerInputClient
@@ -442,7 +443,7 @@ describe('workflow follow-up delivery', () => {
 
       expect(message(queued.id)?.state).toBe('delivered')
       const [first, second] = workerInputCall.mock.calls.map(([, params]) =>
-        Reflect.get(Reflect.get(params, 'envelope') ?? {}, 'clientOperationId')
+        readPath(params, ['envelope', 'clientOperationId'])
       )
       expect(first).toEqual(expect.any(String))
       expect(second).toBe(first)
@@ -485,7 +486,7 @@ describe('workflow follow-up delivery', () => {
   describe('when the attempt or run ends', () => {
     function reasons(): unknown[] {
       return events('follow_up_undeliverable').map((event) =>
-        Reflect.get(Object(event.payloadJson), 'reason')
+        readPath(event.payloadJson, ['reason'])
       )
     }
 

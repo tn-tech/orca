@@ -7,6 +7,7 @@ import type {
   Workflow
 } from '../../../shared/workflows/workflow-definition-types'
 import type { NodeAttemptView } from '../../../shared/workflows/workflow-run-types'
+import { readPath } from './workflow-follow-up-interrupt'
 import {
   type createControllerHarness,
   TWO_NODE_WORKFLOW,
@@ -116,7 +117,7 @@ export function joinDriver(h: Harness) {
         if (request.method !== 'orchestration.workerStop') {
           return dispatch(request, ...rest)
         }
-        const dispatchId: unknown = Reflect.get(Object(request.params), 'dispatch')
+        const dispatchId: unknown = readPath(request.params, ['dispatch'])
         stops.push(dispatchId)
         return {
           id: request.id,

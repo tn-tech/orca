@@ -25,12 +25,16 @@ function isSafeRelativePath(entry: string): boolean {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 function parseEntry(value: unknown): SkillLedgerEntry | undefined {
-  if (typeof value !== 'object' || value === null) {
+  if (!isRecord(value)) {
     return undefined
   }
-  const origin: unknown = Reflect.get(value, 'origin')
-  const runs: unknown = Reflect.get(value, 'runs')
+  const origin: unknown = value.origin
+  const runs: unknown = value.runs
   if ((origin !== 'created' && origin !== 'snapshot') || !Array.isArray(runs)) {
     return undefined
   }
@@ -155,11 +159,10 @@ export async function readPendingSkillInstall(
     // A torn write means the install never started: the record lands before the CLI runs.
     return { runId: '', states: {} }
   }
-  const runId: unknown = typeof parsed === 'object' && parsed ? Reflect.get(parsed, 'runId') : null
-  const rawStates: unknown =
-    typeof parsed === 'object' && parsed ? Reflect.get(parsed, 'states') : null
+  const runId: unknown = isRecord(parsed) ? parsed.runId : null
+  const rawStates: unknown = isRecord(parsed) ? parsed.states : null
   const states: Record<string, PendingInstallState> = {}
-  if (typeof rawStates === 'object' && rawStates !== null) {
+  if (isRecord(rawStates)) {
     for (const [path, state] of Object.entries(rawStates)) {
       if (isPendingState(state) && isSafeRelativePath(path)) {
         states[path] = state

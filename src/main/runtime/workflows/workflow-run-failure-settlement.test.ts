@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Edge, Workflow } from '../../../shared/workflows/workflow-definition-types'
+import { readPath } from './workflow-follow-up-interrupt'
 import {
   branchAgent,
   fanOutWorkflow,
@@ -181,6 +182,6 @@ describe('WorkflowRunController failure settlement (audit N1)', () => {
     await expect(finished).resolves.toBe('failed')
     const runFailed = h.db.listWorkflowEvents(run.id).find((event) => event.kind === 'run_failed')
     expect(runFailed?.payloadJson).toMatchObject({ reason: 'node_failed' })
-    expect(Reflect.get(Object(runFailed?.payloadJson), 'failedNodes')).toEqual(['integrate'])
+    expect(readPath(runFailed?.payloadJson, ['failedNodes'])).toEqual(['integrate'])
   })
 })

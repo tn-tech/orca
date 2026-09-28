@@ -8,6 +8,7 @@ import { answerRunQuestion } from './workflow-question-answer'
 import { fanOutWorkflow, joinDriver } from './workflow-run-controller-join-fixtures'
 import { createControllerHarness, waitUntil } from './workflow-run-controller-test-harness'
 import { cancelWorkflowRun, pauseWorkflowRun, resumeWorkflowRun } from './workflow-run-control'
+import { readPath } from './workflow-follow-up-interrupt'
 
 describe('workflow run control (pause / resume / cancel)', () => {
   let workspaceRoot: string
@@ -190,7 +191,7 @@ describe('workflow run control (pause / resume / cancel)', () => {
         maxInFlight = Math.max(maxInFlight, inFlight)
         await new Promise<void>((resolve) => setImmediate(resolve))
         inFlight -= 1
-        const dispatchId: unknown = Reflect.get(Object(request.params), 'dispatch')
+        const dispatchId: unknown = readPath(request.params, ['dispatch'])
         return {
           id: request.id,
           ok: true,

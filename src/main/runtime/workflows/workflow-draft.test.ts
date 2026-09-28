@@ -7,6 +7,7 @@ import type { RpcDispatcher } from '../rpc/dispatcher'
 import { listWorkflows } from './workflow-file-store'
 import { sweepDraftRunsAtBoot, tearDownDraftRun } from './workflow-draft-teardown'
 import { confirmWorkerStops, holdNextWorkerTerminal } from './workflow-draft-test-fixtures'
+import { readPath } from './workflow-follow-up-interrupt'
 import { TUI_AGENT_AUTO_PICK_ORDER } from '../../../shared/tui-agent-selection'
 import { storeFor } from './workflow-placement-test-fixtures'
 import { WorkflowEngine } from './workflow-engine'
@@ -483,7 +484,7 @@ describe('draftWorkflow', () => {
       workerCalls.mock.calls.some(
         ([request]) =>
           request.method === 'orchestration.workerStop' &&
-          Reflect.get(Object(request.params), 'dispatch') === dispatchId
+          readPath(request.params, ['dispatch']) === dispatchId
       )
     ).toBe(true)
   })

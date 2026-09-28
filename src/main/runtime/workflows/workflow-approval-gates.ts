@@ -41,12 +41,16 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 function gateIdFromResult(result: unknown): string | undefined {
-  if (typeof result !== 'object' || result === null) {
+  if (!isRecord(result)) {
     return undefined
   }
-  const gate: unknown = Reflect.get(result, 'gate')
-  const id: unknown = typeof gate === 'object' && gate !== null ? Reflect.get(gate, 'id') : null
+  const gate: unknown = result.gate
+  const id: unknown = isRecord(gate) ? gate.id : null
   return typeof id === 'string' ? id : undefined
 }
 

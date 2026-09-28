@@ -2,6 +2,7 @@
 // process exited, so a stop is `stop_unknown` unless a test opts into a proven one here.
 import { vi } from 'vitest'
 import { RpcDispatcher } from '../rpc/dispatcher'
+import { readPath } from './workflow-follow-up-interrupt'
 import type { createControllerHarness } from './workflow-run-controller-test-harness'
 
 type Harness = ReturnType<typeof createControllerHarness>
@@ -10,9 +11,7 @@ type Harness = ReturnType<typeof createControllerHarness>
 export function confirmWorkerStops(h: Harness): void {
   vi.spyOn(h.dispatcher, 'dispatchAsWorkflowEngine').mockImplementation(
     async (request, principal, options) => {
-      const dispatchId = request.params
-        ? Reflect.get(Object(request.params), 'dispatch')
-        : undefined
+      const dispatchId = readPath(request.params, ['dispatch'])
       if (request.method !== 'orchestration.workerStop' || typeof dispatchId !== 'string') {
         return RpcDispatcher.prototype.dispatchAsWorkflowEngine.call(
           h.dispatcher,

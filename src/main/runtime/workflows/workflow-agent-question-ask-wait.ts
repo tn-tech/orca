@@ -23,6 +23,10 @@ const DEFAULT_QUESTION_TIMING = {
 
 export type AgentAskWait = { startedAt: number; timeoutMs: number }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 function parseUtc(timestamp: string): number | undefined {
   // Stored as `YYYY-MM-DD HH:MM:SS` UTC; exposed rows carry an explicit offset.
   const at = Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(timestamp) ? timestamp : `${timestamp}Z`)
@@ -38,8 +42,7 @@ export function readAgentAskWait(db: OrchestrationDb, message: MessageRow): Agen
        ORDER BY created_at ASC, rowid ASC LIMIT 1`
     )
     .get(message.id)
-  const recorded: unknown =
-    typeof row === 'object' && row !== null ? Reflect.get(row, 'timeout_ms') : undefined
+  const recorded: unknown = isRecord(row) ? row.timeout_ms : undefined
   return {
     startedAt: parseUtc(message.created_at.replace(' ', 'T')) ?? Date.now(),
     timeoutMs: clampOrchestrationAskTimeoutMs(typeof recorded === 'number' ? recorded : undefined)

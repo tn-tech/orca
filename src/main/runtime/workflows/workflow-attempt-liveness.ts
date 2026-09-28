@@ -35,8 +35,12 @@ function watchedAttempts(ctx: WorkflowNodeLaunchContext): WatchedAttempt[] {
     )
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 function field(value: unknown, key: string): unknown {
-  return typeof value === 'object' && value !== null ? Reflect.get(value, key) : undefined
+  return isRecord(value) ? value[key] : undefined
 }
 
 /** worker-list's result is `unknown` in process; an unrecognised verdict reads as unverifiable. */

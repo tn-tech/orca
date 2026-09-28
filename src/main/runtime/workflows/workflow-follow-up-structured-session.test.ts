@@ -28,6 +28,7 @@ import {
 } from '../structured-agent-session-runtime'
 import { AgentAnswerDeliveryBackoff } from './workflow-agent-answer-delivery'
 import { deliverFollowUps, queueFollowUp } from './workflow-follow-up-delivery'
+import { readPath } from './workflow-follow-up-interrupt'
 import {
   createWorkflowOrchestrationClient,
   createWorkflowWorkerInputClient
@@ -140,7 +141,11 @@ async function createSession(): Promise<number> {
   )
   const reply = replies[0]
   expect(reply, JSON.stringify(reply)).toMatchObject({ ok: true, result: { ok: true } })
-  return Reflect.get(Reflect.get(Reflect.get(reply ?? {}, 'result'), 'value'), 'fence')
+  const fence = readPath(reply, ['result', 'value', 'fence'])
+  if (typeof fence !== 'number') {
+    throw new Error(`expected a numeric runtime fence, got ${JSON.stringify(fence)}`)
+  }
+  return fence
 }
 
 beforeEach(async () => {

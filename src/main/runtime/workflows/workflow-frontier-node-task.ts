@@ -10,15 +10,19 @@ import type { WorkflowOrchestrationClient } from './workflow-orchestration-clien
 
 export type WorkflowTaskPort = Pick<WorkflowOrchestrationClient, 'call'>
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 function taskIdFromResult(result: unknown): string | undefined {
-  if (typeof result !== 'object' || result === null) {
+  if (!isRecord(result)) {
     return undefined
   }
-  const task: unknown = Reflect.get(result, 'task')
-  if (typeof task !== 'object' || task === null) {
+  const task = result.task
+  if (!isRecord(task)) {
     return undefined
   }
-  const id: unknown = Reflect.get(task, 'id')
+  const id = task.id
   return typeof id === 'string' ? id : undefined
 }
 
