@@ -1,5 +1,10 @@
 import type { AgentTrustPreset } from './agent-trust-presets'
 import { upsertProjectTrustLevelInContent } from './codex/config-toml-trust'
+import {
+  KIMI_WORKSPACE_TRUST_DIR,
+  kimiWorkspaceTrustKey,
+  kimiWorkspaceTrustRecord
+} from './kimi/kimi-workspace-trust-record'
 import { getActiveMultiplexer } from './ssh/ssh-target-registry'
 import { getSshFilesystemProvider } from './providers/ssh-filesystem-dispatch'
 import type { IFilesystemProvider } from './providers/types'
@@ -26,6 +31,8 @@ export async function markRemoteAgentWorkspaceTrusted(args: {
     await markRemoteCursorWorkspaceTrusted(fsProvider, home, workspacePath)
   } else if (args.preset === 'copilot') {
     await markRemoteCopilotFolderTrusted(fsProvider, home, workspacePath)
+  } else if (args.preset === 'kimi') {
+    await markRemoteKimiWorkspaceTrusted(fsProvider, home, workspacePath)
   }
   // KNOWN GAP: 'antigravity' is deliberately absent. The local preset writes
   // ~/.gemini/antigravity-cli/settings.json, and the remote equivalent has not been verified
@@ -151,4 +158,23 @@ async function markRemoteCopilotFolderTrusted(
   config.trustedFolders = [...existing.filter((entry) => typeof entry === 'string'), workspacePath]
   await fsProvider.createDir(configDir)
   await fsProvider.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`)
+}
+
+async function markRemoteKimiWorkspaceTrusted(
+  fsProvider: IFilesystemProvider,
+  remoteHome: string,
+  workspacePath: string
+): Promise<void> {
+  // Why: same `~/.kimi-code` assumption as the remote Kimi hook install; KIMI_CODE_HOME on the
+  // host is not visible from here.
+  const trustDir = `${remoteHome}/.kimi-code/${KIMI_WORKSPACE_TRUST_DIR}`
+  const recordPath = `${trustDir}/${kimiWorkspaceTrustKey(workspacePath)}`
+  try {
+    await fsProvider.stat(recordPath)
+    return
+  } catch {
+    // Missing record: write the same shape Kimi writes on "Trust this folder".
+  }
+  await fsProvider.createDir(trustDir)
+  await fsProvider.writeFile(recordPath, kimiWorkspaceTrustRecord(workspacePath))
 }

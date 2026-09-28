@@ -21,6 +21,7 @@ import {
   detectRemoteAgents
 } from '../preflight/agent-detection'
 import { markRemoteAgentWorkspaceTrusted } from '../remote-agent-trust-presets'
+import { markKimiWorkspaceTrusted } from '../kimi/kimi-workspace-trust'
 import type { RuntimeStore } from './runtime-store-contract'
 
 export type WorktreeStartupDraftPaste = { agent: TuiAgent; content: string }
@@ -203,6 +204,8 @@ export async function markLocalWorktreeTrusted(
       await markCodexProjectTrusted(workspacePath)
     } else if (preset === 'antigravity') {
       markAntigravityWorkspaceTrusted(workspacePath)
+    } else if (preset === 'kimi') {
+      await markKimiWorkspaceTrusted(workspacePath)
     }
   } catch {
     // Best-effort: the user can still accept the agent trust prompt manually.

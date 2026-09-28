@@ -37,7 +37,7 @@ export type TuiAgentConfig = {
   /** Startup env var that seeds the input without submitting, for agents with no `--prefill`-style flag (e.g. pi); avoids the paste-after-ready race. */
   draftPromptEnvVar?: string
   /** Pre-write a trust artifact so the agent's first-launch "trust this folder?" menu doesn't consume the bracketed paste (see agent-trust-presets.ts). */
-  preflightTrust?: 'cursor' | 'copilot' | 'codex' | 'antigravity'
+  preflightTrust?: 'cursor' | 'copilot' | 'codex' | 'antigravity' | 'kimi'
   /** Agent-specific signal that the composer is ready for paste, stronger than the default quiet-render window. */
   draftPasteReadySignal?: DraftPasteReadySignal
   /** Hard deadline for the agent's composer readiness signal. */
@@ -261,7 +261,9 @@ const TUI_AGENT_CONFIG_SOURCE: Record<TuiAgent, TuiAgentConfigSource> = {
     // matches the agent without the alias — terminal reuse and `dispatch --inject` fail.
     detectCmd: 'kimi',
     detectCmdAliases: ['kimi-code'],
-    promptInjectionMode: 'stdin-after-start'
+    promptInjectionMode: 'stdin-after-start',
+    // Why: Kimi asks "Trust this folder?" for every untrusted cwd before its composer mounts (kimi/kimi-workspace-trust.ts).
+    preflightTrust: 'kimi'
   },
   'mistral-vibe': {
     // Why: installer exposes binary `vibe` though the package is mistral-vibe; keep old name as alias for wrapped installs.

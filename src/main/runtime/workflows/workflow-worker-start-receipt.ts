@@ -15,6 +15,8 @@ export type ParsedWorkerStartResult = {
   dispatchId?: string
   state?: string
   lastError?: string
+  /** The worker-start stage that failed, e.g. `agent_readiness`. */
+  failedStage?: string
   requested?: WorkerStartLaunchSelection
   effective?: WorkerStartLaunchSelection | null
   /** The worktree the placement effect landed on, whether created or reused. */
@@ -61,15 +63,17 @@ export function parseWorkerStartResult(result: unknown): ParsedWorkerStartResult
   const dispatchId = typeof result.dispatchId === 'string' ? result.dispatchId : undefined
   const state = typeof result.state === 'string' ? result.state : undefined
   const lastError = typeof result.lastError === 'string' ? result.lastError : undefined
+  const failedStage = typeof result.failedStage === 'string' ? result.failedStage : undefined
   const worktreeId = extractWorktreeEffectId(result.effects)
   const launch = result.launch
   if (!isPlainObject(launch)) {
-    return { dispatchId, state, lastError, worktreeId }
+    return { dispatchId, state, lastError, failedStage, worktreeId }
   }
   return {
     dispatchId,
     state,
     lastError,
+    failedStage,
     worktreeId,
     requested: asLaunchSelection(launch.requested),
     effective: launch.effective === null ? null : asLaunchSelection(launch.effective)

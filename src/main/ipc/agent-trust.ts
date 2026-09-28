@@ -7,6 +7,7 @@ import {
   markCursorWorkspaceTrusted
 } from '../agent-trust-presets'
 import { markRemoteAgentWorkspaceTrusted } from '../remote-agent-trust-presets'
+import { markKimiWorkspaceTrusted } from '../kimi/kimi-workspace-trust'
 
 /**
  * Why: cursor-agent, GitHub Copilot CLI, and Codex gate first-launch in an
@@ -46,6 +47,8 @@ export function registerAgentTrustHandlers(): void {
           markCodexProjectTrusted(args.workspacePath)
         } else if (args.preset === 'antigravity') {
           markAntigravityWorkspaceTrusted(args.workspacePath)
+        } else if (args.preset === 'kimi') {
+          await markKimiWorkspaceTrusted(args.workspacePath)
         }
       } catch {
         // Best-effort: see Why above. The user can still accept the trust

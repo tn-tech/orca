@@ -13,6 +13,7 @@ import type {
 } from '../../../shared/workflows/workflow-run-types'
 import { engineCoordinatorHandle } from './workflow-engine-principal'
 import { parseWorkerStartResult, recordStartedWorker } from './workflow-worker-start-receipt'
+import { describeWorkerStartFailure } from './workflow-worker-start-failure-reason'
 import type { BriefNode } from './workflow-brief-builder'
 import type { WorkflowOrchestrationClient } from './workflow-orchestration-client'
 import {
@@ -175,7 +176,8 @@ export async function dispatchWorkflowNode(
   const parsed = parseWorkerStartResult(raw)
   if (parsed.state !== 'ready') {
     return fail(
-      parsed.lastError ?? `workerStart returned unexpected state "${parsed.state ?? 'unknown'}".`,
+      describeWorkerStartFailure(parsed) ??
+        `workerStart returned unexpected state "${parsed.state ?? 'unknown'}".`,
       parsed.dispatchId
     )
   }
