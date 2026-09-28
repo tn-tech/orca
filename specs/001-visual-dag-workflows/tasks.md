@@ -308,7 +308,7 @@ Monorepo per plan.md: shared types `src/shared/workflows/`, engine `src/main/run
 - [X] T121 [P] [US8] Write `src/main/runtime/workflows/workflow-rerun.test.ts`: rerun from node N creates a new run referencing `rerun_of_run_id`, copies completed upstream attempts' results, executes only N and descendants
 - [X] T122 [P] [US8] Write `src/main/runtime/workflows/workflow-run-control.test.ts`: pause stops new dispatches but running attempts finish, resume continues, cancel asks every live worker to stop and marks `cancelled`
 - [X] T123 [P] [US8] Write `src/main/runtime/workflows/workflow-run-controller.rehydrate.test.ts`: after a simulated runtime restart with a running attempt, the controller resumes waiting without re-dispatching, a lost remote contact marks the attempt `unverifiable`, never `failed`; and `workflow.run.start` against an SSH-backed repository whose host is unreachable refuses with `workflow_host_unreachable` and creates no local workspace (FR-038)
-- [ ] T124 [P] [US8] Write `tests/e2e/workflows/remote-run.e2e.test.ts` (paired `orca serve` in the same test host, background launch): run continues while the client is disconnected and the snapshot after reconnect is complete
+- [X] T124 [P] [US8] Write `tests/e2e/workflows/remote-run.e2e.test.ts` (paired `orca serve` in the same test host, background launch): run continues while the client is disconnected and the snapshot after reconnect is complete
 
 ### Implementation for User Story 8
 
