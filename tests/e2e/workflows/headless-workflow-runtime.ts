@@ -14,11 +14,15 @@ import {
 import { runProcess, spawnProcess } from '../../../src/shared/child-process/run-process'
 import { createStubAgentLaunchOverrides } from '../../fixtures/workflows/stub-agent-launch-override'
 import { getE2ECompletedOnboardingProfile } from '../helpers/e2e-completed-onboarding-profile'
+import {
+  formatHeadlessPairedRuntimeStartupDiagnostics,
+  parseHeadlessPairedRuntimePairingOffer
+} from '../helpers/headless-paired-runtime-serve-readiness'
 import { createElectronHomeIsolation } from '../helpers/electron-home-isolation'
 import { cleanupE2EDaemons } from '../helpers/electron-process-shutdown'
 
-const REPO_ROOT = resolve(__dirname, '../../..')
-const ORCA_DEV_CLI = join(REPO_ROOT, 'config', 'scripts', 'orca-dev.mjs')
+export const REPO_ROOT = resolve(__dirname, '../../..')
+export const ORCA_DEV_CLI = join(REPO_ROOT, 'config', 'scripts', 'orca-dev.mjs')
 const BUILT_ENTRY_POINTS = [
   join(REPO_ROOT, 'out', 'cli', 'index.js'),
   join(REPO_ROOT, 'out', 'main', 'index.js')
@@ -41,6 +45,10 @@ export type HeadlessWorkflowRuntime = {
   /** Runs `orca <args> --json` from `cwd` against this runtime; throws unless `ok`. */
   cli<TResult>(args: string[], options?: { cwd?: string; timeoutMs?: number }): Promise<TResult>
   dispose(): Promise<void>
+  /** The serve process's environment, so a caller can build its own client against it. */
+  env: NodeJS.ProcessEnv
+  /** The `orca://pair?...` offer, only when launched with `pairing: true`. */
+  pairingUrl: string | null
 }
 
 export function missingBuiltEntryPoints(): string[] {
@@ -79,6 +87,11 @@ function parseEnvelope<TResult>(stdout: string): CliEnvelope<TResult> | null {
 
 export async function launchHeadlessWorkflowRuntime(options: {
   stubScript: StubAgentScript
+  /** Offer loopback pairing so a separate client can reach the runtime over the paired transport. */
+  pairing?: boolean
+  /** Replaces the `ORCA` command the stub agent runs `orchestration send` with. */
+  stubOrcaCommand?: string
+  extraEnv?: Record<string, string>
 }): Promise<HeadlessWorkflowRuntime> {
   const userDataDir = realpathSync(mkdtempSync(join(USER_DATA_PARENT, 'orca-e2e-wf-')))
   const profile = getE2ECompletedOnboardingProfile()
@@ -97,7 +110,8 @@ export async function launchHeadlessWorkflowRuntime(options: {
     extraEnv: {
       // Inherited by every worker PTY the runtime spawns, which is where the stub reads them.
       WORKFLOW_STUB_SCRIPT: JSON.stringify(options.stubScript),
-      ORCA: `${process.execPath} ${ORCA_DEV_CLI}`
+      ORCA: options.stubOrcaCommand ?? `${process.execPath} ${ORCA_DEV_CLI}`,
+      ...options.extraEnv
     },
     userDataDir
   })
@@ -106,14 +120,27 @@ export async function launchHeadlessWorkflowRuntime(options: {
   const env = { ...isolation.env, ORCA_DEV_USER_DATA_PATH: userDataDir }
 
   let serveOutput = ''
+  let pairingUrl: string | null = null
   const serve = spawnProcess({
     program: process.execPath,
-    args: [ORCA_DEV_CLI, 'serve', '--no-pairing', '--json', '--port', '0'],
+    args: [
+      ORCA_DEV_CLI,
+      'serve',
+      ...(options.pairing ? ['--pairing-address', '127.0.0.1'] : ['--no-pairing']),
+      '--json',
+      '--port',
+      '0'
+    ],
     env,
     detached: true
   })
   serve.stdout.on('data', (chunk: Buffer) => {
     serveOutput += chunk.toString()
+    pairingUrl ??=
+      serveOutput
+        .split(/\r?\n/)
+        .map((line) => parseHeadlessPairedRuntimePairingOffer(line)?.pairingUrl)
+        .find((url) => url !== undefined) ?? null
   })
   serve.stderr.on('data', (chunk: Buffer) => {
     serveOutput += chunk.toString()
@@ -158,8 +185,8 @@ export async function launchHeadlessWorkflowRuntime(options: {
     }
     try {
       const status = await cli<{ runtime: { reachable: boolean } }>(['status'])
-      if (status.runtime.reachable) {
-        return { cli, dispose }
+      if (status.runtime.reachable && (!options.pairing || pairingUrl !== null)) {
+        return { cli, dispose, env, pairingUrl }
       }
       lastError = new Error(`status: ${JSON.stringify(status)}`)
     } catch (error) {
@@ -170,6 +197,8 @@ export async function launchHeadlessWorkflowRuntime(options: {
   await dispose()
   throw new Error(
     `Headless Orca runtime was not reachable within ${READY_TIMEOUT_MS}ms.\n` +
-      `${lastError instanceof Error ? lastError.message : ''}\nserve output:\n${serveOutput}`
+      `${lastError instanceof Error ? lastError.message : ''}\n` +
+      // Redacts the pairing offer, which is a credential for this runtime.
+      `${formatHeadlessPairedRuntimeStartupDiagnostics(serveOutput, '')}`
   )
 }
