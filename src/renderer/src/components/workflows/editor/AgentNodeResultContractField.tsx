@@ -8,9 +8,15 @@ type ResultContractParseResult =
   | { ok: true; value: AgentNode['resultContract'] }
   | { ok: false; error: string }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 /** Narrows a parsed JSON object to `ResultContract` (needs `type: 'object'`) without a cast. */
-function isResultContractDraft(value: object): value is AgentNode['resultContract'] {
-  return !Array.isArray(value) && Reflect.get(value, 'type') === 'object'
+function isResultContractDraft(
+  value: Record<string, unknown>
+): value is AgentNode['resultContract'] {
+  return !Array.isArray(value) && value.type === 'object'
 }
 
 function parseResultContract(text: string): ResultContractParseResult {
@@ -26,7 +32,7 @@ function parseResultContract(text: string): ResultContractParseResult {
       )
     }
   }
-  if (typeof parsed !== 'object' || parsed === null) {
+  if (!isRecord(parsed)) {
     return {
       ok: false,
       error: translate(
