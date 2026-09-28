@@ -61,6 +61,11 @@ describe('canTransition — run', () => {
     expect(canTransition('run', 'paused', 'cancelled')).toBe(true)
   })
 
+  it('paused -> failed (an approval answered while paused can still stop the run)', () => {
+    expect(canTransition('run', 'paused', 'failed')).toBe(true)
+    expect(canTransition('run', 'paused', 'completed')).toBe(false)
+  })
+
   it('terminal states are final', () => {
     for (const terminal of ['completed', 'failed', 'cancelled'] as const) {
       for (const to of WORKFLOW_RUN_STATES) {

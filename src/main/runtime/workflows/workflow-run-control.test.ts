@@ -104,6 +104,26 @@ describe('workflow run control (pause / resume / cancel)', () => {
     await finished
   })
 
+  it('an unrouted approval answer while paused still stops the run as failed', async () => {
+    const { run, finished } = start(
+      h.createRun(approvalWorkflow(undefined, { withRejectEdge: false, withSideBranch: false }))
+    )
+    await d.reached(run.id, 'gate', 'waiting')
+    expect(pauseWorkflowRun(h.db, h.runtime, run.id)).toBe('paused')
+
+    answerRunQuestion(h.db, h.runtime, {
+      runId: run.id,
+      questionId: d.question(run.id)?.id ?? '',
+      optionId: 'reject',
+      answeredBy: 'user_1'
+    })
+
+    await expect(finished).resolves.toBe('failed')
+    const failed = h.db.listWorkflowEvents(run.id).find((event) => event.kind === 'run_failed')
+    expect(failed?.payloadJson).toMatchObject({ reason: 'approval_rejected' })
+    expect(d.attempt(run.id, 'a')).toBeUndefined()
+  })
+
   it('a controller rehydrated on a paused run dispatches nothing until resumed', async () => {
     const run = h.createRun()
     const first = h.createController(run.id)
