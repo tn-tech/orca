@@ -10,18 +10,12 @@ import { isTuiAgent, TUI_AGENT_CONFIG } from '../../shared/tui-agent-config'
 import { isTuiAgentEnabled, pickTuiAgent } from '../../shared/tui-agent-selection'
 import { resolveAgentStartupPlanInputs } from '../../shared/agent-startup-plan-inputs'
 import { buildAgentDraftLaunchPlan, buildAgentStartupPlan } from '../../shared/tui-agent-startup'
-import {
-  markAntigravityWorkspaceTrusted,
-  markCodexProjectTrusted,
-  markCopilotFolderTrusted,
-  markCursorWorkspaceTrusted
-} from '../agent-trust-presets'
+import { markLocalAgentWorkspaceTrusted } from '../agent-trust-preset-dispatch'
 import {
   detectInstalledAgentsWithShellPathHydration,
   detectRemoteAgents
 } from '../preflight/agent-detection'
 import { markRemoteAgentWorkspaceTrusted } from '../remote-agent-trust-presets'
-import { markKimiWorkspaceTrusted } from '../kimi/kimi-workspace-trust'
 import type { RuntimeStore } from './runtime-store-contract'
 
 export type WorktreeStartupDraftPaste = { agent: TuiAgent; content: string }
@@ -195,18 +189,8 @@ export async function markLocalWorktreeTrusted(
     return
   }
   try {
-    if (preset === 'cursor') {
-      markCursorWorkspaceTrusted(workspacePath)
-    } else if (preset === 'copilot') {
-      markCopilotFolderTrusted(workspacePath)
-    } else if (preset === 'codex') {
-      // Why: the Codex write queues behind any in-flight hook grant, so the agent must not launch until it lands.
-      await markCodexProjectTrusted(workspacePath)
-    } else if (preset === 'antigravity') {
-      markAntigravityWorkspaceTrusted(workspacePath)
-    } else if (preset === 'kimi') {
-      await markKimiWorkspaceTrusted(workspacePath)
-    }
+    // Why: awaited — the agent must not launch before the trust write lands.
+    await markLocalAgentWorkspaceTrusted(preset, workspacePath)
   } catch {
     // Best-effort: the user can still accept the agent trust prompt manually.
   }

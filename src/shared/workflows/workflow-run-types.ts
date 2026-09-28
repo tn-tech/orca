@@ -53,6 +53,11 @@ export type NodeAttemptView = {
   resultJson?: JsonValue
   artifactsJson: WorkflowAttemptArtifact[]
   failureReason?: string
+  /**
+   * Optional machine-readable code for `failureReason` (workflow-attempt-failure-code.ts), e.g.
+   * `agent_readiness_timeout`. Open vocabulary: an unknown or missing code falls back to the text.
+   */
+  failureCode?: string
   workspaceWorktreeId?: string
   transcriptRef?: WorkflowTranscriptRef
   startedAt?: string

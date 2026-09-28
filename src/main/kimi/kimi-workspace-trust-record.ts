@@ -20,9 +20,10 @@ function slugifyWorkDirName(name: string): string {
 
 /** The file name Kimi looks up to decide whether `root` (an absolute cwd) is trusted. */
 export function kimiWorkspaceTrustKey(root: string): string {
-  const slashed = root.replaceAll('\\', '/').replace(/\/+$/, '')
-  // Why: Kimi folds Windows roots to lowercase before hashing, so casing differences still match.
-  const normalized = WINDOWS_SHAPED_ROOT.test(slashed) ? slashed.toLowerCase() : slashed
+  const slashed = root.replaceAll('\\', '/')
+  const stripped = slashed.replace(/\/+$/, '')
+  // Why: Kimi tests the shape before stripping (so `C:\` hashes as `c:`) and folds Windows roots to lowercase.
+  const normalized = WINDOWS_SHAPED_ROOT.test(slashed) ? stripped.toLowerCase() : stripped
   const name = slugifyWorkDirName(normalized.split('/').pop() ?? normalized)
   const hash = createHash('sha256').update(normalized).digest('hex').slice(0, 12)
   return `wd_${name}_${hash}`

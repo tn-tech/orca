@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type { AgentTrustPreset } from './agent-trust-presets'
 import { upsertProjectTrustLevelInContent } from './codex/config-toml-trust'
 import {
@@ -165,9 +166,17 @@ async function markRemoteKimiWorkspaceTrusted(
   remoteHome: string,
   workspacePath: string
 ): Promise<void> {
-  // Why: same `~/.kimi-code` assumption as the remote Kimi hook install; KIMI_CODE_HOME on the
-  // host is not visible from here.
-  const trustDir = `${remoteHome}/.kimi-code/${KIMI_WORKSPACE_TRUST_DIR}`
+  // KNOWN LIMIT: assumes `~/.kimi-code`, like the remote Kimi hook install. The relay exposes no
+  // remote environment, so a host-side KIMI_CODE_HOME is invisible here and Kimi still prompts.
+  const kimiHome = `${remoteHome}/.kimi-code`
+  try {
+    await fsProvider.stat(kimiHome)
+  } catch {
+    // Why: the relay cannot set modes, so never create Kimi's home (Kimi makes it 0700 itself);
+    // a subdirectory inside that 0700 home is private regardless of its own mode.
+    return
+  }
+  const trustDir = `${kimiHome}/${KIMI_WORKSPACE_TRUST_DIR}`
   const recordPath = `${trustDir}/${kimiWorkspaceTrustKey(workspacePath)}`
   try {
     await fsProvider.stat(recordPath)
@@ -176,5 +185,13 @@ async function markRemoteKimiWorkspaceTrusted(
     // Missing record: write the same shape Kimi writes on "Trust this folder".
   }
   await fsProvider.createDir(trustDir)
-  await fsProvider.writeFile(recordPath, kimiWorkspaceTrustRecord(workspacePath))
+  // Why temp + rename: Kimi must never read a half-written record.
+  const tempPath = `${recordPath}.orca-${randomUUID()}.tmp`
+  await fsProvider.writeFile(tempPath, kimiWorkspaceTrustRecord(workspacePath))
+  try {
+    await fsProvider.rename(tempPath, recordPath)
+  } catch (error) {
+    await fsProvider.deletePath(tempPath).catch(() => {})
+    throw error
+  }
 }

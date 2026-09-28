@@ -8,6 +8,7 @@ import type {
 } from '../../../../../shared/workflows/workflow-run-types'
 import type { WorkflowAttemptState } from '../../../../../shared/workflows/workflow-node-states'
 import type { JsonValue } from '../../../../../shared/workflows/workflow-condition-schema'
+import { workflowAttemptFailureCode } from '../../../../../shared/workflows/workflow-attempt-failure-code'
 import { OrchestrationError } from '../../orchestration-error'
 import { generateId } from '../generated-id'
 import type { OrchestrationDb } from '../orchestration-db'
@@ -57,6 +58,7 @@ function selectAttemptRow(
 }
 
 function toAttemptView(row: WorkflowNodeAttemptRow): NodeAttemptView {
+  const failureCode = workflowAttemptFailureCode(row.failure_reason ?? undefined)
   return {
     id: row.id,
     runId: row.run_id,
@@ -75,6 +77,7 @@ function toAttemptView(row: WorkflowNodeAttemptRow): NodeAttemptView {
     resultJson: row.result_json ? JSON.parse(row.result_json) : undefined,
     artifactsJson: JSON.parse(row.artifacts_json),
     failureReason: row.failure_reason ?? undefined,
+    ...(failureCode ? { failureCode } : {}),
     workspaceWorktreeId: row.workspace_worktree_id ?? undefined,
     transcriptRef: row.transcript_ref ? JSON.parse(row.transcript_ref) : undefined,
     startedAt: row.started_at ? new Date(row.started_at).toISOString() : undefined,

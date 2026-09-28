@@ -152,12 +152,7 @@ import {
 import { createSequencedSetupAgentCommands } from '../../shared/setup-agent-sequencing'
 import { shouldWaitForSetupBeforeAgentStartup } from '../../shared/setup-agent-startup-policy'
 import { createWorktreeCreateTimingRecorder } from '../worktree-create-timing'
-import {
-  markCodexProjectTrusted,
-  markCopilotFolderTrusted,
-  markCursorWorkspaceTrusted
-} from '../agent-trust-presets'
-import { markKimiWorkspaceTrusted } from '../kimi/kimi-workspace-trust'
+import { markLocalAgentWorkspaceTrusted } from '../agent-trust-preset-dispatch'
 import {
   getLocalProjectGitExecOptions,
   getLocalProjectWorktreeGitOptions,
@@ -439,14 +434,8 @@ async function spawnLocalStartupAndSetupTerminals(args: {
     if (isTuiAgent(createdWithAgent)) {
       const preset = TUI_AGENT_CONFIG[createdWithAgent].preflightTrust
       try {
-        if (preset === 'cursor') {
-          markCursorWorkspaceTrusted(worktree.path)
-        } else if (preset === 'copilot') {
-          markCopilotFolderTrusted(worktree.path)
-        } else if (preset === 'codex') {
-          markCodexProjectTrusted(worktree.path)
-        } else if (preset === 'kimi') {
-          await markKimiWorkspaceTrusted(worktree.path)
+        if (preset) {
+          await markLocalAgentWorkspaceTrusted(preset, worktree.path)
         }
       } catch {
         // Best-effort: launch still proceeds and the agent can ask interactively.
