@@ -5,8 +5,7 @@ import type {
   Role,
   Workflow
 } from '../../../../../shared/workflows/workflow-definition-types'
-import { computeAutoLayout } from './workflow-auto-layout'
-import { clearMeasuredNodeSizes, getMeasuredNodeSizes } from './workflow-node-measurements'
+import { computeAutoLayout, type MeasuredNodeSize } from './workflow-auto-layout'
 import {
   addNodeToDefinition,
   connectNodesInDefinition,
@@ -48,7 +47,10 @@ export type WorkflowEditorAction =
   | { type: 'update-node'; node: Node }
   | { type: 'update-edge-condition'; edgeId: string; condition?: Condition }
   | { type: 'move-node'; nodeId: string; position: { x: number; y: number } }
-  | { type: 'auto-layout' }
+  /** "Re-layout". `measuredSizes` is the canvas's own current read of React Flow's real node
+   *  sizes (`WorkflowCanvas.tsx`'s `getMeasuredSizes`); omitted, `computeAutoLayout` falls back to
+   *  its estimate for every node. */
+  | { type: 'auto-layout'; measuredSizes?: ReadonlyMap<string, MeasuredNodeSize> }
   /** FR-005/FR-006, US2 AS5: wraps `nodeIds` (an existing selection, or a refused back-edge's
    *  two endpoints) in a new Loop node. */
   | { type: 'wrap-in-loop'; nodeIds: string[] }
@@ -222,14 +224,12 @@ export function workflowEditorReducer(
       return commit(state, removeRoleFromDefinition(state.definition, action.roleId))
 
     case 'auto-layout': {
-      // F10 round 1 review, Important #3 controller ruling: prefer React Flow's real measured
-      // size over the estimate when one's available (`workflow-node-measurements.ts`, written by
-      // `WorkflowCanvasMeasurementSync.tsx`). `currentLayout` anchors a pinned Loop-body node to
-      // its Loop's pre-layout position (Important #2) instead of a stale absolute one.
+      // Prefers a real measured size over the estimate; anchors a pinned Loop-body node to its
+      // Loop's pre-layout position instead of a stale absolute one.
       const layout = computeAutoLayout(state.definition.nodes, state.definition.edges, {
         pinned: pinnedLayout(state.definition, state.manualPositionIds),
         currentLayout: state.definition.layout,
-        measuredSizes: getMeasuredNodeSizes()
+        measuredSizes: action.measuredSizes
       })
       return commit(state, { ...state.definition, layout })
     }
@@ -238,9 +238,6 @@ export function workflowEditorReducer(
       const incoming = action.definition
       const manualPositionIds = pruneManualPositionIds(state.manualPositionIds, incoming)
       const layout = { ...incoming.layout, ...pinnedLayout(state.definition, manualPositionIds) }
-      // A different workflow's nodes (fresh ids) may be about to mount; don't Re-layout the next
-      // one against sizes measured for nodes it doesn't have.
-      clearMeasuredNodeSizes()
       return {
         definition: { ...incoming, layout },
         manualPositionIds,

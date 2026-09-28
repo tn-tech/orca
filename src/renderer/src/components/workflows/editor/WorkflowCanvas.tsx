@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef } from 'react'
+import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef } from 'react'
 import '@xyflow/react/dist/style.css'
 import {
   Background,
@@ -14,10 +14,13 @@ import {
   type NodeTypes,
   type OnConnect,
   type OnEdgesChange,
+  type OnInit,
   type OnNodesChange,
-  type OnSelectionChangeFunc
+  type OnSelectionChangeFunc,
+  type ReactFlowInstance
 } from '@xyflow/react'
 import type { Edge, Workflow } from '../../../../../shared/workflows/workflow-definition-types'
+import type { MeasuredNodeSize } from './workflow-auto-layout'
 import { resolveSelectChange, resolveSelectionChange } from './workflow-canvas-selection-change'
 import { loopParentMap } from './workflow-auto-layout'
 import { computeEdgeBendLanes } from './workflow-edge-routing'
@@ -37,7 +40,6 @@ import ReflectionNode from './nodes/ReflectionNode'
 import RouterNode from './nodes/RouterNode'
 import StartNode from './nodes/StartNode'
 import WorkflowCanvasAutoFit from './WorkflowCanvasAutoFit'
-import WorkflowCanvasMeasurementSync from './WorkflowCanvasMeasurementSync'
 import WorkflowDagEdge from './WorkflowDagEdge'
 
 const NODE_TYPES: NodeTypes = {
@@ -78,6 +80,13 @@ export type WorkflowCanvasProps = {
   /** Fired once, on drag release — the editor state marks the node "manually positioned" (FR-010). */
   onNodeDragStop?: (nodeId: string, position: { x: number; y: number }) => void
   onConnect?: (connection: WorkflowCanvasConnection) => void
+}
+
+/** Re-layout's own read of React Flow's real per-node sizes, pulled on demand rather than synced
+ *  into any store — `getInternalNode` always reflects the current DOM measurement regardless of
+ *  the controlled `nodes` prop (round 2: `useNodes()` returns the echoed prop, never `.measured`). */
+export type WorkflowCanvasHandle = {
+  getMeasuredSizes: () => ReadonlyMap<string, MeasuredNodeSize>
 }
 
 /**
@@ -147,142 +156,174 @@ export function toFlowEdges(
 }
 
 /** The DAG editor canvas (FR-002): renders `definition` with `@xyflow/react`, fully controlled. */
-export default function WorkflowCanvas({
-  definition,
-  nodeStatuses,
-  nodeIterations,
-  nodeWorkspaces,
-  selectedNodeId,
-  selectedEdgeId,
-  onNodeSelect,
-  onEdgeSelect,
-  onNodeDragStop,
-  onConnect
-}: WorkflowCanvasProps): React.JSX.Element {
-  const parentOf = useMemo(() => loopParentMap(definition.nodes), [definition.nodes])
-  const nodes = useMemo(
-    () =>
-      toFlowNodes(
-        definition,
-        nodeStatuses,
-        nodeIterations,
-        nodeWorkspaces,
-        selectedNodeId,
-        parentOf
-      ),
-    [definition, nodeStatuses, nodeIterations, nodeWorkspaces, selectedNodeId, parentOf]
-  )
-  const bendLanes = useMemo(
-    () => computeEdgeBendLanes(definition.nodes, definition.edges, definition.layout),
-    [definition.nodes, definition.edges, definition.layout]
-  )
-  const edges = useMemo(
-    () => toFlowEdges(definition, selectedEdgeId, bendLanes, parentOf),
-    [definition, selectedEdgeId, bendLanes, parentOf]
-  )
-  const nodeIds = useMemo(() => nodes.map((node) => node.id), [nodes])
-  const containerRef = useRef<HTMLDivElement | null>(null)
-
-  const handleNodesChange: OnNodesChange<WorkflowFlowNode> = useCallback(
-    (changes) => {
-      for (const change of changes) {
-        if (
-          onNodeDragStop &&
-          change.type === 'position' &&
-          change.dragging === false &&
-          change.position
-        ) {
-          onNodeDragStop(
-            change.id,
-            toAbsoluteNodePosition(definition.layout, parentOf, change.id, change.position)
-          )
+const WorkflowCanvas = forwardRef<WorkflowCanvasHandle, WorkflowCanvasProps>(
+  function WorkflowCanvas(
+    {
+      definition,
+      nodeStatuses,
+      nodeIterations,
+      nodeWorkspaces,
+      selectedNodeId,
+      selectedEdgeId,
+      onNodeSelect,
+      onEdgeSelect,
+      onNodeDragStop,
+      onConnect
+    },
+    ref
+  ) {
+    const reactFlowInstanceRef = useRef<ReactFlowInstance<WorkflowFlowNode, FlowEdge> | null>(null)
+    useImperativeHandle(
+      ref,
+      () => ({
+        getMeasuredSizes: () => {
+          const instance = reactFlowInstanceRef.current
+          const sizes = new Map<string, MeasuredNodeSize>()
+          if (!instance) {
+            return sizes
+          }
+          for (const node of instance.getNodes()) {
+            const measured = instance.getInternalNode(node.id)?.measured
+            if (measured?.width !== undefined && measured.height !== undefined) {
+              sizes.set(node.id, { width: measured.width, height: measured.height })
+            }
+          }
+          return sizes
         }
-      }
-      // F4 re-review 1, Minor #6: keyboard selection (Tab + Enter) arrives here as a `select`
-      // change — see `resolveSelectChange`'s comment for why `onSelectionChange` alone can't
-      // catch it.
-      const selectChange = resolveSelectChange(changes)
-      if (selectChange.changed) {
-        onNodeSelect?.(selectChange.id)
-      }
-    },
-    [definition.layout, onNodeDragStop, onNodeSelect, parentOf]
-  )
+      }),
+      []
+    )
+    const handleInit: OnInit<WorkflowFlowNode, FlowEdge> = useCallback((instance) => {
+      reactFlowInstanceRef.current = instance
+    }, [])
 
-  const handleEdgesChange: OnEdgesChange<FlowEdge> = useCallback(
-    (changes) => {
-      const selectChange = resolveSelectChange(changes)
-      if (selectChange.changed) {
-        onEdgeSelect?.(selectChange.id)
-      }
-    },
-    [onEdgeSelect]
-  )
+    const parentOf = useMemo(() => loopParentMap(definition.nodes), [definition.nodes])
+    const nodes = useMemo(
+      () =>
+        toFlowNodes(
+          definition,
+          nodeStatuses,
+          nodeIterations,
+          nodeWorkspaces,
+          selectedNodeId,
+          parentOf
+        ),
+      [definition, nodeStatuses, nodeIterations, nodeWorkspaces, selectedNodeId, parentOf]
+    )
+    const bendLanes = useMemo(
+      () => computeEdgeBendLanes(definition.nodes, definition.edges, definition.layout),
+      [definition.nodes, definition.edges, definition.layout]
+    )
+    const edges = useMemo(
+      () => toFlowEdges(definition, selectedEdgeId, bendLanes, parentOf),
+      [definition, selectedEdgeId, bendLanes, parentOf]
+    )
+    const nodeIds = useMemo(() => nodes.map((node) => node.id), [nodes])
+    const containerRef = useRef<HTMLDivElement | null>(null)
 
-  const handleConnect: OnConnect = useCallback(
-    (connection: Connection) => {
-      onConnect?.({
-        from: connection.source,
-        to: connection.target,
-        fromPort: connection.sourceHandle ?? undefined
-      })
-    },
-    [onConnect]
-  )
+    const handleNodesChange: OnNodesChange<WorkflowFlowNode> = useCallback(
+      (changes) => {
+        for (const change of changes) {
+          if (
+            onNodeDragStop &&
+            change.type === 'position' &&
+            change.dragging === false &&
+            change.position
+          ) {
+            onNodeDragStop(
+              change.id,
+              toAbsoluteNodePosition(definition.layout, parentOf, change.id, change.position)
+            )
+          }
+        }
+        // F4 re-review 1, Minor #6: keyboard selection (Tab + Enter) arrives here as a `select`
+        // change — see `resolveSelectChange`'s comment for why `onSelectionChange` alone can't
+        // catch it.
+        const selectChange = resolveSelectChange(changes)
+        if (selectChange.changed) {
+          onNodeSelect?.(selectChange.id)
+        }
+      },
+      [definition.layout, onNodeDragStop, onNodeSelect, parentOf]
+    )
 
-  const handleNodeClick: NodeMouseHandler<WorkflowFlowNode> = useCallback(
-    (_event, node) => onNodeSelect?.(node.id),
-    [onNodeSelect]
-  )
+    const handleEdgesChange: OnEdgesChange<FlowEdge> = useCallback(
+      (changes) => {
+        const selectChange = resolveSelectChange(changes)
+        if (selectChange.changed) {
+          onEdgeSelect?.(selectChange.id)
+        }
+      },
+      [onEdgeSelect]
+    )
 
-  const handleEdgeClick: EdgeMouseHandler<FlowEdge> = useCallback(
-    (_event, edge) => onEdgeSelect?.(edge.id),
-    [onEdgeSelect]
-  )
+    const handleConnect: OnConnect = useCallback(
+      (connection: Connection) => {
+        onConnect?.({
+          from: connection.source,
+          to: connection.target,
+          fromPort: connection.sourceHandle ?? undefined
+        })
+      },
+      [onConnect]
+    )
 
-  const handlePaneClick = useCallback(() => {
-    onNodeSelect?.(undefined)
-    onEdgeSelect?.(undefined)
-  }, [onNodeSelect, onEdgeSelect])
+    const handleNodeClick: NodeMouseHandler<WorkflowFlowNode> = useCallback(
+      (_event, node) => onNodeSelect?.(node.id),
+      [onNodeSelect]
+    )
 
-  const handleSelectionChange: OnSelectionChangeFunc<WorkflowFlowNode, FlowEdge> = useCallback(
-    (params) => {
-      const { nodeId, edgeId } = resolveSelectionChange(params)
-      onNodeSelect?.(nodeId)
-      onEdgeSelect?.(edgeId)
-    },
-    [onNodeSelect, onEdgeSelect]
-  )
+    const handleEdgeClick: EdgeMouseHandler<FlowEdge> = useCallback(
+      (_event, edge) => onEdgeSelect?.(edge.id),
+      [onEdgeSelect]
+    )
 
-  return (
-    <div ref={containerRef} className="relative h-full w-full bg-background">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={NODE_TYPES}
-        edgeTypes={EDGE_TYPES}
-        onNodesChange={handleNodesChange}
-        onEdgesChange={handleEdgesChange}
-        onConnect={handleConnect}
-        onNodeClick={handleNodeClick}
-        onEdgeClick={handleEdgeClick}
-        onPaneClick={handlePaneClick}
-        onSelectionChange={handleSelectionChange}
-        // F4: Delete/Backspace are handled by the editor's own shortcut
-        // (workflow-editor-keyboard-shortcuts.ts), which also skips text inputs and open
-        // dialogs/menus — React Flow's built-in handling knows none of that.
-        deleteKeyCode={null}
-        fitView
-        minZoom={0.2}
-      >
-        <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--border)" />
-        <Controls
-          showInteractive={false}
-          className="!border-border !bg-card !text-card-foreground [&_button]:!border-border [&_button]:!bg-card [&_button]:!fill-current [&_button:hover]:!bg-accent"
-        />
-        <WorkflowCanvasAutoFit nodeIds={nodeIds} containerRef={containerRef} />
-        <WorkflowCanvasMeasurementSync />
-      </ReactFlow>
-    </div>
-  )
-}
+    const handlePaneClick = useCallback(() => {
+      onNodeSelect?.(undefined)
+      onEdgeSelect?.(undefined)
+    }, [onNodeSelect, onEdgeSelect])
+
+    const handleSelectionChange: OnSelectionChangeFunc<WorkflowFlowNode, FlowEdge> = useCallback(
+      (params) => {
+        const { nodeId, edgeId } = resolveSelectionChange(params)
+        onNodeSelect?.(nodeId)
+        onEdgeSelect?.(edgeId)
+      },
+      [onNodeSelect, onEdgeSelect]
+    )
+
+    return (
+      <div ref={containerRef} className="relative h-full w-full bg-background">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={NODE_TYPES}
+          edgeTypes={EDGE_TYPES}
+          onNodesChange={handleNodesChange}
+          onEdgesChange={handleEdgesChange}
+          onConnect={handleConnect}
+          onNodeClick={handleNodeClick}
+          onEdgeClick={handleEdgeClick}
+          onPaneClick={handlePaneClick}
+          onSelectionChange={handleSelectionChange}
+          onInit={handleInit}
+          // F4: Delete/Backspace are handled by the editor's own shortcut
+          // (workflow-editor-keyboard-shortcuts.ts), which also skips text inputs and open
+          // dialogs/menus — React Flow's built-in handling knows none of that.
+          deleteKeyCode={null}
+          fitView
+          minZoom={0.2}
+        >
+          <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--border)" />
+          <Controls
+            showInteractive={false}
+            className="!border-border !bg-card !text-card-foreground [&_button]:!border-border [&_button]:!bg-card [&_button]:!fill-current [&_button:hover]:!bg-accent"
+          />
+          <WorkflowCanvasAutoFit nodeIds={nodeIds} containerRef={containerRef} />
+        </ReactFlow>
+      </div>
+    )
+  }
+)
+
+export default WorkflowCanvas

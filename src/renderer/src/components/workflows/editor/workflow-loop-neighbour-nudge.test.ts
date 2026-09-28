@@ -78,7 +78,7 @@ describe('nudgeOverlappingSiblings', () => {
     const next = nudgeOverlappingSiblings(definition, new Set(), loopBox)
 
     const deltaY = next.siblingLoop.y - definition.layout.siblingLoop.y
-    expect(deltaY).toBeGreaterThan(0)
+    expect(deltaY).not.toBe(0)
     expect(next.siblingBody).toEqual({
       x: definition.layout.siblingBody.x,
       y: definition.layout.siblingBody.y + deltaY
@@ -105,13 +105,52 @@ describe('nudgeOverlappingSiblings', () => {
     expect(next.sibling).toEqual({ x: 5000, y: 5000 })
   })
 
-  it('clears the overlap by WORKFLOW_LOOP_PADDING below the Loop box', () => {
+  it('clears an overlap below the Loop box when that is the shorter move', () => {
     const sibling = agentNode('sibling')
-    const definition = workflow([sibling], [], { sibling: { x: 0, y: 10 } })
+    // 90px from the loop's bottom, 10px from its top: clearing downward is shorter.
+    const definition = workflow([sibling], [], { sibling: { x: 0, y: 90 } })
     const loopBox: Box = { x: 0, y: 0, width: 300, height: 100 }
 
     const next = nudgeOverlappingSiblings(definition, new Set(), loopBox)
 
     expect(next.sibling.y).toBe(loopBox.y + loopBox.height + WORKFLOW_LOOP_PADDING)
+  })
+
+  it('clears an overlap above the Loop box when that is the shorter move (Minor: neighbours overlapping from above)', () => {
+    const sibling = agentNode('sibling')
+    // 10px from the loop's top, 90px from its bottom: clearing upward is shorter.
+    const definition = workflow([sibling], [], { sibling: { x: 0, y: 10 } })
+    const loopBox: Box = { x: 0, y: 0, width: 300, height: 100 }
+
+    const next = nudgeOverlappingSiblings(definition, new Set(), loopBox)
+
+    expect(next.sibling.y).toBe(
+      loopBox.y - WORKFLOW_LOOP_PADDING - measureWorkflowNodeSize(sibling).height
+    )
+  })
+
+  it('keeps sliding a nudged sibling past another node it would otherwise land on (Minor: re-check pushed nodes)', () => {
+    const sibling = agentNode('sibling')
+    const blocker = agentNode('blocker')
+    const loopBox: Box = { x: 0, y: 0, width: 300, height: 100 }
+    const belowLoop = loopBox.y + loopBox.height + WORKFLOW_LOOP_PADDING
+    const definition = workflow([sibling, blocker], [], {
+      // Overlaps the loop and would land exactly on "blocker" if nudged only once.
+      sibling: { x: 0, y: 90 },
+      blocker: { x: 0, y: belowLoop }
+    })
+
+    const next = nudgeOverlappingSiblings(definition, new Set(), loopBox)
+
+    const siblingBox = { ...next.sibling, ...measureWorkflowNodeSize(sibling) }
+    const blockerBox = { ...next.blocker, ...measureWorkflowNodeSize(blocker) }
+    const overlapsBlocker = !(
+      siblingBox.x + siblingBox.width <= blockerBox.x ||
+      blockerBox.x + blockerBox.width <= siblingBox.x ||
+      siblingBox.y + siblingBox.height <= blockerBox.y ||
+      blockerBox.y + blockerBox.height <= siblingBox.y
+    )
+    expect(overlapsBlocker).toBe(false)
+    expect(next.blocker).toEqual({ x: 0, y: belowLoop })
   })
 })

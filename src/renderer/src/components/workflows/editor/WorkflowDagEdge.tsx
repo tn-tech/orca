@@ -26,11 +26,11 @@ function buildBendPath(
   return `M ${sourceX} ${sourceY} L ${x1} ${laneY} L ${x2} ${laneY} L ${targetX} ${targetY}`
 }
 
-/** F10: renders the same bezier React Flow's default edge would when `data.laneY` is unset, or a
- *  path bent through that lane when a sibling node would otherwise sit behind a straight line.
- *  F10 round 1: `<BaseEdge>` forwards unknown props onto the DOM `<path>`, so this destructures
- *  only the fields `<BaseEdge>` itself declares (same subset React Flow's own built-in edges use)
- *  instead of spreading the full `EdgeProps` — `sourceX`/`data`/`selected`/… never reach the DOM. */
+/** Renders the same bezier React Flow's default edge would when `data.laneY` is unset, or a path
+ *  bent through that lane when a sibling node would otherwise sit behind a straight line.
+ *  Destructures only the fields `<BaseEdge>` declares (the same subset React Flow's own built-in
+ *  edges pass) instead of spreading `EdgeProps` — `<BaseEdge>` forwards unknown props onto the DOM
+ *  `<path>`, so a spread would leak `sourceX`/`data`/`selected`/… as attributes. */
 export default function WorkflowDagEdge({
   id,
   sourceX,

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useRef, useState } from 'react'
 import { LayoutGrid, Loader2, ShieldCheck } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -8,6 +8,7 @@ import { useAppStore } from '@/store'
 import AddNodeMenu from './editor/AddNodeMenu'
 import NodeInspector from './editor/NodeInspector'
 import UndoButton from './editor/UndoButton'
+import type { WorkflowCanvasHandle } from './editor/WorkflowCanvas'
 import ValidationProblemsPanel from './editor/ValidationProblemsPanel'
 import { useWorkflowEditorKeyboardShortcuts } from './editor/workflow-editor-keyboard-shortcuts'
 import WorkflowEditorProblemNotice from './editor/WorkflowEditorProblemNotice'
@@ -38,6 +39,7 @@ export default function WorkflowsPage(): React.JSX.Element {
     (s) => s.settings?.activeRuntimeEnvironmentId?.trim() || null
   )
   const openModal = useAppStore((s) => s.openModal)
+  const canvasRef = useRef<WorkflowCanvasHandle>(null)
   const [trustedSourcesOpen, setTrustedSourcesOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   // US6: names and writes an open draft on its first save; see WorkflowNameDialog generation
@@ -239,7 +241,12 @@ export default function WorkflowsPage(): React.JSX.Element {
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => session.editor.dispatch({ type: 'auto-layout' })}
+                    onClick={() =>
+                      session.editor.dispatch({
+                        type: 'auto-layout',
+                        measuredSizes: canvasRef.current?.getMeasuredSizes()
+                      })
+                    }
                   >
                     <LayoutGrid />
                     {translate('auto.components.workflows.WorkflowsPage.relayout', 'Re-layout')}
@@ -256,6 +263,7 @@ export default function WorkflowsPage(): React.JSX.Element {
               <div className="flex min-h-0 flex-1">
                 <div className="min-w-0 flex-1">
                   <RunCanvasOverlay
+                    ref={canvasRef}
                     definition={session.editor.state.definition}
                     snapshot={run.snapshot}
                     selectedNodeId={controller.selectedNodeId}

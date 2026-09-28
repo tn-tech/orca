@@ -103,7 +103,7 @@ export function computeEdgeBendLanes(
       continue
     }
     // Right-edge-of-source -> left-edge-of-target: assumes `direction: 'LR'` (`computeAutoLayout`
-    // also accepts 'TB', with no current caller — F10 round 1 review, Minor #5).
+    // also accepts 'TB', with no current caller).
     const x1 = fromBox.x + fromBox.width
     const y1 = fromBox.y + fromBox.height / 2
     const x2 = toBox.x

@@ -28,12 +28,35 @@ function boxesOverlap(a: Box, b: Box): boolean {
   )
 }
 
+/** Moves a node (and, if it's a Loop, its body with it) to a new absolute y. */
+function moveNodeTo(layout: Workflow['layout'], node: Node, targetY: number): Workflow['layout'] {
+  const position = layout[node.id] ?? { x: 0, y: 0 }
+  const deltaY = targetY - position.y
+  const next = { ...layout, [node.id]: { x: position.x, y: targetY } }
+  if (node.type === 'loop') {
+    for (const bodyId of node.body.nodeIds) {
+      const bodyPosition = layout[bodyId]
+      if (bodyPosition) {
+        next[bodyId] = { x: bodyPosition.x, y: bodyPosition.y + deltaY }
+      }
+    }
+  }
+  return next
+}
+
+/** Clears `box` from `blocker` in the given direction, by the shortest distance. */
+function clearBelow(blocker: Box): number {
+  return blocker.y + blocker.height + WORKFLOW_LOOP_PADDING
+}
+
+function clearAbove(blocker: Box, boxHeight: number): number {
+  return blocker.y - WORKFLOW_LOOP_PADDING - boxHeight
+}
+
 /**
- * Nudges every sibling whose box overlaps the freshly-created Loop's box straight down, clear of
- * it (F10 round 1 review, Important #4: "Loop doesn't overlap neighbours on creation" — a manual
- * placement, or dagre's own `nodesep` (56px) minus the Loop's own padding (40px), can leave a
- * neighbour closer than `WORKFLOW_LOOP_PADDING` to the wrapped selection). Handled here, directly,
- * rather than left to whatever the next "Re-layout" happens to do.
+ * Nudges every sibling whose box overlaps the freshly-created Loop's box clear of it — whichever
+ * of "below" or "above" the Loop is the shorter move — then keeps sliding that sibling in the same
+ * direction past any other node it would otherwise land on, including another nudged sibling.
  */
 export function nudgeOverlappingSiblings(
   definition: Workflow,
@@ -41,31 +64,38 @@ export function nudgeOverlappingSiblings(
   loopBox: Box
 ): Workflow['layout'] {
   const parentOf = loopParentMap(definition.nodes)
-  const next = { ...definition.layout }
-  for (const node of definition.nodes) {
-    // A body node only ever moves via its owning Loop's own entry below (the cascade) — checking
-    // its own box here too would nudge it a second time, independently, clobbering the cascade.
-    if (wrapped.has(node.id) || parentOf.has(node.id)) {
+  // A body node only ever moves via its owning Loop's own entry, below — considering its own box
+  // here too would nudge it a second time, independently, clobbering that cascade.
+  const eligible = definition.nodes.filter(
+    (node) => !wrapped.has(node.id) && !parentOf.has(node.id)
+  )
+
+  let layout = definition.layout
+  for (const node of eligible) {
+    if (!boxesOverlap(nodeBox(node, layout), loopBox)) {
       continue
     }
-    const box = nodeBox(node, definition.layout)
-    if (!boxesOverlap(box, loopBox)) {
-      continue
-    }
-    const position = definition.layout[node.id] ?? { x: 0, y: 0 }
-    const targetY = loopBox.y + loopBox.height + WORKFLOW_LOOP_PADDING
-    const deltaY = targetY - position.y
-    next[node.id] = { x: position.x, y: targetY }
-    // A Loop sibling's body moves with it — same rule `movedLayout` (use-workflow-editor-state.ts)
-    // already applies when the user drags a Loop container.
-    if (node.type === 'loop') {
-      for (const bodyId of node.body.nodeIds) {
-        const bodyPosition = definition.layout[bodyId]
-        if (bodyPosition) {
-          next[bodyId] = { x: bodyPosition.x, y: bodyPosition.y + deltaY }
-        }
-      }
+    const position = layout[node.id] ?? { x: 0, y: 0 }
+    const boxHeight = nodeBox(node, layout).height
+    const below = clearBelow(loopBox)
+    const above = clearAbove(loopBox, boxHeight)
+    const movingDown = Math.abs(below - position.y) <= Math.abs(above - position.y)
+    let targetY = movingDown ? below : above
+    layout = moveNodeTo(layout, node, targetY)
+
+    let blocker = eligible.find(
+      (other) => other.id !== node.id && boxesOverlap(nodeBox(node, layout), nodeBox(other, layout))
+    )
+    let guard = 0
+    while (blocker && guard++ < eligible.length) {
+      const blockerBox = nodeBox(blocker, layout)
+      targetY = movingDown ? clearBelow(blockerBox) : clearAbove(blockerBox, boxHeight)
+      layout = moveNodeTo(layout, node, targetY)
+      blocker = eligible.find(
+        (other) =>
+          other.id !== node.id && boxesOverlap(nodeBox(node, layout), nodeBox(other, layout))
+      )
     }
   }
-  return next
+  return layout
 }

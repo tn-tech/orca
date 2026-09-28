@@ -27,11 +27,9 @@ const EXTRA_INFO_ROW_HEIGHT = 18
 /**
  * One Router/Approval choice row's full vertical pitch: `<li>` is `py-1` (8) + a 1px border on
  * each side (2) + a `text-xs` line (16) = 26px, and the list (`mt-1 space-y-1`) adds a 4px gap
- * before every row except the first. Distributed per row that's `4/N + 26 + 4*(N-1)/N`, which
- * isn't constant — but the list's total height *is* linear: `4 + 26N + 4(N-1) = 30N` (the leading
- * `mt-1` exactly offsets the one-fewer-gap), so 30px/row with no separate constant reproduces the
- * real total exactly for every N (F10 round 1 review, Important #3: the previous 28px pitch plus
- * an 8px top-margin constant under-reserved a 6+-choice Router and a 4+-option Approval).
+ * before every row except the first. The list's *total* height for N rows is exactly linear —
+ * `4 + 26N + 4(N-1) = 30N` (the leading `mt-1` offsets the one-fewer-gap) — so 30px/row with no
+ * separate constant reproduces the real total for every N.
  */
 const CHOICE_ROW_HEIGHT = 30
 
@@ -41,14 +39,12 @@ export type AutoLayoutOptions = {
   /** Positions restored after layout instead of the dagre-computed one (FR-010: manual drags). */
   pinned?: Readonly<Record<string, { x: number; y: number }>>
   /** The layout as it stood before this Re-layout run (`Workflow.layout`, not just `pinned`'s
-   *  subset). Used only to anchor a pinned Loop-body node to its Loop's pre-layout position, so a
-   *  dragged body node moves with an unpinned Loop instead of staying at a stale absolute spot
-   *  (F10 round 1 review, Important #2). */
+   *  subset). Anchors a pinned Loop-body node to its Loop's pre-layout position, so a dragged
+   *  body node moves with an unpinned Loop instead of staying at a stale absolute spot. */
   currentLayout?: Layout
-  /** React Flow's real measured size for a node, when one has been painted (controller ruling,
-   *  F10 round 1 review, Important #3: "use measured sizes when available, fall back to the
-   *  estimate only for unmeasured nodes"). Checked before `measureWorkflowNodeSize` for every
-   *  non-Loop kind; a Loop's own box is still always derived from its body (see below). */
+  /** React Flow's real measured size for a node, when one has been painted. Checked before
+   *  `measureWorkflowNodeSize` for every non-Loop kind; a Loop's own box is still always derived
+   *  from its body (see below). */
   measuredSizes?: ReadonlyMap<string, MeasuredNodeSize>
   direction?: 'LR' | 'TB'
 }
@@ -162,11 +158,10 @@ export function computeAutoLayout(
         y: position.y - originY + WORKFLOW_LOOP_PADDING
       }
     }
-    // F10 round 1 review, Important #2: a pinned body node's `pinned[id]` is an absolute canvas
-    // position captured before this Re-layout — stale once dagre moves the Loop. Re-anchor it to
-    // an offset from the Loop's *pre*-layout position (`currentLayout`) instead, in the same
-    // loop-local frame `normalized` already uses, so the final merge below can treat every body
-    // node (pinned or not) the same way: this Loop's new position plus a loop-relative offset.
+    // A pinned body node's `pinned[id]` is an absolute canvas position captured before this
+    // Re-layout — stale once dagre moves the Loop. Re-anchor it as an offset from the Loop's
+    // *pre*-layout position instead, in the same loop-local frame `normalized` already uses, so
+    // the final merge below can treat every body node the same way: new Loop position + offset.
     const loopPreviousPosition = currentLayout[node.id] ?? { x: 0, y: 0 }
     for (const bodyNode of bodyNodes) {
       const pinnedAbsolute = pinned[bodyNode.id]
@@ -236,11 +231,9 @@ export function computeAutoLayout(
   for (const [loopId, bodyLayout] of loopBodyLayout) {
     const origin = layout[loopId] ?? { x: 0, y: 0 }
     for (const [id, relative] of Object.entries(bodyLayout)) {
-      // `relative` is already this Loop's new-position-relative offset for both a pinned body
-      // node (re-anchored above) and an unpinned one (dagre's own nested placement) — using
-      // `pinned[id]` directly here, instead, is exactly the F10 round 1 review Important #2 bug:
-      // it would restore the node's stale pre-layout *absolute* position, orphaned from wherever
-      // this Loop just moved to.
+      // `relative` is already this Loop's new-position-relative offset, for both a pinned body
+      // node (re-anchored above) and an unpinned one — using `pinned[id]` directly here instead
+      // would restore its stale pre-layout *absolute* position, orphaned from the Loop's new spot.
       layout[id] = { x: origin.x + relative.x, y: origin.y + relative.y }
     }
   }

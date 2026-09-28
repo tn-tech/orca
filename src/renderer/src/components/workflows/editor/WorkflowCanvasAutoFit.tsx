@@ -28,8 +28,10 @@ export default function WorkflowCanvasAutoFit({
     if (addedIds.length === 0 || !container) {
       return
     }
+    // `getInternalNode`, not `getNode` — the latter returns the echoed controlled prop, which
+    // never carries a real `.measured` (round 2).
     const addedNodes = addedIds
-      .map((id) => reactFlow.getNode(id))
+      .map((id) => reactFlow.getInternalNode(id))
       .filter((node) => node !== undefined)
     if (addedNodes.length === 0) {
       return
@@ -58,8 +60,8 @@ export default function WorkflowCanvasAutoFit({
     if (outOfViewNode) {
       const width = outOfViewNode.measured?.width ?? outOfViewNode.width ?? WORKFLOW_NODE_WIDTH
       const height = outOfViewNode.measured?.height ?? outOfViewNode.height ?? WORKFLOW_NODE_HEIGHT
-      // F10 round 1 review, Minor #1: pan to the node at the zoom the user already chose, rather
-      // than `fitView`'s whole-graph refit — that would reset a deliberately zoomed-in view.
+      // Pan at the zoom the user already chose — `fitView`'s whole-graph refit would reset a
+      // deliberately zoomed-in view.
       void reactFlow.setCenter(
         outOfViewNode.position.x + width / 2,
         outOfViewNode.position.y + height / 2,
