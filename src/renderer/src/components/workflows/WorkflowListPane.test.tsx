@@ -1,12 +1,17 @@
 // @vitest-environment happy-dom
 
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render as rtlRender, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { WorkflowSummary } from '@/runtime/runtime-workflow-client'
 import WorkflowListPane from './WorkflowListPane'
+
+// DisabledReasonButton (New/Draft) always renders inside a Tooltip, even enabled.
+function render(ui: Parameters<typeof rtlRender>[0]): ReturnType<typeof rtlRender> {
+  return rtlRender(<TooltipProvider>{ui}</TooltipProvider>)
+}
 
 afterEach(() => {
   cleanup()
@@ -35,10 +40,6 @@ const noop = {
 /** Radix's DropdownMenuTrigger opens on pointerdown, not click. */
 function openRowMenu(): void {
   fireEvent.pointerDown(screen.getByRole('button', { name: 'Workflow actions' }), { button: 0 })
-}
-
-function renderWithTooltips(ui: Parameters<typeof render>[0]): void {
-  render(<TooltipProvider>{ui}</TooltipProvider>)
 }
 
 describe('WorkflowListPane', () => {
@@ -355,7 +356,7 @@ describe('WorkflowListPane', () => {
 
     it('disables New and Draft with the reason, instead of silently doing nothing', async () => {
       const user = userEvent.setup()
-      renderWithTooltips(
+      render(
         <WorkflowListPane
           rows={[]}
           loading={false}
@@ -381,7 +382,7 @@ describe('WorkflowListPane', () => {
     })
 
     it('does not show the discard prompt for a disabled action', () => {
-      renderWithTooltips(
+      render(
         <WorkflowListPane
           rows={[]}
           loading={false}
@@ -399,7 +400,7 @@ describe('WorkflowListPane', () => {
     })
 
     it('shows the reason in place of "No workflows yet" when the list is empty', () => {
-      renderWithTooltips(
+      render(
         <WorkflowListPane
           rows={[]}
           loading={false}

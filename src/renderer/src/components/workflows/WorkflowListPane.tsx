@@ -8,13 +8,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
 import type { WorkflowDraftResult, WorkflowSummary } from '@/runtime/runtime-workflow-client'
 import type { Workflow } from '../../../../shared/workflows/workflow-definition-types'
 import type { WorkflowRunSource } from '../../../../shared/workflows/workflow-run-types'
 import type { OpenWorkflowRef } from './use-workflow-editor-session'
+import DisabledReasonButton from './DisabledReasonButton'
 import WorkflowNameDialog from './WorkflowNameDialog'
 import WorkflowDeleteDialog from './WorkflowDeleteDialog'
 import DraftWorkflowDialog from './DraftWorkflowDialog'
@@ -42,52 +42,6 @@ export type WorkflowListPaneProps = {
 
 function rowKey(row: Pick<WorkflowSummary, 'name' | 'source'>): string {
   return `${row.source}\u0000${row.name}`
-}
-
-/** F6: same `aria-disabled` + inline-style pattern as `SaveWorkflowButton`/`RunToolbar` — a native
- *  `disabled` button drops pointer events (hides a Radix Tooltip) and tab order (hides the reason
- *  from screen readers). */
-function HeaderIconButton({
-  icon,
-  label,
-  disabledReason,
-  onClick
-}: {
-  icon: React.ReactNode
-  label: string
-  disabledReason?: string
-  onClick: () => void
-}): React.JSX.Element {
-  const disabled = Boolean(disabledReason)
-  const button = (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon-xs"
-      aria-disabled={disabled}
-      style={disabled ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
-      aria-label={label}
-      onClick={() => {
-        if (disabled) {
-          return
-        }
-        onClick()
-      }}
-    >
-      {icon}
-    </Button>
-  )
-  if (!disabledReason) {
-    return button
-  }
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{button}</TooltipTrigger>
-      <TooltipContent side="bottom" sideOffset={4}>
-        {disabledReason}
-      </TooltipContent>
-    </Tooltip>
-  )
 }
 
 /** FR-001: list, open, create, duplicate and delete workflows scoped to the active project. */
@@ -148,21 +102,31 @@ export default function WorkflowListPane({
           {translate('auto.components.workflows.WorkflowListPane.heading', 'Workflows')}
         </h2>
         <div className="flex shrink-0 items-center gap-0.5">
-          <HeaderIconButton
-            icon={<Sparkles />}
-            label={translate(
-              'auto.components.workflows.WorkflowListPane.draft',
-              'Draft from objective'
-            )}
-            disabledReason={disabledReason}
+          <DisabledReasonButton
+            variant="ghost"
+            size="icon-xs"
+            reason={disabledReason}
             onClick={() => guardUnsavedDiscard(openDraftDialog)}
-          />
-          <HeaderIconButton
-            icon={<Plus />}
-            label={translate('auto.components.workflows.WorkflowListPane.new', 'New workflow')}
-            disabledReason={disabledReason}
+          >
+            <Sparkles />
+            <span className="sr-only">
+              {translate(
+                'auto.components.workflows.WorkflowListPane.draft',
+                'Draft from objective'
+              )}
+            </span>
+          </DisabledReasonButton>
+          <DisabledReasonButton
+            variant="ghost"
+            size="icon-xs"
+            reason={disabledReason}
             onClick={() => guardUnsavedDiscard(openCreateDialog)}
-          />
+          >
+            <Plus />
+            <span className="sr-only">
+              {translate('auto.components.workflows.WorkflowListPane.new', 'New workflow')}
+            </span>
+          </DisabledReasonButton>
         </div>
       </div>
       <div className="scrollbar-sleek min-h-0 flex-1 overflow-y-auto">
