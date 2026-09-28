@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto'
 
 export const KIMI_WORKSPACE_TRUST_DIR = 'workspace-trust'
 
-const WINDOWS_SHAPED_ROOT = /^(?:[A-Za-z]:[\\/]|\\\\|\/\/)/
+const WINDOWS_ROOT_PATTERN = /^(?:[A-Za-z]:[\\/]|\\\\|\/\/)/
 
 function slugifyWorkDirName(name: string): string {
   const slug = name
@@ -22,8 +22,8 @@ function slugifyWorkDirName(name: string): string {
 export function kimiWorkspaceTrustKey(root: string): string {
   const slashed = root.replaceAll('\\', '/')
   const stripped = slashed.replace(/\/+$/, '')
-  // Why: Kimi tests the shape before stripping (so `C:\` hashes as `c:`) and folds Windows roots to lowercase.
-  const normalized = WINDOWS_SHAPED_ROOT.test(slashed) ? stripped.toLowerCase() : stripped
+  // Why: Kimi tests the un-stripped root (so `C:\` hashes as `c:`) and folds Windows roots to lowercase.
+  const normalized = WINDOWS_ROOT_PATTERN.test(slashed) ? stripped.toLowerCase() : stripped
   const name = slugifyWorkDirName(normalized.split('/').pop() ?? normalized)
   const hash = createHash('sha256').update(normalized).digest('hex').slice(0, 12)
   return `wd_${name}_${hash}`
