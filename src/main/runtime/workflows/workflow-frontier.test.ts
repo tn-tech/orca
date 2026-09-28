@@ -125,7 +125,7 @@ describe('computeFrontier', () => {
       expect(computeFrontier(branching, attempts)).toEqual({ eligible: [], skipped: ['c'] })
     })
 
-    it('keeps a merge node pending when one upstream failed and another is still running', () => {
+    it('keeps a merge node pending while a sibling runs, then skips it because an upstream failed', () => {
       const def = workflow(
         [start, agent('a'), agent('b'), agent('c'), end],
         [
@@ -147,7 +147,7 @@ describe('computeFrontier', () => {
         attempt('a', 'failed'),
         attempt('b', 'completed')
       ]
-      expect(computeFrontier(def, done)).toEqual({ eligible: ['c'], skipped: [] })
+      expect(computeFrontier(def, done)).toEqual({ eligible: [], skipped: ['c', 'end'] })
     })
   })
 

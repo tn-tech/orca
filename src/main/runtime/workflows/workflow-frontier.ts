@@ -159,10 +159,15 @@ function candidateVerdict(
     return joinVerdict(decideJoin(node, branches).kind, branches, hasWaitingAttempt)
   }
   const outcomes = branches.map((branch) => branch.outcome)
-  if (outcomes.length > 0 && outcomes.every(isBlocked)) {
+  if (outcomes.includes('unresolved')) {
+    return 'waiting'
+  }
+  // Like the default Join's `onFailure: fail`, a failed input stops the merge. It is skipped, as a
+  // single-input node is; settlement then fails the run (workflow-run-failure-handling.ts).
+  if (outcomes.includes('source-failed') || (outcomes.length > 0 && outcomes.every(isBlocked))) {
     return 'skipped'
   }
-  return outcomes.includes('fired') && !outcomes.includes('unresolved') ? 'eligible' : 'waiting'
+  return outcomes.includes('fired') ? 'eligible' : 'waiting'
 }
 
 /** A Join whose latest attempt is Waiting stays a candidate until its policy settles it. */
@@ -185,8 +190,8 @@ export function loopExitSourceId(nodes: readonly Node[], edge: Edge): string {
 
 /**
  * Splits candidates into eligible and skipped. Several incoming edges merge like the default Join:
- * eligible once none is unresolved and one fired; skipped only when every edge is blocked. A Join
- * node follows joinVerdict. Skips cascade to a fixpoint. Roots are always eligible.
+ * once none is unresolved, skipped if one failed or every edge is blocked, else eligible if one
+ * fired. A Join node follows joinVerdict. Skips cascade to a fixpoint. Roots are always eligible.
  */
 export function decideCandidates(
   definition: Workflow,

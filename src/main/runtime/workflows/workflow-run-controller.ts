@@ -279,6 +279,6 @@ export class WorkflowRunController {
   private async advance(session: ControllerSession): Promise<void> {
     await recoverInterruptedAttempts(session.launch)
     this.advanceOnResume = !(await advanceRun(session.launch))
-    settleRunIfQuiet(this.deps.db, this.recorder)
+    settleRunIfQuiet(this.deps.db, this.recorder, session.launch.definition)
   }
 }

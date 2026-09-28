@@ -1,14 +1,20 @@
 // Decides whether a run is over once its frontier is quiet (data-model.md §4).
 import { ACTIVE_ATTEMPT_STATES } from '../../../shared/workflows/workflow-node-states'
+import type { Workflow } from '../../../shared/workflows/workflow-definition-types'
 import type { NodeAttemptView } from '../../../shared/workflows/workflow-run-types'
 import type { OrchestrationDb } from '../orchestration/db'
+import { unhandledFailedNodeIds } from './workflow-run-failure-handling'
 import type { WorkflowRunRecorder } from './workflow-run-recorder'
 
 /**
  * Nothing active and nothing eligible: the run is over. It completes only when an End node
- * completed; otherwise a failed node (or an unsupported node type) left End unreachable.
+ * completed and no failure is left unhandled; otherwise it fails.
  */
-export function settleRunIfQuiet(db: OrchestrationDb, recorder: WorkflowRunRecorder): void {
+export function settleRunIfQuiet(
+  db: OrchestrationDb,
+  recorder: WorkflowRunRecorder,
+  definition: Workflow
+): void {
   const run = db.getWorkflowRun(recorder.runId)
   if (!run || (run.state !== 'running' && run.state !== 'waiting')) {
     return
@@ -22,7 +28,10 @@ export function settleRunIfQuiet(db: OrchestrationDb, recorder: WorkflowRunRecor
   for (const join of attempts.filter(stuckJoin)) {
     recorder.transitionAttempt(join.id, 'cancelled', { reason: 'join_unreachable' })
   }
-  if (attempts.some((attempt) => attempt.nodeType === 'end' && attempt.state === 'completed')) {
+  if (
+    attempts.some((attempt) => attempt.nodeType === 'end' && attempt.state === 'completed') &&
+    unhandledFailedNodeIds(definition, attempts).length === 0
+  ) {
     recorder.transitionRun('completed', 'run_completed')
     return
   }
