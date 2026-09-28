@@ -2,13 +2,17 @@
 // an unhandled failure Completed.
 import type { Workflow } from '../../../shared/workflows/workflow-definition-types'
 import { type FrontierAttempt, latestAttemptByNode, loopExitSourceId } from './workflow-frontier'
+import type { WorkflowResultFailureReason } from './workflow-result-capture'
 import { containingLoop } from './workflow-join-branch-stop'
+
+const LOOP_CAP_REACHED_REASON = 'loop_cap_reached' satisfies WorkflowResultFailureReason
 
 /**
  * Failed top-level nodes whose failure no Join tolerated. A failure is handled only when every
  * outgoing path reaches, through nodes that were only skipped, a completed Join with
- * `onFailure: skip | partial`. Loop-body attempts are left out: a body failure fails its Loop
- * (`body_failed`), and the Loop's attempt is judged instead. Superseded attempts are ignored.
+ * `onFailure: skip | partial`; a Loop that reached its cap is never handled. Loop-body attempts
+ * are left out: a body failure fails its Loop (`body_failed`), whose attempt is judged instead.
+ * Superseded attempts are ignored.
  */
 export function unhandledFailedNodeIds(
   definition: Workflow,
@@ -42,7 +46,9 @@ export function unhandledFailedNodeIds(
       (node) =>
         !containingLoop(definition, node.id) &&
         latest.get(node.id)?.state === 'failed' &&
-        !absorbed(node.id, new Set())
+        // A capped Loop fails the run whatever follows it (spec: Loop cap edge case).
+        (latest.get(node.id)?.failureReason === LOOP_CAP_REACHED_REASON ||
+          !absorbed(node.id, new Set()))
     )
     .map((node) => node.id)
 }

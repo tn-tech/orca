@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { JoinNode } from '../../../shared/workflows/workflow-definition-types'
+import type { JoinNode, Node } from '../../../shared/workflows/workflow-definition-types'
 import { agent, attempt, end, start, workflow } from './workflow-frontier-test-fixtures'
 import { unhandledFailedNodeIds } from './workflow-run-failure-handling'
 
@@ -10,6 +10,18 @@ const join = (onFailure: JoinNode['onFailure']): JoinNode => ({
   policy: 'any',
   onFailure
 })
+
+const qaLoop: Node = {
+  id: 'qa',
+  type: 'loop',
+  title: 'QA',
+  body: { nodeIds: ['implement'] },
+  entryNodeId: 'implement',
+  exitNodeId: 'implement',
+  maxIterations: 2,
+  exitCondition: { path: 'done', op: 'truthy' },
+  onCapReached: 'fail'
+}
 
 // start -> a -> b -> join -> end, start -> c -> join
 const viaSkipped = (onFailure: JoinNode['onFailure']) =>
@@ -58,6 +70,52 @@ describe('unhandledFailedNodeIds', () => {
 
   it('never lets a fail-on-failure Join absorb a failure', () => {
     expect(unhandledFailedNodeIds(viaSkipped('fail'), settled)).toEqual(['a'])
+  })
+
+  it('never lets a tolerant Join absorb a Loop that reached its cap', () => {
+    const def = workflow(
+      [start, qaLoop, agent('implement'), agent('c'), join('skip'), end],
+      [
+        { id: 'e1', from: 'start', to: 'qa' },
+        { id: 'e2', from: 'qa', to: 'join', fromPort: 'exit' },
+        { id: 'e3', from: 'start', to: 'c' },
+        { id: 'e4', from: 'c', to: 'join' },
+        { id: 'e5', from: 'join', to: 'end' }
+      ]
+    )
+    const attempts = [
+      attempt('start', 'completed'),
+      attempt('qa', 'failed', { failureReason: 'loop_cap_reached' }),
+      attempt('c', 'completed'),
+      attempt('join', 'completed'),
+      attempt('end', 'completed')
+    ]
+    expect(unhandledFailedNodeIds(def, attempts)).toEqual(['qa'])
+    const bodyFailed = attempts.map((a) =>
+      a.nodeId === 'qa' ? attempt('qa', 'failed', { failureReason: 'loop_body_failed' }) : a
+    )
+    expect(unhandledFailedNodeIds(def, bodyFailed)).toEqual([])
+  })
+
+  it('reports a failure when only one of its outgoing paths reaches a tolerant Join', () => {
+    const def = workflow(
+      [start, agent('a'), agent('b'), join('skip'), end],
+      [
+        { id: 'e1', from: 'start', to: 'a' },
+        { id: 'e2', from: 'a', to: 'join' },
+        { id: 'e3', from: 'a', to: 'b' },
+        { id: 'e4', from: 'start', to: 'join' },
+        { id: 'e5', from: 'join', to: 'end' }
+      ]
+    )
+    const attempts = [
+      attempt('start', 'completed'),
+      attempt('a', 'failed'),
+      attempt('b', 'skipped'),
+      attempt('join', 'completed'),
+      attempt('end', 'completed')
+    ]
+    expect(unhandledFailedNodeIds(def, attempts)).toEqual(['a'])
   })
 
   it('ignores a failed attempt a later attempt of the same node superseded', () => {

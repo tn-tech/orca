@@ -162,8 +162,8 @@ function candidateVerdict(
   if (outcomes.includes('unresolved')) {
     return 'waiting'
   }
-  // Like the default Join's `onFailure: fail`, a failed input stops the merge. It is skipped, as a
-  // single-input node is; settlement then fails the run (workflow-run-failure-handling.ts).
+  // Like the default Join's `onFailure: fail`, a failed or cancelled input (`source-failed`) stops
+  // the merge. It is skipped, as a single-input node is; settlement fails the run.
   if (outcomes.includes('source-failed') || (outcomes.length > 0 && outcomes.every(isBlocked))) {
     return 'skipped'
   }
@@ -190,7 +190,7 @@ export function loopExitSourceId(nodes: readonly Node[], edge: Edge): string {
 
 /**
  * Splits candidates into eligible and skipped. Several incoming edges merge like the default Join:
- * once none is unresolved, skipped if one failed or every edge is blocked, else eligible if one
+ * once none is unresolved, skipped if one is source-failed or all are blocked, else eligible if one
  * fired. A Join node follows joinVerdict. Skips cascade to a fixpoint. Roots are always eligible.
  */
 export function decideCandidates(
@@ -227,6 +227,22 @@ export function decideCandidates(
   }
 }
 
+/**
+ * A non-Join node skipped because of a `source-failed` input passes it on, so a Join's
+ * `onFailure` and merge nodes see it. A Join's own skip already applied its policy.
+ */
+export function propagateFailedSkip(
+  outcome: IncomingEdgeOutcome,
+  sourceType: Node['type'] | undefined,
+  sourceBranches: () => readonly IncomingBranch[]
+): IncomingEdgeOutcome {
+  return outcome === 'source-skipped' &&
+    sourceType !== 'join' &&
+    sourceBranches().some((branch) => branch.outcome === 'source-failed')
+    ? 'source-failed'
+    : outcome
+}
+
 /** Incoming branches of a node outside every Loop body; `exit` edges resolve to their Loop. */
 export function incomingBranches(
   definition: Workflow,
@@ -238,13 +254,17 @@ export function incomingBranches(
     .filter((edge) => edge.to === nodeId && edge.fromPort !== 'body')
     .map((edge) => {
       const sourceId = loopExitSourceId(definition.nodes, edge)
+      const sourceType = nodeTypeOf(definition.nodes, sourceId)
+      const outcome = incomingEdgeOutcome(
+        edge,
+        latest.get(sourceId),
+        skipped.has(sourceId),
+        sourceType
+      )
       return {
         sourceId,
-        outcome: incomingEdgeOutcome(
-          edge,
-          latest.get(sourceId),
-          skipped.has(sourceId),
-          nodeTypeOf(definition.nodes, sourceId)
+        outcome: propagateFailedSkip(outcome, sourceType, () =>
+          incomingBranches(definition, latest, sourceId, skipped)
         )
       }
     })

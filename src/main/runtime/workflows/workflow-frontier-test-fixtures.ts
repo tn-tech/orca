@@ -31,7 +31,12 @@ export function workflow(nodes: Node[], edges: Edge[]): Workflow {
 export function attempt(
   nodeId: string,
   state: WorkflowAttemptState,
-  extra: { resultJson?: JsonValue; taskId?: string; attemptIndex?: number } = {}
+  extra: {
+    resultJson?: JsonValue
+    taskId?: string
+    attemptIndex?: number
+    failureReason?: string
+  } = {}
 ): FrontierAttempt {
   return { nodeId, iteration: 0, attemptIndex: extra.attemptIndex ?? 0, state, ...extra }
 }

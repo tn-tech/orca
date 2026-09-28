@@ -3,7 +3,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Edge, Workflow } from '../../../shared/workflows/workflow-definition-types'
-import { branchAgent, fanOutWorkflow, joinDriver } from './workflow-run-controller-join-fixtures'
+import {
+  branchAgent,
+  fanOutWorkflow,
+  joinDriver,
+  joinNode,
+  joinWorkflow
+} from './workflow-run-controller-join-fixtures'
 import {
   createControllerHarness,
   TWO_NODE_WORKFLOW,
@@ -121,5 +127,60 @@ describe('WorkflowRunController failure settlement (audit N1)', () => {
     await d.report(run.id, 'c', 'succeeded')
     await d.report(run.id, 'integrate', 'succeeded')
     await expect(finished).resolves.toBe('completed')
+  })
+
+  // start -> a -> a2 -> join, start -> b -> join; a fails, so a2 is skipped.
+  const viaSkippedJoin = (onFailure: 'fail' | 'partial') =>
+    joinWorkflow(
+      ['a', 'a2', 'b'],
+      [
+        { id: 'start-a', from: 'start', to: 'a' },
+        { id: 'a-a2', from: 'a', to: 'a2' },
+        { id: 'a2-join', from: 'a2', to: 'join' },
+        { id: 'start-b', from: 'start', to: 'b' },
+        { id: 'b-join', from: 'b', to: 'join' }
+      ],
+      joinNode('all', onFailure)
+    )
+
+  it('fails a fail-on-failure Join reached from a failure through a skipped node', async () => {
+    const run = h.createRun(viaSkippedJoin('fail'))
+    const finished = h.createController(run.id).run()
+    await d.report(run.id, 'b', 'succeeded')
+    await d.report(run.id, 'a', 'failed')
+    await expect(finished).resolves.toBe('failed')
+    expect(d.attempt(run.id, 'a2')?.state).toBe('skipped')
+    expect(d.attempt(run.id, 'join')).toMatchObject({
+      state: 'failed',
+      failureReason: 'join_branch_failed'
+    })
+    expect(d.attempt(run.id, 'integrate')?.state).not.toBe('completed')
+    expect(d.attempt(run.id, 'integrate')?.taskId).toBeUndefined()
+  })
+
+  it('completes a partial Join reached from a failure through a skipped node', async () => {
+    const run = h.createRun(viaSkippedJoin('partial'))
+    const finished = h.createController(run.id).run()
+    await d.report(run.id, 'b', 'succeeded')
+    await d.report(run.id, 'a', 'failed')
+    await d.report(run.id, 'integrate', 'succeeded')
+    await expect(finished).resolves.toBe('completed')
+    expect(d.attempt(run.id, 'join')?.resultJson).toEqual({
+      branches: { a2: 'failed', b: 'completed' }
+    })
+  })
+
+  it('lists only unhandled failures in the run_failed event', async () => {
+    const run = h.createRun(fanOutWorkflow('any', 'skip'))
+    const finished = h.createController(run.id).run()
+    await d.report(run.id, 'a', 'succeeded')
+    await d.reached(run.id, 'join', ['completed'])
+    await d.report(run.id, 'b', 'failed')
+    await d.report(run.id, 'c', 'succeeded')
+    await d.report(run.id, 'integrate', 'failed')
+    await expect(finished).resolves.toBe('failed')
+    const runFailed = h.db.listWorkflowEvents(run.id).find((event) => event.kind === 'run_failed')
+    expect(runFailed?.payloadJson).toMatchObject({ reason: 'node_failed' })
+    expect(Reflect.get(Object(runFailed?.payloadJson), 'failedNodes')).toEqual(['integrate'])
   })
 })

@@ -28,14 +28,15 @@ export function settleRunIfQuiet(
   for (const join of attempts.filter(stuckJoin)) {
     recorder.transitionAttempt(join.id, 'cancelled', { reason: 'join_unreachable' })
   }
+  // Unhandled, non-superseded failures only; the payload keeps its `string[]` shape.
+  const failedNodes = unhandledFailedNodeIds(definition, attempts)
   if (
-    attempts.some((attempt) => attempt.nodeType === 'end' && attempt.state === 'completed') &&
-    unhandledFailedNodeIds(definition, attempts).length === 0
+    failedNodes.length === 0 &&
+    attempts.some((attempt) => attempt.nodeType === 'end' && attempt.state === 'completed')
   ) {
     recorder.transitionRun('completed', 'run_completed')
     return
   }
-  const failedNodes = attempts.filter((a) => a.state === 'failed').map((a) => a.nodeId)
   recorder.transitionRun('failed', 'run_failed', {
     reason: failedNodes.length > 0 ? 'node_failed' : 'end_unreachable',
     failedNodes

@@ -14,6 +14,7 @@ import {
   isWaitingJoin,
   latestAttemptByNode,
   nodeTypeOf,
+  propagateFailedSkip,
   type FrontierAttempt
 } from './workflow-frontier'
 import { JOIN_SKIPPED_REASON, type IncomingBranch } from './workflow-join-policy'
@@ -100,11 +101,15 @@ export function bodyIncomingBranches(
       return {
         sourceId: edge.from,
         outcome: body.has(edge.from)
-          ? incomingEdgeOutcome(
-              edge,
-              inIteration.get(edge.from),
-              skipped.has(edge.from),
-              sourceType
+          ? propagateFailedSkip(
+              incomingEdgeOutcome(
+                edge,
+                inIteration.get(edge.from),
+                skipped.has(edge.from),
+                sourceType
+              ),
+              sourceType,
+              () => bodyIncomingBranches(definition, loop, attempts, iteration, edge.from, skipped)
             )
           : incomingEdgeOutcome(edge, outside.get(edge.from), false, sourceType)
       }
