@@ -86,6 +86,33 @@ describe('shouldIgnoreWorkflowEditorShortcut', () => {
 
     expect(shouldIgnoreWorkflowEditorShortcut(canvas)).toBe(false)
   })
+
+  it('ignores every target while a menu is open (F4 review round 1, Minor #2 — AddNodeMenu, the WorkflowListPane row menu)', () => {
+    const menu = document.createElement('div')
+    menu.setAttribute('role', 'menu')
+    const outsideTarget = document.createElement('div')
+    document.body.append(menu, outsideTarget)
+
+    expect(shouldIgnoreWorkflowEditorShortcut(outsideTarget)).toBe(true)
+  })
+
+  it('ignores every target while a listbox is open (a Select, e.g. AgentNodeFields)', () => {
+    const listbox = document.createElement('div')
+    listbox.setAttribute('role', 'listbox')
+    const outsideTarget = document.createElement('div')
+    document.body.append(listbox, outsideTarget)
+
+    expect(shouldIgnoreWorkflowEditorShortcut(outsideTarget)).toBe(true)
+  })
+
+  it('ignores every target while an alertdialog is open', () => {
+    const alertdialog = document.createElement('div')
+    alertdialog.setAttribute('role', 'alertdialog')
+    const outsideTarget = document.createElement('div')
+    document.body.append(alertdialog, outsideTarget)
+
+    expect(shouldIgnoreWorkflowEditorShortcut(outsideTarget)).toBe(true)
+  })
 })
 
 describe('useWorkflowEditorKeyboardShortcuts', () => {

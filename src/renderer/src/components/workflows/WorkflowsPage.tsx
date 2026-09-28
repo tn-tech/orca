@@ -66,13 +66,14 @@ export default function WorkflowsPage(): React.JSX.Element {
   const showAttemptPanel =
     run.snapshot !== null && Boolean(controller.selectedNodeId) && !controller.selectedEdgeId
 
-  // F4: Delete/Backspace and Cmd/Ctrl+Z, scoped to whatever the canvas currently selects.
+  // F4: Delete/Backspace and Cmd/Ctrl+Z, scoped to whatever the canvas currently selects. Not
+  // gated on a shown run — Delete and Undo follow the same rule as every other edit here (F4
+  // review round 1, Minor #3): Add node, Wrap in Loop, connect, drag, edge conditions and roles
+  // all stay editable while a run is shown, so Delete/Undo/Unwrap do too.
   useWorkflowEditorKeyboardShortcuts({
     enabled: session.status === 'ready',
-    canDelete:
-      Boolean(controller.selectedNodeId ?? controller.selectedEdgeId) &&
-      !controller.editingDisabled,
-    canUndo: session.status === 'ready' && session.editor.canUndo && !controller.editingDisabled,
+    canDelete: Boolean(controller.selectedNodeId ?? controller.selectedEdgeId),
+    canUndo: session.status === 'ready' && session.editor.canUndo,
     onDelete: controller.deleteSelection,
     onUndo: controller.undo
   })
@@ -181,7 +182,6 @@ export default function WorkflowsPage(): React.JSX.Element {
                 />
                 <UndoButton
                   canUndo={session.status === 'ready' && session.editor.canUndo}
-                  disabled={controller.editingDisabled}
                   onUndo={controller.undo}
                 />
                 <div className="min-w-0 flex-1">
@@ -291,7 +291,6 @@ export default function WorkflowsPage(): React.JSX.Element {
                       onDeleteNode={controller.deleteNode}
                       onDeleteEdge={controller.deleteEdge}
                       onUnwrapLoop={controller.unwrapLoop}
-                      editingDisabled={controller.editingDisabled}
                       allowlistedSources={controller.allowlistedSources}
                       repo={controller.repoId}
                       host={repoTrustHost}

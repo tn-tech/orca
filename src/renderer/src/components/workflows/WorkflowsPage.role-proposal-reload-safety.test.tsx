@@ -7,6 +7,7 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import type {
   ReflectionNode,
   StartNode,
@@ -226,7 +227,11 @@ describe('WorkflowsPage: role-proposal "Reload workflow" never clobbers unsaved 
     workflowProposalAcceptMock.mockRejectedValue(new Error('workflow_file_conflict'))
     useWorkflowsPageControllerMock.mockReturnValue(fakeController(true))
 
-    render(<WorkflowsPage />)
+    render(
+      <TooltipProvider>
+        <WorkflowsPage />
+      </TooltipProvider>
+    )
 
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }))
     await waitFor(() => expect(screen.getByText(/changed on disk/)).toBeInTheDocument())

@@ -37,9 +37,6 @@ export type NodeInspectorProps = {
   onDeleteEdge?: (edgeId: string) => void
   /** F4: removes the Loop node, keeps its body, re-links entry/exit edges. */
   onUnwrapLoop?: (nodeId: string) => void
-  /** F4: matches the run-view rule that swaps this inspector for `AttemptPanel` on a selected
-   *  node — a run in progress must not have its backing definition mutated out from under it. */
-  editingDisabled?: boolean
   allowlistedSources?: readonly string[]
   repo?: string
   /** The open repo's trust host (FR-018a); forwarded to `RolesPanel` -> `RoleEditor`. */
@@ -132,7 +129,6 @@ export default function NodeInspector({
   onDeleteNode,
   onDeleteEdge,
   onUnwrapLoop,
-  editingDisabled,
   allowlistedSources,
   repo,
   host,
@@ -169,7 +165,6 @@ export default function NodeInspector({
             type="button"
             variant="destructive"
             size="sm"
-            disabled={editingDisabled}
             onClick={() => onDeleteEdge(edge.id)}
             className="mt-auto"
           >
@@ -233,13 +228,7 @@ export default function NodeInspector({
       {onDeleteNode || (onUnwrapLoop && node.type === 'loop') ? (
         <div className="mt-auto flex flex-col gap-2">
           {onUnwrapLoop && node.type === 'loop' ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={editingDisabled}
-              onClick={() => onUnwrapLoop(node.id)}
-            >
+            <Button type="button" variant="outline" size="sm" onClick={() => onUnwrapLoop(node.id)}>
               <Ungroup />
               {translate('auto.components.workflows.editor.NodeInspector.unwrapLoop', 'Unwrap')}
             </Button>
@@ -252,7 +241,6 @@ export default function NodeInspector({
               type="button"
               variant="destructive"
               size="sm"
-              disabled={editingDisabled}
               onClick={() => onDeleteNode(node.id)}
             >
               <Trash2 />

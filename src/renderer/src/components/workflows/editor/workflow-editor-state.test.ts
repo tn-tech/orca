@@ -23,6 +23,7 @@ import {
   getModelEffortAvailability,
   type WorkflowEditorCommandContext
 } from './workflow-editor-commands'
+import { unwrapLoopInDefinition } from './workflow-loop-unwrap-command'
 
 const permissiveContext: GraphValidationContext = {
   agentSupportsModel: () => true,
@@ -430,6 +431,92 @@ describe('workflow editor state: delete and undo', () => {
 
     expect(state.manualPositionIds.has('work')).toBe(false)
   })
+
+  it("drops a deleted node from its Loop's body without touching the Loop itself (F4 review round 1, Important #2)", () => {
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+    state = dispatch(state, { type: 'add-node', node: startNode(), position: { x: 0, y: 0 } })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: loopNode('loop', {
+        body: { nodeIds: ['a', 'b'] },
+        entryNodeId: 'a',
+        exitNodeId: 'b',
+        maxIterations: 3
+      }),
+      position: { x: 200, y: 0 }
+    })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: agentNode('a', { overrides: { agent: 'claude' } }),
+      position: { x: 200, y: 0 }
+    })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: agentNode('b', { overrides: { agent: 'claude' } }),
+      position: { x: 250, y: 0 }
+    })
+
+    state = dispatch(state, { type: 'delete-elements', nodeIds: ['a'] })
+
+    const loop = state.definition.nodes.find((node): node is LoopNode => node.type === 'loop')
+    expect(loop?.body.nodeIds).toEqual(['b'])
+    expect(state.definition.nodes.some((node) => node.id === 'loop')).toBe(true)
+    expect(state.definition.nodes.some((node) => node.id === 'b')).toBe(true)
+  })
+
+  it('leaves a deleted entry id in place (not guessed at) so validation flags the broken Loop', () => {
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+    state = dispatch(state, { type: 'add-node', node: startNode(), position: { x: 0, y: 0 } })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: loopNode('loop', {
+        body: { nodeIds: ['a', 'b'] },
+        entryNodeId: 'a',
+        exitNodeId: 'b',
+        maxIterations: 3
+      }),
+      position: { x: 200, y: 0 }
+    })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: agentNode('a', { overrides: { agent: 'claude' } }),
+      position: { x: 200, y: 0 }
+    })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: agentNode('b', { overrides: { agent: 'claude' } }),
+      position: { x: 250, y: 0 }
+    })
+
+    state = dispatch(state, { type: 'delete-elements', nodeIds: ['a'] })
+
+    const loop = state.definition.nodes.find((node): node is LoopNode => node.type === 'loop')
+    expect(loop?.entryNodeId).toBe('a')
+    const problems = validateWorkflowGraph(state.definition, permissiveContext)
+    expect(problems).toContainEqual(
+      expect.objectContaining({ code: 'graph_loop_entry_not_in_body', nodeId: 'loop' })
+    )
+  })
+
+  it('cascades to delete the Loop when deleting its last remaining body node (an empty body is never produced — the schema requires at least one)', () => {
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+    state = dispatch(state, { type: 'add-node', node: startNode(), position: { x: 0, y: 0 } })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: loopNode('loop', { maxIterations: 3 }),
+      position: { x: 200, y: 0 }
+    })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: agentNode('work', { overrides: { agent: 'claude' } }),
+      position: { x: 200, y: 0 }
+    })
+
+    state = dispatch(state, { type: 'delete-elements', nodeIds: ['work'] })
+
+    expect(state.definition.nodes.some((node) => node.id === 'loop')).toBe(false)
+    expect(state.definition.nodes.some((node) => node.id === 'work')).toBe(false)
+  })
 })
 
 describe('workflow editor state: Loop save gating (US2 AS4)', () => {
@@ -663,6 +750,61 @@ describe('workflow editor state: unwrap Loop (F4)', () => {
     expect(exitEdge).toMatchObject({ from: 'work', to: 'end' })
     expect(exitEdge?.fromPort).toBeUndefined()
     expect(state.definition.layout[loop.id]).toBeUndefined()
+  })
+
+  it("re-links an edge drawn from the Loop node's own exit handle, not just a body-sourced one (F4 review round 1, Important #1)", () => {
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+    state = dispatch(state, { type: 'add-node', node: startNode(), position: { x: 0, y: 0 } })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: loopNode('loop', { maxIterations: 3 }),
+      position: { x: 200, y: 0 }
+    })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: agentNode('work', { overrides: { agent: 'claude' } }),
+      position: { x: 200, y: 0 }
+    })
+    state = dispatch(state, { type: 'add-node', node: endNode(), position: { x: 400, y: 0 } })
+    state = dispatch(state, { type: 'connect', from: 'start', to: 'loop' })
+    // Drawn straight from the Loop's own source Handle id="exit" (LoopNode.tsx), unlike the
+    // body-sourced form wrap-in-loop itself produces — the case the review found unhandled.
+    state = dispatch(state, { type: 'connect', from: 'loop', to: 'end', fromPort: 'exit' })
+
+    state = dispatch(state, { type: 'unwrap-loop', nodeId: 'loop' })
+
+    expect(state.definition.edges.some((edge) => edge.from === 'loop' || edge.to === 'loop')).toBe(
+      false
+    )
+    const exitEdge = state.definition.edges.find((edge) => edge.to === 'end')
+    expect(exitEdge).toMatchObject({ from: 'work', to: 'end' })
+    expect(exitEdge?.fromPort).toBeUndefined()
+  })
+
+  it('drops (rather than dangles) an edge whose rewritten target no longer exists as a node', () => {
+    // A malformed stand-in for F4 review Important #2: a Loop whose entry/exit were left
+    // dangling by a body-node delete (loopNode()'s default entry/exit is 'work', never added
+    // here as a real node) must not have unwrap point an edge at that ghost id.
+    const definition: Workflow = {
+      version: 1,
+      name: 'wf',
+      workspacePolicy: 'run-workspace',
+      roles: {},
+      nodes: [startNode(), loopNode('loop', { maxIterations: 3 }), endNode()],
+      edges: [
+        { id: 'e1', from: 'start', to: 'loop' },
+        { id: 'e2', from: 'loop', to: 'end', fromPort: 'exit' }
+      ],
+      layout: {}
+    }
+
+    const result = unwrapLoopInDefinition(definition, 'loop')
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) {
+      throw new Error('expected unwrap to succeed')
+    }
+    expect(result.definition.edges).toEqual([])
   })
 
   it('refuses to unwrap a node that is not a Loop, without mutating anything', () => {

@@ -2,6 +2,7 @@ import { createBrowserUuid } from '@/lib/browser-uuid'
 import { translate } from '@/i18n/i18n'
 import type {
   Condition,
+  LoopNode,
   Node,
   Role,
   Workflow
@@ -74,9 +75,22 @@ export function connectNodesInDefinition(
   return { ok: true, definition: { ...definition, edges: nextEdges } }
 }
 
+/** F4 review round 1, Important #2: strips ids in `deletedIds` out of a Loop's `body.nodeIds`.
+ *  A deleted `entryNodeId`/`exitNodeId` is left as-is on purpose — that drops it out of the
+ *  (now-updated) body set and trips `checkLoopNodes`' existing `graph_loop_entry_not_in_body`/
+ *  `graph_loop_exit_not_in_body` (`workflow-graph-structural-rules.ts`), flagging the broken Loop
+ *  instead of guessing a replacement entry/exit. */
+function withoutDeletedBodyNodes(loop: LoopNode, deletedIds: ReadonlySet<string>): LoopNode {
+  const nodeIds = loop.body.nodeIds.filter((id) => !deletedIds.has(id))
+  return nodeIds.length === loop.body.nodeIds.length ? loop : { ...loop, body: { nodeIds } }
+}
+
 /** Removes nodes/edges by id, plus any edge touching a removed node, plus their layout entries.
- *  Removing a Loop node also removes its body (F4): the editor has no way to pull a node back out
- *  of a Loop, so leaving the body behind would just orphan it. */
+ *  Deleting a Loop node deletes its body with it — Unwrap keeps the body instead (F4). Deleting a
+ *  body node instead drops it from its Loop's `body.nodeIds` (`withoutDeletedBodyNodes`); if that
+ *  would empty the body, the Loop is deleted too, since the schema requires at least one body
+ *  node and there is no other way to represent "invalid, empty Loop" that Save wouldn't just
+ *  reject outright (F4 review round 1, Important #2). */
 export function deleteElementsFromDefinition(
   definition: Workflow,
   target: { nodeIds?: readonly string[]; edgeIds?: readonly string[] }
@@ -90,8 +104,19 @@ export function deleteElementsFromDefinition(
       }
     }
   }
+  for (const node of definition.nodes) {
+    if (
+      node.type === 'loop' &&
+      !nodeIdsToRemove.has(node.id) &&
+      node.body.nodeIds.every((id) => nodeIdsToRemove.has(id))
+    ) {
+      nodeIdsToRemove.add(node.id)
+    }
+  }
   const edgeIdsToRemove = new Set(target.edgeIds ?? [])
-  const nodes = definition.nodes.filter((node) => !nodeIdsToRemove.has(node.id))
+  const nodes = definition.nodes
+    .filter((node) => !nodeIdsToRemove.has(node.id))
+    .map((node) => (node.type === 'loop' ? withoutDeletedBodyNodes(node, nodeIdsToRemove) : node))
   const edges = definition.edges.filter(
     (edge) =>
       !edgeIdsToRemove.has(edge.id) &&

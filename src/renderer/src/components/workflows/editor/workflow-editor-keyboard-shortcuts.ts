@@ -25,10 +25,16 @@ export function isWorkflowEditorUndoShortcut(
   return isMac ? Boolean(event.metaKey) && !event.ctrlKey : Boolean(event.ctrlKey) && !event.metaKey
 }
 
-/** An in-progress text edit, or any open dialog (History, Trusted sources, Save draft) — Delete/
- *  Cmd+Z there must edit the dialog's own field, never reach through to the canvas underneath. */
+/** A dialog, menu, listbox or alertdialog swallows Delete/Backspace and Cmd/Ctrl+Z for its own
+ *  purpose (closing, picking an item) — the canvas underneath must not also react. Covers History,
+ *  Trusted sources and Save draft (dialog); AddNodeMenu and the WorkflowListPane row menu (menu);
+ *  a Select, e.g. AgentNodeFields' agent picker (listbox); F4 review round 1, Minor #2. */
+const BLOCKING_OVERLAY_SELECTOR =
+  '[role="dialog"], [role="menu"], [role="listbox"], [role="alertdialog"]'
+
+/** An in-progress text edit, or any of the overlays above. */
 export function shouldIgnoreWorkflowEditorShortcut(target: EventTarget | null): boolean {
-  return isEditableTarget(target) || document.querySelector('[role="dialog"]') !== null
+  return isEditableTarget(target) || document.querySelector(BLOCKING_OVERLAY_SELECTOR) !== null
 }
 
 export type UseWorkflowEditorKeyboardShortcutsOptions = {

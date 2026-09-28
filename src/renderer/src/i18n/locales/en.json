@@ -17334,8 +17334,7 @@
             "loopTitle": "Loop",
             "disconnectedSelection": "The selected nodes must form a single connected group to wrap in a Loop.",
             "multipleEntries": "These nodes have more than one incoming connection from outside the selection; a Loop can only have one entry point.",
-            "multipleExits": "These nodes have more than one outgoing connection to outside the selection; a Loop can only have one exit point.",
-            "unwrapNotALoop": "Select a Loop node to unwrap."
+            "multipleExits": "These nodes have more than one outgoing connection to outside the selection; a Loop can only have one exit point."
           },
           "WorkflowEditorProblemNotice": {
             "wrapInLoop": "Wrap in Loop",
@@ -17429,8 +17428,13 @@
             "trigger": "Wrap in Loop"
           },
           "UndoButton": {
-            "disabledDuringRun": "Undo is disabled while a run is shown.",
             "trigger": "Undo"
+          },
+          "workflow-loop-integrity-check": {
+            "missingNode": "Loop \"{{loopId}}\" references node \"{{missingId}}\", which no longer exists."
+          },
+          "workflow-loop-unwrap-command": {
+            "notALoop": "Select a Loop node to unwrap."
           }
         },
         "run-view": {

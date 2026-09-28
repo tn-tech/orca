@@ -12,7 +12,8 @@ import {
   type NodeMouseHandler,
   type NodeTypes,
   type OnConnect,
-  type OnNodesChange
+  type OnNodesChange,
+  type OnSelectionChangeFunc
 } from '@xyflow/react'
 import type {
   AgentNode as AgentNodeDefinition,
@@ -22,6 +23,7 @@ import type {
 } from '../../../../../shared/workflows/workflow-definition-types'
 import type { WorkflowAttemptState } from '../../../../../shared/workflows/workflow-node-states'
 import { computeLoopContainerBounds } from './workflow-auto-layout'
+import { resolveSelectionChange } from './workflow-canvas-selection-change'
 import AgentNode, { type WorkflowAgentFlowNode } from './nodes/AgentNode'
 import ApprovalNode, { type WorkflowApprovalFlowNode } from './nodes/ApprovalNode'
 import EndNode, { type WorkflowEndFlowNode } from './nodes/EndNode'
@@ -350,6 +352,15 @@ export default function WorkflowCanvas({
     onEdgeSelect?.(undefined)
   }, [onNodeSelect, onEdgeSelect])
 
+  const handleSelectionChange: OnSelectionChangeFunc<WorkflowFlowNode, FlowEdge> = useCallback(
+    (params) => {
+      const { nodeId, edgeId } = resolveSelectionChange(params)
+      onNodeSelect?.(nodeId)
+      onEdgeSelect?.(edgeId)
+    },
+    [onNodeSelect, onEdgeSelect]
+  )
+
   return (
     <div className="relative h-full w-full bg-background">
       <ReactFlow
@@ -361,9 +372,10 @@ export default function WorkflowCanvas({
         onNodeClick={handleNodeClick}
         onEdgeClick={handleEdgeClick}
         onPaneClick={handlePaneClick}
+        onSelectionChange={handleSelectionChange}
         // F4: Delete/Backspace are handled by the editor's own shortcut
-        // (workflow-editor-keyboard-shortcuts.ts), which also skips text inputs and open dialogs
-        // and is disabled while a run is shown — React Flow's built-in handling knows none of that.
+        // (workflow-editor-keyboard-shortcuts.ts), which also skips text inputs and open
+        // dialogs/menus — React Flow's built-in handling knows none of that.
         deleteKeyCode={null}
         fitView
         minZoom={0.2}

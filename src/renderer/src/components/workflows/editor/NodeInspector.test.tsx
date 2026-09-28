@@ -539,7 +539,7 @@ describe('NodeInspector', () => {
       expect(onDeleteNode).toHaveBeenCalledWith('implement')
     })
 
-    it('disables the node delete button while a run is shown', () => {
+    it('never disables the node delete button itself (F4 review round 1, Minor #3 — Delete follows the same rule as every other edit)', () => {
       render(
         <NodeInspector
           definition={workflow()}
@@ -549,11 +549,10 @@ describe('NodeInspector', () => {
           onSetRole={vi.fn()}
           onRemoveRole={vi.fn()}
           onDeleteNode={vi.fn()}
-          editingDisabled
         />
       )
 
-      expect(screen.getByRole('button', { name: 'Delete node' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Delete node' })).not.toBeDisabled()
     })
 
     it('deletes the selected edge through onDeleteEdge', () => {

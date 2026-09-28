@@ -11,13 +11,13 @@ import {
   type WorkflowSummary
 } from '@/runtime/runtime-workflow-client'
 import type {
-  Node,
   Workflow,
   WorkflowProblem
 } from '../../../../shared/workflows/workflow-definition-types'
 import type { WorkflowRunSource } from '../../../../shared/workflows/workflow-run-types'
 import { validateWorkflowGraph } from '../../../../shared/workflows/workflow-graph-validation'
 import { createLocalGraphValidationContext } from './editor/workflow-graph-validation-context'
+import { checkLoopReferencesMissingNodes } from './editor/workflow-loop-integrity-check'
 import {
   hasBlockingWorkflowProblems,
   mergeWorkflowValidationProblems
@@ -27,20 +27,15 @@ import {
   freeNodePosition,
   type AddableNodeKind
 } from './editor/workflow-new-node-defaults'
+import { useWorkflowEditorMutations } from './use-workflow-editor-mutations'
 import { useWorkflowEditorSession } from './use-workflow-editor-session'
 import { useWorkflowExternalChangeWatch } from './use-workflow-external-change-watch'
 import { useWorkflowListState } from './use-workflow-list-state'
+import { useWorkflowProblemFocus } from './use-workflow-problem-focus'
 import { useWorkflowSourceAllowlist } from './use-workflow-source-allowlist'
 import { useWorkflowRunControls } from './use-workflow-run-controls'
 
 const HOST_VALIDATE_DEBOUNCE_MS = 400
-
-/** Only Agent/Router/Reflection nodes dispatch through a role (workflow-graph-validation.ts). */
-function nodeRoleId(node: Node): string | undefined {
-  return node.type === 'agent' || node.type === 'router' || node.type === 'reflection'
-    ? node.roleId
-    : undefined
-}
 
 export function useWorkflowsPageController() {
   const settings = useAppStore((s) => s.settings)
@@ -60,7 +55,13 @@ export function useWorkflowsPageController() {
   const definition = session.status === 'ready' ? session.editor.state.definition : null
 
   const localProblems = useMemo(
-    () => (definition ? validateWorkflowGraph(definition, localValidationContext) : []),
+    () =>
+      definition
+        ? [
+            ...validateWorkflowGraph(definition, localValidationContext),
+            ...checkLoopReferencesMissingNodes(definition)
+          ]
+        : [],
     [definition, localValidationContext]
   )
 
@@ -105,28 +106,7 @@ export function useWorkflowsPageController() {
     openRef: session.openRef
   })
 
-  const focusProblem = useCallback(
-    (problem: WorkflowProblem) => {
-      if (problem.nodeId) {
-        setSelectedNodeId(problem.nodeId)
-        setSelectedEdgeId(undefined)
-        return
-      }
-      if (problem.edgeId) {
-        setSelectedEdgeId(problem.edgeId)
-        setSelectedNodeId(undefined)
-        return
-      }
-      if (problem.roleId && definition) {
-        const node = definition.nodes.find((candidate) => nodeRoleId(candidate) === problem.roleId)
-        if (node) {
-          setSelectedNodeId(node.id)
-          setSelectedEdgeId(undefined)
-        }
-      }
-    },
-    [definition]
-  )
+  const focusProblem = useWorkflowProblemFocus({ definition, setSelectedNodeId, setSelectedEdgeId })
 
   useWorkflowExternalChangeWatch({
     enabled: session.status === 'ready' && session.openRef?.source === 'project',
@@ -255,60 +235,13 @@ export function useWorkflowsPageController() {
     [clearActiveRun, list, repoId, session, settings]
   )
 
-  // F4: a run in progress must not have its backing definition mutated out from under it — the
-  // same rule the run-view inspector swap (WorkflowsPage.tsx) already applies to node settings.
-  const editingDisabled = run.snapshot !== null
-
-  /** Deletes a single node (and any edge touching it — a Loop's body cascades too, see
-   *  `deleteElementsFromDefinition`), then clears the now-stale selection. */
-  const deleteNode = useCallback(
-    (nodeId: string) => {
-      if (session.status !== 'ready') {
-        return
-      }
-      session.editor.dispatch({ type: 'delete-elements', nodeIds: [nodeId] })
-      setSelectedNodeId(undefined)
-    },
-    [session]
-  )
-
-  const deleteEdge = useCallback(
-    (edgeId: string) => {
-      if (session.status !== 'ready') {
-        return
-      }
-      session.editor.dispatch({ type: 'delete-elements', edgeIds: [edgeId] })
-      setSelectedEdgeId(undefined)
-    },
-    [session]
-  )
-
-  /** Keyboard Delete/Backspace (F4): acts on whichever of the two the canvas currently selects. */
-  const deleteSelection = useCallback(() => {
-    if (selectedNodeId) {
-      deleteNode(selectedNodeId)
-    } else if (selectedEdgeId) {
-      deleteEdge(selectedEdgeId)
-    }
-  }, [deleteEdge, deleteNode, selectedEdgeId, selectedNodeId])
-
-  const unwrapLoop = useCallback(
-    (nodeId: string) => {
-      if (session.status !== 'ready') {
-        return
-      }
-      session.editor.dispatch({ type: 'unwrap-loop', nodeId })
-      setSelectedNodeId(undefined)
-    },
-    [session]
-  )
-
-  const undo = useCallback(() => {
-    if (session.status !== 'ready') {
-      return
-    }
-    session.editor.dispatch({ type: 'undo' })
-  }, [session])
+  const { deleteNode, deleteEdge, deleteSelection, unwrapLoop, undo } = useWorkflowEditorMutations({
+    session,
+    selectedNodeId,
+    selectedEdgeId,
+    setSelectedNodeId,
+    setSelectedEdgeId
+  })
 
   return {
     activeRepo,
@@ -333,7 +266,6 @@ export function useWorkflowsPageController() {
     draftWorkflow,
     openDraft,
     saveDraft,
-    editingDisabled,
     deleteNode,
     deleteEdge,
     deleteSelection,

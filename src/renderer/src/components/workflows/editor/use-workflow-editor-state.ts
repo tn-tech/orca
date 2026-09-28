@@ -16,7 +16,8 @@ import {
   updateNodeInDefinition,
   type WorkflowEditorProblem
 } from './workflow-editor-commands'
-import { unwrapLoopInDefinition, wrapNodesInLoopInDefinition } from './workflow-loop-commands'
+import { wrapNodesInLoopInDefinition } from './workflow-loop-commands'
+import { unwrapLoopInDefinition } from './workflow-loop-unwrap-command'
 
 const MAX_HISTORY_ENTRIES = 50
 
@@ -51,7 +52,7 @@ export type WorkflowEditorAction =
    *  two endpoints) in a new Loop node. */
   | { type: 'wrap-in-loop'; nodeIds: string[] }
   /** F4: reverses `wrap-in-loop` — removes the Loop node, keeps its body, re-links entry/exit
-   *  edges (`workflow-loop-commands.ts`'s `unwrapLoopInDefinition`). */
+   *  edges (`workflow-loop-unwrap-command.ts`'s `unwrapLoopInDefinition`). */
   | { type: 'unwrap-loop'; nodeId: string }
   /** US4 AS1: creates or updates a role in `definition.roles` (`roles/RolesPanel.tsx`,
    *  `roles/RoleEditor.tsx`). */
