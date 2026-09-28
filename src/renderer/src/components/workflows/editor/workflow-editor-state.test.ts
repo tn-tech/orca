@@ -371,6 +371,65 @@ describe('workflow editor state: delete and undo', () => {
     state = dispatch(state, { type: 'auto-layout' })
     expect(state.definition.layout.work).toEqual({ x: 555, y: 777 })
   })
+
+  it('deletes an edge without touching either endpoint node (F4)', () => {
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+    state = dispatch(state, { type: 'add-node', node: startNode(), position: { x: 0, y: 0 } })
+    state = dispatch(state, { type: 'add-node', node: endNode(), position: { x: 200, y: 0 } })
+    state = dispatch(state, { type: 'connect', from: 'start', to: 'end' })
+    const edge = state.definition.edges[0]
+
+    state = dispatch(state, { type: 'delete-elements', edgeIds: [edge.id] })
+
+    expect(state.definition.edges).toEqual([])
+    expect(state.definition.nodes.map((node) => node.id)).toEqual(['start', 'end'])
+  })
+
+  it('deletes a Loop node along with its body nodes and every edge touching either (F4)', () => {
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+    state = dispatch(state, { type: 'add-node', node: startNode(), position: { x: 0, y: 0 } })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: loopNode('loop', { maxIterations: 3 }),
+      position: { x: 200, y: 0 }
+    })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: agentNode('work', { overrides: { agent: 'claude' } }),
+      position: { x: 200, y: 0 }
+    })
+    state = dispatch(state, { type: 'add-node', node: endNode(), position: { x: 400, y: 0 } })
+    state = dispatch(state, { type: 'connect', from: 'start', to: 'loop' })
+    state = dispatch(state, { type: 'connect', from: 'loop', to: 'end', fromPort: 'exit' })
+
+    state = dispatch(state, { type: 'delete-elements', nodeIds: ['loop'] })
+
+    expect(state.definition.nodes.map((node) => node.id).sort()).toEqual(['end', 'start'])
+    expect(state.definition.edges).toEqual([])
+    expect(state.definition.layout.loop).toBeUndefined()
+    expect(state.definition.layout.work).toBeUndefined()
+  })
+
+  it('unpins a Loop body node that was cascade-deleted with its Loop (F4)', () => {
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+    state = dispatch(state, { type: 'add-node', node: startNode(), position: { x: 0, y: 0 } })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: loopNode('loop', { maxIterations: 3 }),
+      position: { x: 200, y: 0 }
+    })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: agentNode('work', { overrides: { agent: 'claude' } }),
+      position: { x: 200, y: 0 }
+    })
+    state = dispatch(state, { type: 'move-node', nodeId: 'work', position: { x: 555, y: 777 } })
+    expect(state.manualPositionIds.has('work')).toBe(true)
+
+    state = dispatch(state, { type: 'delete-elements', nodeIds: ['loop'] })
+
+    expect(state.manualPositionIds.has('work')).toBe(false)
+  })
 })
 
 describe('workflow editor state: Loop save gating (US2 AS4)', () => {
@@ -569,6 +628,82 @@ describe('workflow editor state: wrap selection in Loop (US2 AS5)', () => {
 
     expect(state.lastProblem?.code).toBe('workflow_editor_wrap_disconnected_selection')
     expect(state.definition).toBe(definitionBeforeWrap)
+  })
+})
+
+describe('workflow editor state: unwrap Loop (F4)', () => {
+  it('removes the Loop node, keeps its body, and re-links entry/exit edges', () => {
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+    state = dispatch(state, { type: 'add-node', node: startNode(), position: { x: 0, y: 0 } })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: agentNode('work', { overrides: { agent: 'claude' } }),
+      position: { x: 200, y: 0 }
+    })
+    state = dispatch(state, { type: 'add-node', node: endNode(), position: { x: 400, y: 0 } })
+    state = dispatch(state, { type: 'connect', from: 'start', to: 'work' })
+    state = dispatch(state, { type: 'connect', from: 'work', to: 'end' })
+    state = dispatch(state, { type: 'wrap-in-loop', nodeIds: ['work'] })
+    const loop = state.definition.nodes.find((node): node is LoopNode => node.type === 'loop')
+    if (!loop) {
+      throw new Error('expected a Loop node to exist after wrapping')
+    }
+    // The wrap redirected the incoming edge onto the Loop id and tagged the outgoing one 'exit'.
+    expect(state.definition.edges).toContainEqual(
+      expect.objectContaining({ from: 'start', to: loop.id })
+    )
+
+    state = dispatch(state, { type: 'unwrap-loop', nodeId: loop.id })
+
+    expect(state.definition.nodes.map((node) => node.id).sort()).toEqual(['end', 'start', 'work'])
+    expect(state.definition.edges).toContainEqual(
+      expect.objectContaining({ from: 'start', to: 'work' })
+    )
+    const exitEdge = state.definition.edges.find((edge) => edge.from === 'work')
+    expect(exitEdge).toMatchObject({ from: 'work', to: 'end' })
+    expect(exitEdge?.fromPort).toBeUndefined()
+    expect(state.definition.layout[loop.id]).toBeUndefined()
+  })
+
+  it('refuses to unwrap a node that is not a Loop, without mutating anything', () => {
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+    state = dispatch(state, { type: 'add-node', node: startNode(), position: { x: 0, y: 0 } })
+    const definitionBeforeUnwrap = state.definition
+
+    state = dispatch(state, { type: 'unwrap-loop', nodeId: 'start' })
+
+    expect(state.lastProblem?.code).toBe('workflow_editor_unwrap_not_a_loop')
+    expect(state.definition).toBe(definitionBeforeUnwrap)
+  })
+
+  it('refuses to unwrap a node id that does not exist', () => {
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+
+    state = dispatch(state, { type: 'unwrap-loop', nodeId: 'missing' })
+
+    expect(state.lastProblem?.code).toBe('workflow_editor_unwrap_not_a_loop')
+  })
+
+  it('undoes an unwrap, restoring the Loop node and its rewired edges', () => {
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+    state = dispatch(state, { type: 'add-node', node: startNode(), position: { x: 0, y: 0 } })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: agentNode('work', { overrides: { agent: 'claude' } }),
+      position: { x: 200, y: 0 }
+    })
+    state = dispatch(state, { type: 'connect', from: 'start', to: 'work' })
+    state = dispatch(state, { type: 'wrap-in-loop', nodeIds: ['work'] })
+    const afterWrap = state.definition
+    const loop = state.definition.nodes.find((node): node is LoopNode => node.type === 'loop')
+    if (!loop) {
+      throw new Error('expected a Loop node to exist after wrapping')
+    }
+
+    state = dispatch(state, { type: 'unwrap-loop', nodeId: loop.id })
+    state = dispatch(state, { type: 'undo' })
+
+    expect(state.definition).toEqual(afterWrap)
   })
 })
 

@@ -263,3 +263,38 @@ export function wrapNodesInLoopInDefinition(
     }
   }
 }
+
+/** Reverses `wrapNodesInLoopInDefinition` (F4): undoes what `reconnectEdgesForLoop` did — an edge
+ *  onto the Loop id now targets `entryNodeId`, the exit-tagged edge loses that tag — then drops
+ *  the Loop node. Refuses, without mutating anything, when `loopNodeId` isn't a Loop node. */
+export function unwrapLoopInDefinition(
+  definition: Workflow,
+  loopNodeId: string
+): WorkflowEditorCommandResult {
+  const loop = definition.nodes.find((node) => node.id === loopNodeId)
+  if (!loop || loop.type !== 'loop') {
+    return refusal(
+      'workflow_editor_unwrap_not_a_loop',
+      translate(
+        'auto.components.workflows.editor.workflow-loop-commands.unwrapNotALoop',
+        'Select a Loop node to unwrap.'
+      )
+    )
+  }
+
+  const { entryNodeId, exitNodeId } = loop
+  const edges = definition.edges.map((edge) => {
+    if (edge.to === loopNodeId) {
+      return { ...edge, to: entryNodeId }
+    }
+    if (edge.from === exitNodeId && edge.fromPort === 'exit') {
+      const { fromPort: _exitPort, ...rest } = edge
+      return rest
+    }
+    return edge
+  })
+  const nodes = definition.nodes.filter((node) => node.id !== loopNodeId)
+  const { [loopNodeId]: _removedLayout, ...layout } = definition.layout
+
+  return { ok: true, definition: { ...definition, nodes, edges, layout } }
+}

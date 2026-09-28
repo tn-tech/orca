@@ -255,17 +255,28 @@ function toFlowNodes(
   return flowNodes
 }
 
-function toFlowEdges(definition: Workflow, selectedEdgeId: string | undefined): FlowEdge[] {
-  return definition.edges.map((edge) => ({
-    id: edge.id,
-    source: edge.from,
-    target: edge.to,
-    sourceHandle: edge.fromPort,
-    label: edge.fromPort,
-    selected: edge.id === selectedEdgeId,
-    style: { stroke: 'var(--border)' },
-    markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--border)' }
-  }))
+/** F4: an edge must look selected once clicked, not just report `selected` to React Flow — the
+ *  default theme's `.selected` class loses to this inline `style`, so the color has to change here. */
+export function toFlowEdges(definition: Workflow, selectedEdgeId: string | undefined): FlowEdge[] {
+  return definition.edges.map((edge) => {
+    const selected = edge.id === selectedEdgeId
+    return {
+      id: edge.id,
+      source: edge.from,
+      target: edge.to,
+      sourceHandle: edge.fromPort,
+      label: edge.fromPort,
+      selected,
+      style: {
+        stroke: selected ? 'var(--ring)' : 'var(--border)',
+        strokeWidth: selected ? 2.5 : 1
+      },
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: selected ? 'var(--ring)' : 'var(--border)'
+      }
+    }
+  })
 }
 
 /** The DAG editor canvas (FR-002): renders `definition` with `@xyflow/react`, fully controlled. */
@@ -350,6 +361,10 @@ export default function WorkflowCanvas({
         onNodeClick={handleNodeClick}
         onEdgeClick={handleEdgeClick}
         onPaneClick={handlePaneClick}
+        // F4: Delete/Backspace are handled by the editor's own shortcut
+        // (workflow-editor-keyboard-shortcuts.ts), which also skips text inputs and open dialogs
+        // and is disabled while a run is shown — React Flow's built-in handling knows none of that.
+        deleteKeyCode={null}
         fitView
         minZoom={0.2}
       >

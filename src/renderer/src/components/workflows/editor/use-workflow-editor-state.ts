@@ -16,7 +16,7 @@ import {
   updateNodeInDefinition,
   type WorkflowEditorProblem
 } from './workflow-editor-commands'
-import { wrapNodesInLoopInDefinition } from './workflow-loop-commands'
+import { unwrapLoopInDefinition, wrapNodesInLoopInDefinition } from './workflow-loop-commands'
 
 const MAX_HISTORY_ENTRIES = 50
 
@@ -50,6 +50,9 @@ export type WorkflowEditorAction =
   /** FR-005/FR-006, US2 AS5: wraps `nodeIds` (an existing selection, or a refused back-edge's
    *  two endpoints) in a new Loop node. */
   | { type: 'wrap-in-loop'; nodeIds: string[] }
+  /** F4: reverses `wrap-in-loop` — removes the Loop node, keeps its body, re-links entry/exit
+   *  edges (`workflow-loop-commands.ts`'s `unwrapLoopInDefinition`). */
+  | { type: 'unwrap-loop'; nodeId: string }
   /** US4 AS1: creates or updates a role in `definition.roles` (`roles/RolesPanel.tsx`,
    *  `roles/RoleEditor.tsx`). */
   | { type: 'set-role'; roleId: string; role: Role }
@@ -129,6 +132,18 @@ function refuse(state: WorkflowEditorState, problem: WorkflowEditorProblem): Wor
   return { ...state, lastProblem: problem }
 }
 
+/** Drops any pinned id no longer present in `definition` — shared by every command that can make
+ *  a node disappear the caller didn't name directly (a Loop's cascade-deleted/unwrapped body, or
+ *  a freshly loaded definition that dropped a node this session had dragged). */
+function pruneManualPositionIds(
+  manualPositionIds: ReadonlySet<string>,
+  definition: Workflow
+): Set<string> {
+  return new Set(
+    [...manualPositionIds].filter((nodeId) => definition.nodes.some((node) => node.id === nodeId))
+  )
+}
+
 /**
  * Framework-light: pure over `{ definition, layout }` plus editor-only bookkeeping. `load-definition`
  * (a reload from disk, or a run-snapshot refresh) keeps this session's manually dragged positions
@@ -150,11 +165,11 @@ export function workflowEditorReducer(
 
     case 'delete-elements': {
       const nextDefinition = deleteElementsFromDefinition(state.definition, action)
-      const manualPositionIds = new Set(state.manualPositionIds)
-      for (const nodeId of action.nodeIds ?? []) {
-        manualPositionIds.delete(nodeId)
-      }
-      return commit(state, nextDefinition, manualPositionIds)
+      return commit(
+        state,
+        nextDefinition,
+        pruneManualPositionIds(state.manualPositionIds, nextDefinition)
+      )
     }
 
     case 'update-node': {
@@ -186,6 +201,18 @@ export function workflowEditorReducer(
       return result.ok ? commit(state, result.definition) : refuse(state, result.problem)
     }
 
+    case 'unwrap-loop': {
+      const result = unwrapLoopInDefinition(state.definition, action.nodeId)
+      if (!result.ok) {
+        return refuse(state, result.problem)
+      }
+      return commit(
+        state,
+        result.definition,
+        pruneManualPositionIds(state.manualPositionIds, result.definition)
+      )
+    }
+
     case 'set-role':
       return commit(state, setRoleInDefinition(state.definition, action.roleId, action.role))
 
@@ -201,11 +228,7 @@ export function workflowEditorReducer(
 
     case 'load-definition': {
       const incoming = action.definition
-      const manualPositionIds = new Set(
-        [...state.manualPositionIds].filter((nodeId) =>
-          incoming.nodes.some((node) => node.id === nodeId)
-        )
-      )
+      const manualPositionIds = pruneManualPositionIds(state.manualPositionIds, incoming)
       const layout = { ...incoming.layout, ...pinnedLayout(state.definition, manualPositionIds) }
       return {
         definition: { ...incoming, layout },

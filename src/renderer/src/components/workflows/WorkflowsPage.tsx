@@ -7,7 +7,9 @@ import { translate } from '@/i18n/i18n'
 import { useAppStore } from '@/store'
 import AddNodeMenu from './editor/AddNodeMenu'
 import NodeInspector from './editor/NodeInspector'
+import UndoButton from './editor/UndoButton'
 import ValidationProblemsPanel from './editor/ValidationProblemsPanel'
+import { useWorkflowEditorKeyboardShortcuts } from './editor/workflow-editor-keyboard-shortcuts'
 import WorkflowEditorProblemNotice from './editor/WorkflowEditorProblemNotice'
 import { hasBlockingWorkflowProblems } from './editor/workflow-validation-merge'
 import FileConflictDialog from './editor/FileConflictDialog'
@@ -63,6 +65,17 @@ export default function WorkflowsPage(): React.JSX.Element {
   // (FR-036); edge conditions still go through NodeInspector regardless.
   const showAttemptPanel =
     run.snapshot !== null && Boolean(controller.selectedNodeId) && !controller.selectedEdgeId
+
+  // F4: Delete/Backspace and Cmd/Ctrl+Z, scoped to whatever the canvas currently selects.
+  useWorkflowEditorKeyboardShortcuts({
+    enabled: session.status === 'ready',
+    canDelete:
+      Boolean(controller.selectedNodeId ?? controller.selectedEdgeId) &&
+      !controller.editingDisabled,
+    canUndo: session.status === 'ready' && session.editor.canUndo && !controller.editingDisabled,
+    onDelete: controller.deleteSelection,
+    onUndo: controller.undo
+  })
 
   return (
     <main className="relative flex h-full min-h-0 flex-col bg-background pt-5 text-foreground md:pt-6">
@@ -165,6 +178,11 @@ export default function WorkflowsPage(): React.JSX.Element {
                   onWrapInLoop={(nodeIds) =>
                     session.editor.dispatch({ type: 'wrap-in-loop', nodeIds })
                   }
+                />
+                <UndoButton
+                  canUndo={session.status === 'ready' && session.editor.canUndo}
+                  disabled={controller.editingDisabled}
+                  onUndo={controller.undo}
                 />
                 <div className="min-w-0 flex-1">
                   <RunToolbar
@@ -270,6 +288,10 @@ export default function WorkflowsPage(): React.JSX.Element {
                       onRemoveRole={(roleId) =>
                         session.editor.dispatch({ type: 'remove-role', roleId })
                       }
+                      onDeleteNode={controller.deleteNode}
+                      onDeleteEdge={controller.deleteEdge}
+                      onUnwrapLoop={controller.unwrapLoop}
+                      editingDisabled={controller.editingDisabled}
                       allowlistedSources={controller.allowlistedSources}
                       repo={controller.repoId}
                       host={repoTrustHost}

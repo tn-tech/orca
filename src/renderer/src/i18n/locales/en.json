@@ -17294,7 +17294,11 @@
             "notesLabel": "Notes",
             "edgeHeading": "Edge condition",
             "edgeSubheading": "{{from}} → {{to}}",
-            "typeNotYetSupported": "Detailed settings for this node type land in a later unit."
+            "typeNotYetSupported": "Detailed settings for this node type land in a later unit.",
+            "deleteEdge": "Delete edge",
+            "unwrapLoop": "Unwrap",
+            "deleteLoop": "Delete Loop",
+            "deleteNode": "Delete node"
           },
           "ValidationProblemsPanel": {
             "locationNode": "Node \"{{id}}\"",
@@ -17330,7 +17334,8 @@
             "loopTitle": "Loop",
             "disconnectedSelection": "The selected nodes must form a single connected group to wrap in a Loop.",
             "multipleEntries": "These nodes have more than one incoming connection from outside the selection; a Loop can only have one entry point.",
-            "multipleExits": "These nodes have more than one outgoing connection to outside the selection; a Loop can only have one exit point."
+            "multipleExits": "These nodes have more than one outgoing connection to outside the selection; a Loop can only have one exit point.",
+            "unwrapNotALoop": "Select a Loop node to unwrap."
           },
           "WorkflowEditorProblemNotice": {
             "wrapInLoop": "Wrap in Loop",
@@ -17422,6 +17427,10 @@
           },
           "WrapInLoopButton": {
             "trigger": "Wrap in Loop"
+          },
+          "UndoButton": {
+            "disabledDuringRun": "Undo is disabled while a run is shown.",
+            "trigger": "Undo"
           }
         },
         "run-view": {

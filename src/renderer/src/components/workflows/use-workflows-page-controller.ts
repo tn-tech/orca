@@ -255,6 +255,61 @@ export function useWorkflowsPageController() {
     [clearActiveRun, list, repoId, session, settings]
   )
 
+  // F4: a run in progress must not have its backing definition mutated out from under it — the
+  // same rule the run-view inspector swap (WorkflowsPage.tsx) already applies to node settings.
+  const editingDisabled = run.snapshot !== null
+
+  /** Deletes a single node (and any edge touching it — a Loop's body cascades too, see
+   *  `deleteElementsFromDefinition`), then clears the now-stale selection. */
+  const deleteNode = useCallback(
+    (nodeId: string) => {
+      if (session.status !== 'ready') {
+        return
+      }
+      session.editor.dispatch({ type: 'delete-elements', nodeIds: [nodeId] })
+      setSelectedNodeId(undefined)
+    },
+    [session]
+  )
+
+  const deleteEdge = useCallback(
+    (edgeId: string) => {
+      if (session.status !== 'ready') {
+        return
+      }
+      session.editor.dispatch({ type: 'delete-elements', edgeIds: [edgeId] })
+      setSelectedEdgeId(undefined)
+    },
+    [session]
+  )
+
+  /** Keyboard Delete/Backspace (F4): acts on whichever of the two the canvas currently selects. */
+  const deleteSelection = useCallback(() => {
+    if (selectedNodeId) {
+      deleteNode(selectedNodeId)
+    } else if (selectedEdgeId) {
+      deleteEdge(selectedEdgeId)
+    }
+  }, [deleteEdge, deleteNode, selectedEdgeId, selectedNodeId])
+
+  const unwrapLoop = useCallback(
+    (nodeId: string) => {
+      if (session.status !== 'ready') {
+        return
+      }
+      session.editor.dispatch({ type: 'unwrap-loop', nodeId })
+      setSelectedNodeId(undefined)
+    },
+    [session]
+  )
+
+  const undo = useCallback(() => {
+    if (session.status !== 'ready') {
+      return
+    }
+    session.editor.dispatch({ type: 'undo' })
+  }, [session])
+
   return {
     activeRepo,
     repoId,
@@ -277,7 +332,13 @@ export function useWorkflowsPageController() {
     deleteWorkflow,
     draftWorkflow,
     openDraft,
-    saveDraft
+    saveDraft,
+    editingDisabled,
+    deleteNode,
+    deleteEdge,
+    deleteSelection,
+    unwrapLoop,
+    undo
   }
 }
 

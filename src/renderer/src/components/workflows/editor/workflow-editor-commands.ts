@@ -74,12 +74,22 @@ export function connectNodesInDefinition(
   return { ok: true, definition: { ...definition, edges: nextEdges } }
 }
 
-/** Removes nodes/edges by id, plus any edge touching a removed node, plus their layout entries. */
+/** Removes nodes/edges by id, plus any edge touching a removed node, plus their layout entries.
+ *  Removing a Loop node also removes its body (F4): the editor has no way to pull a node back out
+ *  of a Loop, so leaving the body behind would just orphan it. */
 export function deleteElementsFromDefinition(
   definition: Workflow,
   target: { nodeIds?: readonly string[]; edgeIds?: readonly string[] }
 ): Workflow {
-  const nodeIdsToRemove = new Set(target.nodeIds ?? [])
+  const requestedNodeIds = new Set(target.nodeIds ?? [])
+  const nodeIdsToRemove = new Set(requestedNodeIds)
+  for (const node of definition.nodes) {
+    if (node.type === 'loop' && requestedNodeIds.has(node.id)) {
+      for (const bodyNodeId of node.body.nodeIds) {
+        nodeIdsToRemove.add(bodyNodeId)
+      }
+    }
+  }
   const edgeIdsToRemove = new Set(target.edgeIds ?? [])
   const nodes = definition.nodes.filter((node) => !nodeIdsToRemove.has(node.id))
   const edges = definition.edges.filter(

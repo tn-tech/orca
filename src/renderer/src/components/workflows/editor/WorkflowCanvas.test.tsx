@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { LoopNode, Workflow } from '../../../../../shared/workflows/workflow-definition-types'
-import { loopParentMap, toAbsoluteNodePosition } from './WorkflowCanvas'
+import { loopParentMap, toAbsoluteNodePosition, toFlowEdges } from './WorkflowCanvas'
 
 function loopNode(patch: Partial<LoopNode> = {}): LoopNode {
   return {
@@ -54,5 +54,41 @@ describe('toAbsoluteNodePosition', () => {
     const result = toAbsoluteNodePosition({}, parentOf, 'work', { x: 20, y: 15 })
 
     expect(result).toEqual({ x: 20, y: 15 })
+  })
+})
+
+describe('toFlowEdges', () => {
+  const definition: Workflow = {
+    version: 1,
+    name: 'wf',
+    workspacePolicy: 'run-workspace',
+    roles: {},
+    nodes: [],
+    edges: [
+      { id: 'edge-1', from: 'start', to: 'work' },
+      { id: 'edge-2', from: 'work', to: 'end' }
+    ],
+    layout: {}
+  }
+
+  it('marks only the selected edge selected', () => {
+    const [selected, other] = toFlowEdges(definition, 'edge-1')
+
+    expect(selected.selected).toBe(true)
+    expect(other.selected).toBe(false)
+  })
+
+  it('gives a selected edge a visually distinct stroke (F4: edges must look selected)', () => {
+    const [selected, unselected] = toFlowEdges(definition, 'edge-1')
+
+    expect(selected.style?.stroke).not.toBe(unselected.style?.stroke)
+  })
+
+  it('renders no selection distinctly when nothing is selected', () => {
+    const [first, second] = toFlowEdges(definition, undefined)
+
+    expect(first.selected).toBe(false)
+    expect(second.selected).toBe(false)
+    expect(first.style?.stroke).toBe(second.style?.stroke)
   })
 })

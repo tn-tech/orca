@@ -503,4 +503,117 @@ describe('NodeInspector', () => {
       expect(onRemoveRole).toHaveBeenCalledWith('reviewer')
     })
   })
+
+  describe('Delete and Unwrap (F4)', () => {
+    it('has no delete control when no handler is wired', () => {
+      render(
+        <NodeInspector
+          definition={workflow()}
+          selectedNodeId="implement"
+          onNodeChange={vi.fn()}
+          onEdgeConditionChange={vi.fn()}
+          onSetRole={vi.fn()}
+          onRemoveRole={vi.fn()}
+        />
+      )
+
+      expect(screen.queryByRole('button', { name: /Delete/ })).not.toBeInTheDocument()
+    })
+
+    it('deletes the selected node through onDeleteNode', () => {
+      const onDeleteNode = vi.fn()
+      render(
+        <NodeInspector
+          definition={workflow()}
+          selectedNodeId="implement"
+          onNodeChange={vi.fn()}
+          onEdgeConditionChange={vi.fn()}
+          onSetRole={vi.fn()}
+          onRemoveRole={vi.fn()}
+          onDeleteNode={onDeleteNode}
+        />
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Delete node' }))
+
+      expect(onDeleteNode).toHaveBeenCalledWith('implement')
+    })
+
+    it('disables the node delete button while a run is shown', () => {
+      render(
+        <NodeInspector
+          definition={workflow()}
+          selectedNodeId="implement"
+          onNodeChange={vi.fn()}
+          onEdgeConditionChange={vi.fn()}
+          onSetRole={vi.fn()}
+          onRemoveRole={vi.fn()}
+          onDeleteNode={vi.fn()}
+          editingDisabled
+        />
+      )
+
+      expect(screen.getByRole('button', { name: 'Delete node' })).toBeDisabled()
+    })
+
+    it('deletes the selected edge through onDeleteEdge', () => {
+      const onDeleteEdge = vi.fn()
+      render(
+        <NodeInspector
+          definition={workflow()}
+          selectedEdgeId="edge-1"
+          onNodeChange={vi.fn()}
+          onEdgeConditionChange={vi.fn()}
+          onSetRole={vi.fn()}
+          onRemoveRole={vi.fn()}
+          onDeleteEdge={onDeleteEdge}
+        />
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Delete edge' }))
+
+      expect(onDeleteEdge).toHaveBeenCalledWith('edge-1')
+    })
+
+    it('shows Unwrap and "Delete Loop" for a selected Loop node, and calls each handler', () => {
+      const onDeleteNode = vi.fn()
+      const onUnwrapLoop = vi.fn()
+      render(
+        <NodeInspector
+          definition={workflow({ nodes: [startNode(), loopNode()] })}
+          selectedNodeId="loop"
+          onNodeChange={vi.fn()}
+          onEdgeConditionChange={vi.fn()}
+          onSetRole={vi.fn()}
+          onRemoveRole={vi.fn()}
+          onDeleteNode={onDeleteNode}
+          onUnwrapLoop={onUnwrapLoop}
+        />
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Unwrap' }))
+      expect(onUnwrapLoop).toHaveBeenCalledWith('loop')
+
+      fireEvent.click(screen.getByRole('button', { name: 'Delete Loop' }))
+      expect(onDeleteNode).toHaveBeenCalledWith('loop')
+    })
+
+    it('does not offer Unwrap for a non-Loop node', () => {
+      render(
+        <NodeInspector
+          definition={workflow()}
+          selectedNodeId="implement"
+          onNodeChange={vi.fn()}
+          onEdgeConditionChange={vi.fn()}
+          onSetRole={vi.fn()}
+          onRemoveRole={vi.fn()}
+          onDeleteNode={vi.fn()}
+          onUnwrapLoop={vi.fn()}
+        />
+      )
+
+      expect(screen.queryByRole('button', { name: 'Unwrap' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Delete node' })).toBeInTheDocument()
+    })
+  })
 })

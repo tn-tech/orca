@@ -1,4 +1,6 @@
 import React, { useId } from 'react'
+import { Trash2, Ungroup } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { translate } from '@/i18n/i18n'
@@ -29,6 +31,15 @@ export type NodeInspectorProps = {
   /** US4 AS1: the workflow-level roles list, shown by `RolesPanel` when nothing is selected. */
   onSetRole: (roleId: string, role: Role) => void
   onRemoveRole: (roleId: string) => void
+  /** F4: deleting a Loop node also removes its body (`deleteElementsFromDefinition`'s cascade) —
+   *  this button doesn't need a Loop-specific variant to do that. */
+  onDeleteNode?: (nodeId: string) => void
+  onDeleteEdge?: (edgeId: string) => void
+  /** F4: removes the Loop node, keeps its body, re-links entry/exit edges. */
+  onUnwrapLoop?: (nodeId: string) => void
+  /** F4: matches the run-view rule that swaps this inspector for `AttemptPanel` on a selected
+   *  node — a run in progress must not have its backing definition mutated out from under it. */
+  editingDisabled?: boolean
   allowlistedSources?: readonly string[]
   repo?: string
   /** The open repo's trust host (FR-018a); forwarded to `RolesPanel` -> `RoleEditor`. */
@@ -118,6 +129,10 @@ export default function NodeInspector({
   onEdgeConditionChange,
   onSetRole,
   onRemoveRole,
+  onDeleteNode,
+  onDeleteEdge,
+  onUnwrapLoop,
+  editingDisabled,
   allowlistedSources,
   repo,
   host,
@@ -149,6 +164,19 @@ export default function NodeInspector({
           condition={edge.condition}
           onChange={(condition) => onEdgeConditionChange(edge.id, condition)}
         />
+        {onDeleteEdge ? (
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            disabled={editingDisabled}
+            onClick={() => onDeleteEdge(edge.id)}
+            className="mt-auto"
+          >
+            <Trash2 />
+            {translate('auto.components.workflows.editor.NodeInspector.deleteEdge', 'Delete edge')}
+          </Button>
+        ) : null}
       </div>
     )
   }
@@ -202,6 +230,45 @@ export default function NodeInspector({
           )}
         </p>
       )}
+      {onDeleteNode || (onUnwrapLoop && node.type === 'loop') ? (
+        <div className="mt-auto flex flex-col gap-2">
+          {onUnwrapLoop && node.type === 'loop' ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={editingDisabled}
+              onClick={() => onUnwrapLoop(node.id)}
+            >
+              <Ungroup />
+              {translate('auto.components.workflows.editor.NodeInspector.unwrapLoop', 'Unwrap')}
+            </Button>
+          ) : null}
+          {onDeleteNode ? (
+            // F4: Start is deletable like any other node — `graph_missing_start` already blocks
+            // Save the same way a disconnected node does (audit-static.md §1), so there's no
+            // separate "can't delete Start" state to build; validation catches it instead.
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              disabled={editingDisabled}
+              onClick={() => onDeleteNode(node.id)}
+            >
+              <Trash2 />
+              {node.type === 'loop'
+                ? translate(
+                    'auto.components.workflows.editor.NodeInspector.deleteLoop',
+                    'Delete Loop'
+                  )
+                : translate(
+                    'auto.components.workflows.editor.NodeInspector.deleteNode',
+                    'Delete node'
+                  )}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   )
 }
