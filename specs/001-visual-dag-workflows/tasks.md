@@ -305,18 +305,18 @@ Monorepo per plan.md: shared types `src/shared/workflows/`, engine `src/main/run
 
 ### Tests for User Story 8
 
-- [ ] T121 [P] [US8] Write `src/main/runtime/workflows/workflow-rerun.test.ts`: rerun from node N creates a new run referencing `rerun_of_run_id`, copies completed upstream attempts' results, executes only N and descendants
-- [ ] T122 [P] [US8] Write `src/main/runtime/workflows/workflow-run-control.test.ts`: pause stops new dispatches but running attempts finish, resume continues, cancel asks every live worker to stop and marks `cancelled`
+- [X] T121 [P] [US8] Write `src/main/runtime/workflows/workflow-rerun.test.ts`: rerun from node N creates a new run referencing `rerun_of_run_id`, copies completed upstream attempts' results, executes only N and descendants
+- [X] T122 [P] [US8] Write `src/main/runtime/workflows/workflow-run-control.test.ts`: pause stops new dispatches but running attempts finish, resume continues, cancel asks every live worker to stop and marks `cancelled`
 - [ ] T123 [P] [US8] Write `src/main/runtime/workflows/workflow-run-controller.rehydrate.test.ts`: after a simulated runtime restart with a running attempt, the controller resumes waiting without re-dispatching, a lost remote contact marks the attempt `unverifiable`, never `failed`; and `workflow.run.start` against an SSH-backed repository whose host is unreachable refuses with `workflow_host_unreachable` and creates no local workspace (FR-038)
 - [ ] T124 [P] [US8] Write `tests/e2e/workflows/remote-run.e2e.test.ts` (paired `orca serve` in the same test host, background launch): run continues while the client is disconnected and the snapshot after reconnect is complete
 
 ### Implementation for User Story 8
 
-- [ ] T125 [US8] Create `src/main/runtime/workflows/workflow-rerun.ts` and `workflow-run-control.ts` (pause/resume/cancel) and implement `workflow.run.pause/resume/cancel/rerun` in `methods/workflows/runs.ts`
+- [X] T125 [US8] Create `src/main/runtime/workflows/workflow-rerun.ts` and `workflow-run-control.ts` (pause/resume/cancel) and implement `workflow.run.pause/resume/cancel/rerun` in `methods/workflows/runs.ts`
 - [ ] T126 [US8] Map dispatch liveness (`projection.liveness`) into attempt `unverifiable` handling in `workflow-run-controller.ts`, using `worker-list` verdicts and never inferring exit from silence
 - [ ] T127 [US8] Gate the Workflows view per paired environment on `WORKFLOW_ENGINE_RUNTIME_CAPABILITY` via `runtimeEnvironmentSupportsCapability` in `use-workflows-page-controller.ts`, and make mobile probes treat `forbidden` and `method_not_found` as absent
 - [ ] T128 [P] [US8] Create `src/renderer/src/components/workflows/run-view/RunHistory.tsx` (list of past runs with outcome and duration, open any run, "Rerun from this node" action) and `run-view/RunControls.tsx` (pause/resume/cancel)
-- [ ] T129 [US8] Add `workflows pause|resume|cancel|rerun` handlers to `src/cli/handlers/workflows.ts`
+- [X] T129 [US8] Add `workflows pause|resume|cancel|rerun` handlers to `src/cli/handlers/workflows.ts`
 
 **Checkpoint**: Runs survive restarts and disconnects; the same file runs identically on local, SSH and remote hosts (SC-004, SC-008).
 
