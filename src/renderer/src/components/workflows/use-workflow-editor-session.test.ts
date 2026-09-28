@@ -94,6 +94,27 @@ describe('useWorkflowEditorSession', () => {
     expect(result.current.editor.state.dirty).toBe(false)
   })
 
+  it('save resolves true and clears dirty on success (F8: the run-save guard relies on this)', async () => {
+    const definition = savedWorkflow()
+    workflowReadMock.mockResolvedValue({ definition, raw: 'raw', revision: 'rev-1', problems: [] })
+    workflowWriteMock.mockResolvedValue({ revision: 'rev-2' })
+    const { result } = renderHook(() => useWorkflowEditorSession({ settings, repoId: 'repo-1' }))
+    await act(() => result.current.open({ name: 'wf', source: 'project' }))
+    act(() =>
+      result.current.editor.dispatch({
+        type: 'move-node',
+        nodeId: 'start',
+        position: { x: 1, y: 1 }
+      })
+    )
+    expect(result.current.editor.state.dirty).toBe(true)
+
+    await expect(act(() => result.current.save())).resolves.toBe(true)
+
+    expect(result.current.editor.state.dirty).toBe(false)
+    expect(result.current.documentRevision).toBe('rev-2')
+  })
+
   it('open surfaces the no-project reason inline instead of doing nothing (F6 fix round 1)', async () => {
     const { result } = renderHook(() => useWorkflowEditorSession({ settings, repoId: undefined }))
 
@@ -107,7 +128,7 @@ describe('useWorkflowEditorSession', () => {
   it('save toasts the no-project reason instead of doing nothing (F6 fix round 1)', async () => {
     const { result } = renderHook(() => useWorkflowEditorSession({ settings, repoId: undefined }))
 
-    await act(() => result.current.save())
+    await expect(act(() => result.current.save())).resolves.toBe(false)
 
     expect(toast.error).toHaveBeenCalledExactlyOnceWith(
       'Add or select a project to create workflows.'
@@ -158,7 +179,7 @@ describe('useWorkflowEditorSession', () => {
     const { result } = renderHook(() => useWorkflowEditorSession({ settings, repoId: 'repo-1' }))
     await act(() => result.current.open({ name: 'wf', source: 'project' }))
 
-    await expect(act(() => result.current.save())).resolves.toBeUndefined()
+    await expect(act(() => result.current.save())).resolves.toBe(false)
 
     expect(toast.error).toHaveBeenCalledExactlyOnceWith('disk full')
     expect(result.current.conflict).toBeNull()

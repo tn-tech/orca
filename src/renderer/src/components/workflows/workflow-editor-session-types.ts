@@ -25,7 +25,8 @@ export type WorkflowEditorSession = {
   /** Loads an agent-drafted definition (`workflow.draft`) straight into the editor as an unsaved
    *  draft — no `workflow.write` until `saveDraftAs`. */
   openDraft: (definition: Workflow) => void
-  save: () => Promise<void>
+  /** Resolves true iff the write landed (F8: gates the run-save guard's "save then run"). */
+  save: () => Promise<boolean>
   /** First save of an open draft: names it, writes it, and clears `isDraft`. Rethrows on failure
    *  (e.g. a taken name) so the naming dialog can show the error and the draft stays open. */
   saveDraftAs: (name: string, source: WorkflowRunSource) => Promise<void>

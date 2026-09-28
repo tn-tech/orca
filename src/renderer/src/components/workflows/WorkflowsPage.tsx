@@ -15,6 +15,7 @@ import { hasBlockingWorkflowProblems } from './editor/workflow-validation-merge'
 import FileConflictDialog from './editor/FileConflictDialog'
 import WrapInLoopButton from './editor/WrapInLoopButton'
 import RunHistoryButton from './RunHistoryButton'
+import RunUnsavedChangesDialog from './RunUnsavedChangesDialog'
 import SaveWorkflowButton from './SaveWorkflowButton'
 import TrustedSourcesDialog from './TrustedSourcesDialog'
 import WorkflowListPane from './WorkflowListPane'
@@ -25,6 +26,7 @@ import RunCanvasOverlay from './run-view/RunCanvasOverlay'
 import RunControls from './run-view/RunControls'
 import RunHistory from './run-view/RunHistory'
 import RunToolbar from './run-view/RunToolbar'
+import { useWorkflowRunSaveGuard } from './use-workflow-run-save-guard'
 import { useWorkflowsPageController } from './use-workflows-page-controller'
 
 /** FR-001/FR-009/FR-011/FR-012: list/open/create/duplicate/delete/save a project-scoped
@@ -70,6 +72,8 @@ export default function WorkflowsPage(): React.JSX.Element {
     run.snapshot !== null && Boolean(controller.selectedNodeId) && !controller.selectedEdgeId
   // Shared by Save's and Run's disabled-reason tooltips (FR-009).
   const blockingProblems = hasBlockingWorkflowProblems(controller.problems)
+  // F8: Run must never silently run the on-disk file while the editor has unsaved edits.
+  const runSaveGuard = useWorkflowRunSaveGuard({ session, blockingProblems, start: run.start })
 
   // F4: Delete/Backspace and Cmd/Ctrl+Z, scoped to whatever the canvas currently selects. Not
   // gated on a shown run — Delete and Undo follow the same rule as every other edit here (F4
@@ -204,7 +208,7 @@ export default function WorkflowsPage(): React.JSX.Element {
                   canRun={controller.canRun}
                   disabledReason={controller.runDisabledReason}
                   starting={run.starting}
-                  onRun={(objective) => void run.start(objective)}
+                  onRun={runSaveGuard.requestRun}
                   runControls={
                     <RunControls
                       runState={run.snapshot?.state}
@@ -347,6 +351,11 @@ export default function WorkflowsPage(): React.JSX.Element {
         onReload={() => void session.reloadFromDisk()}
         onOverwrite={() => void session.overwriteOnDisk()}
         onCancel={session.dismissConflict}
+      />
+      <RunUnsavedChangesDialog
+        open={runSaveGuard.confirmOpen}
+        onSaveAndRun={runSaveGuard.confirmSaveAndRun}
+        onCancel={runSaveGuard.cancelSaveAndRun}
       />
       <TrustedSourcesDialog
         open={trustedSourcesOpen}

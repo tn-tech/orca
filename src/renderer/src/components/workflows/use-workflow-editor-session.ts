@@ -144,14 +144,15 @@ export function useWorkflowEditorSession({
     [editor, repoId, settings]
   )
 
-  const save = useCallback(async () => {
+  // Returns whether the save landed (F8: the run-save guard needs to know before starting a run).
+  const save = useCallback(async (): Promise<boolean> => {
     if (!repoId) {
       // F6: same toast path as a failed write below — the project can drop out mid-session.
       toast.error(noActiveProjectReason())
-      return
+      return false
     }
     if (!openRef || status !== 'ready') {
-      return
+      return false
     }
     setSaving(true)
     try {
@@ -164,10 +165,11 @@ export function useWorkflowEditorSession({
       })
       setDocumentRevision(result.revision)
       editor.dispatch({ type: 'mark-saved' })
+      return true
     } catch (error) {
       if (hasRuntimeRpcErrorCode(error, 'workflow_file_conflict')) {
         setConflict('save')
-        return
+        return false
       }
       toast.error(
         errorOrFallback(
@@ -176,6 +178,7 @@ export function useWorkflowEditorSession({
           'Failed to save workflow.'
         )
       )
+      return false
     } finally {
       setSaving(false)
     }

@@ -17720,6 +17720,12 @@
         "SaveWorkflowButton": {
           "nothingToSave": "No changes to save yet.",
           "saving": "Saving…"
+        },
+        "RunUnsavedChangesDialog": {
+          "title": "Save before running?",
+          "description": "This workflow has unsaved changes. Running now would run the last saved version instead.",
+          "cancel": "Cancel",
+          "saveAndRun": "Save and run"
         }
       }
     },
