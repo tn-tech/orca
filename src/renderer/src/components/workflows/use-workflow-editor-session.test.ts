@@ -94,6 +94,50 @@ describe('useWorkflowEditorSession', () => {
     expect(result.current.editor.state.dirty).toBe(false)
   })
 
+  it('open surfaces the no-project reason inline instead of doing nothing (F6 fix round 1)', async () => {
+    const { result } = renderHook(() => useWorkflowEditorSession({ settings, repoId: undefined }))
+
+    await act(() => result.current.open({ name: 'wf', source: 'project' }))
+
+    expect(result.current.status).toBe('error')
+    expect(result.current.loadError).toBe('Add or select a project to create workflows.')
+    expect(workflowReadMock).not.toHaveBeenCalled()
+  })
+
+  it('save toasts the no-project reason instead of doing nothing (F6 fix round 1)', async () => {
+    const { result } = renderHook(() => useWorkflowEditorSession({ settings, repoId: undefined }))
+
+    await act(() => result.current.save())
+
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith(
+      'Add or select a project to create workflows.'
+    )
+    expect(workflowWriteMock).not.toHaveBeenCalled()
+  })
+
+  it('reloadFromDisk toasts the no-project reason instead of doing nothing (F6 fix round 1)', async () => {
+    const { result } = renderHook(() => useWorkflowEditorSession({ settings, repoId: undefined }))
+
+    await act(() => result.current.reloadFromDisk())
+
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith(
+      'Add or select a project to create workflows.'
+    )
+    expect(workflowReadMock).not.toHaveBeenCalled()
+  })
+
+  it('overwriteOnDisk toasts the no-project reason instead of doing nothing (F6 fix round 1)', async () => {
+    const { result } = renderHook(() => useWorkflowEditorSession({ settings, repoId: undefined }))
+
+    await act(() => result.current.overwriteOnDisk())
+
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith(
+      'Add or select a project to create workflows.'
+    )
+    expect(workflowReadMock).not.toHaveBeenCalled()
+    expect(workflowWriteMock).not.toHaveBeenCalled()
+  })
+
   it('save raises a conflict instead of throwing when the disk revision moved', async () => {
     const definition = savedWorkflow()
     workflowReadMock.mockResolvedValue({ definition, raw: 'raw', revision: 'rev-1', problems: [] })

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { toast } from 'sonner'
 import { useAppStore } from '@/store'
 import { useActiveRepo, useActiveWorktree } from '@/store/selectors'
 import { translate } from '@/i18n/i18n'
+import { noActiveProjectReason as getNoActiveProjectReason } from './workflow-no-active-project-reason'
 import {
   workflowDelete,
   workflowDraft,
@@ -92,12 +94,7 @@ export function useWorkflowsPageController() {
   // F6: the active project can drop out from under a still-'ready' session (the user switches
   // away from it mid-edit); without this, Run stays clickable and startRun's own `!repoId` guard
   // just no-ops silently.
-  const noActiveProjectReason = repoId
-    ? undefined
-    : translate(
-        'auto.components.workflows.WorkflowsPage.noActiveProject',
-        'Add or select a project to create workflows.'
-      )
+  const noActiveProjectReason = repoId ? undefined : getNoActiveProjectReason()
   const blockingProblems = hasBlockingWorkflowProblems(problems)
   // US6 AS2: an unsaved draft has no file to run against yet — save it first.
   const canRun =
@@ -158,7 +155,9 @@ export function useWorkflowsPageController() {
   const duplicateWorkflow = useCallback(
     async (row: WorkflowSummary, newName: string) => {
       if (!repoId) {
-        return
+        // F6: throw, not a silent return — reuses WorkflowNameDialog's own catch (same dialog as
+        // "New workflow"), so this can't close as if the duplicate were created.
+        throw new Error(getNoActiveProjectReason())
       }
       const result = await workflowDuplicate(settings, {
         repo: repoId,
@@ -239,6 +238,9 @@ export function useWorkflowsPageController() {
   const deleteWorkflow = useCallback(
     async (row: WorkflowSummary) => {
       if (!repoId) {
+        // F6: WorkflowDeleteDialog has no catch of its own, so surface this via toast — the same
+        // pattern the session uses for its own fire-and-forget, `void`-called actions.
+        toast.error(getNoActiveProjectReason())
         return
       }
       await workflowDelete(settings, { repo: repoId, name: row.name, source: row.source })

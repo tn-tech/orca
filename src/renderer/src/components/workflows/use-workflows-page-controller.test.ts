@@ -589,4 +589,44 @@ describe('useWorkflowsPageController', () => {
       expect(result.current.session.editor.state.dirty).toBe(false)
     })
   })
+
+  describe('no active project (F6)', () => {
+    it('reports noActiveProjectReason and canRun=false from the initial mount, with no active repo', () => {
+      useActiveRepoMock.mockReturnValue(undefined)
+
+      const { result } = renderHook(() => useWorkflowsPageController())
+
+      expect(result.current.repoId).toBeUndefined()
+      expect(result.current.noActiveProjectReason).toBe(
+        'Add or select a project to create workflows.'
+      )
+      expect(result.current.runDisabledReason).toBe('Add or select a project to create workflows.')
+      expect(result.current.canRun).toBe(false)
+    })
+
+    it('duplicateWorkflow rejects with the no-project reason instead of doing nothing (fix round 1)', async () => {
+      useActiveRepoMock.mockReturnValue(undefined)
+      const { result } = renderHook(() => useWorkflowsPageController())
+      const target = { name: 'ship-it', source: 'project' as const, path: '', valid: true }
+
+      await expect(
+        act(() => result.current.duplicateWorkflow(target, 'ship-it-copy'))
+      ).rejects.toThrow('Add or select a project to create workflows.')
+
+      expect(workflowDuplicateMock).not.toHaveBeenCalled()
+    })
+
+    it('deleteWorkflow toasts the no-project reason instead of doing nothing (fix round 1)', async () => {
+      useActiveRepoMock.mockReturnValue(undefined)
+      const { result } = renderHook(() => useWorkflowsPageController())
+      const target = { name: 'ship-it', source: 'project' as const, path: '', valid: true }
+
+      await act(() => result.current.deleteWorkflow(target))
+
+      expect(toastErrorMock).toHaveBeenCalledExactlyOnceWith(
+        'Add or select a project to create workflows.'
+      )
+      expect(workflowDeleteMock).not.toHaveBeenCalled()
+    })
+  })
 })

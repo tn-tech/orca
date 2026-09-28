@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { translate } from '@/i18n/i18n'
 import { hasRuntimeRpcErrorCode } from '@/runtime/runtime-rpc-client'
+import { noActiveProjectReason } from './workflow-no-active-project-reason'
 import {
   workflowRead,
   workflowWrite,
@@ -32,6 +33,10 @@ export type UseWorkflowEditorSessionParams = {
   repoId: string | undefined
 }
 
+function errorOrFallback(error: unknown, key: string, fallback: string): string {
+  return error instanceof Error ? error.message : translate(key, fallback)
+}
+
 export function useWorkflowEditorSession({
   settings,
   repoId
@@ -49,6 +54,8 @@ export function useWorkflowEditorSession({
   const open = useCallback(
     async (ref: OpenWorkflowRef) => {
       if (!repoId) {
+        setStatus('error')
+        setLoadError(noActiveProjectReason())
         return
       }
       setStatus('loading')
@@ -80,14 +87,8 @@ export function useWorkflowEditorSession({
   const createNew = useCallback(
     async (name: string, source: WorkflowRunSource) => {
       if (!repoId) {
-        // F6: throw (not a silent return) so WorkflowNameDialog's catch shows this instead of
-        // closing as if the workflow were created.
-        throw new Error(
-          translate(
-            'auto.components.workflows.WorkflowsPage.noActiveProject',
-            'Add or select a project to create workflows.'
-          )
-        )
+        // F6: throw, not a silent return — WorkflowNameDialog's catch shows this.
+        throw new Error(noActiveProjectReason())
       }
       setStatus('loading')
       setLoadError(null)
@@ -125,14 +126,8 @@ export function useWorkflowEditorSession({
   const saveDraftAs = useCallback(
     async (name: string, source: WorkflowRunSource) => {
       if (!repoId) {
-        // F6: throw (not a silent return) so the save-draft dialog's catch shows this instead of
-        // closing as if the draft were saved.
-        throw new Error(
-          translate(
-            'auto.components.workflows.WorkflowsPage.noActiveProject',
-            'Add or select a project to create workflows.'
-          )
-        )
+        // F6: throw, not a silent return — the save-draft dialog's catch shows this.
+        throw new Error(noActiveProjectReason())
       }
       setSaving(true)
       try {
@@ -150,7 +145,12 @@ export function useWorkflowEditorSession({
   )
 
   const save = useCallback(async () => {
-    if (!repoId || !openRef || status !== 'ready') {
+    if (!repoId) {
+      // F6: same toast path as a failed write below — the project can drop out mid-session.
+      toast.error(noActiveProjectReason())
+      return
+    }
+    if (!openRef || status !== 'ready') {
       return
     }
     setSaving(true)
@@ -169,15 +169,12 @@ export function useWorkflowEditorSession({
         setConflict('save')
         return
       }
-      // Why toast, not rethrow: callers fire this from a `void`-called handler (e.g. the header
-      // Save button), so a thrown error here would be an unhandled rejection with no UI feedback.
       toast.error(
-        error instanceof Error
-          ? error.message
-          : translate(
-              'auto.components.workflows.use-workflow-editor-session.saveFailed',
-              'Failed to save workflow.'
-            )
+        errorOrFallback(
+          error,
+          'auto.components.workflows.use-workflow-editor-session.saveFailed',
+          'Failed to save workflow.'
+        )
       )
     } finally {
       setSaving(false)
@@ -185,10 +182,13 @@ export function useWorkflowEditorSession({
   }, [documentRevision, editor, openRef, repoId, settings, status])
 
   const reloadFromDisk = useCallback(async () => {
-    if (!repoId || !openRef) {
+    if (!repoId) {
+      toast.error(noActiveProjectReason()) // F6: same toast path as a failed read below.
       return
     }
-    // Why no rethrow: called `void`-style from the conflict dialog's Reload button.
+    if (!openRef) {
+      return
+    }
     try {
       const result = await workflowRead(settings, { repo: repoId, ...openRef })
       if (result.definition) {
@@ -198,18 +198,21 @@ export function useWorkflowEditorSession({
       setConflict(null)
     } catch (error) {
       toast.error(
-        error instanceof Error
-          ? error.message
-          : translate(
-              'auto.components.workflows.use-workflow-editor-session.reloadFailed',
-              'Failed to reload the workflow from disk.'
-            )
+        errorOrFallback(
+          error,
+          'auto.components.workflows.use-workflow-editor-session.reloadFailed',
+          'Failed to reload the workflow from disk.'
+        )
       )
     }
   }, [editor, openRef, repoId, settings])
 
   const overwriteOnDisk = useCallback(async () => {
-    if (!repoId || !openRef) {
+    if (!repoId) {
+      toast.error(noActiveProjectReason()) // F6: same toast path as a failed write below.
+      return
+    }
+    if (!openRef) {
       return
     }
     setSaving(true)
@@ -227,17 +230,15 @@ export function useWorkflowEditorSession({
       setConflict(null)
     } catch (error) {
       if (hasRuntimeRpcErrorCode(error, 'workflow_file_conflict')) {
-        // Why: raced again against a second concurrent writer; ask the user again rather than loop.
-        setConflict('save')
+        setConflict('save') // Raced again — ask the user again rather than retry-looping.
         return
       }
       toast.error(
-        error instanceof Error
-          ? error.message
-          : translate(
-              'auto.components.workflows.use-workflow-editor-session.overwriteFailed',
-              'Failed to overwrite the workflow on disk.'
-            )
+        errorOrFallback(
+          error,
+          'auto.components.workflows.use-workflow-editor-session.overwriteFailed',
+          'Failed to overwrite the workflow on disk.'
+        )
       )
     } finally {
       setSaving(false)
