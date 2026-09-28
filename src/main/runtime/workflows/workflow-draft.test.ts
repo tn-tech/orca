@@ -284,7 +284,7 @@ describe('draftWorkflow', () => {
 
     expect(result.problems).toContainEqual(
       expect.objectContaining({
-        code: 'workflow_draft_node_unassigned',
+        code: 'graph_node_unassigned',
         nodeId: 'implement',
         severity: 'error'
       })

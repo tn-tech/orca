@@ -60,19 +60,6 @@ function draftProblem(code: string, message: string): WorkflowProblem {
   return { code, message, severity: 'error' }
 }
 
-/** US6 AS1: every dispatching node must name a role or an agent. */
-function unassignedNodeProblems(definition: Workflow): WorkflowProblem[] {
-  return definition.nodes
-    .filter((node) => node.type === 'agent' || node.type === 'router' || node.type === 'reflection')
-    .filter((node) => node.roleId === undefined && node.overrides?.agent === undefined)
-    .map((node) => ({
-      code: 'workflow_draft_node_unassigned',
-      message: `Node "${node.id}" has neither a role nor an agent.`,
-      nodeId: node.id,
-      severity: 'error'
-    }))
-}
-
 function sleep(ms: number, signal: AbortSignal | undefined): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -147,7 +134,8 @@ async function validateDraft(
   })
   return {
     definition: parsed.definition,
-    problems: [...parsed.problems, ...graphProblems, ...unassignedNodeProblems(parsed.definition)]
+    // US6 AS1 (every dispatching node names a role or an agent) is graph_node_unassigned.
+    problems: [...parsed.problems, ...graphProblems]
   }
 }
 

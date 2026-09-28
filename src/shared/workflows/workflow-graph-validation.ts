@@ -33,13 +33,25 @@ function isRoleDispatchNode(node: Node): node is RoleDispatchNode {
   return node.type === 'agent' || node.type === 'router' || node.type === 'reflection'
 }
 
-/** Every referenced roleId must exist, and a model/effort override needs agent support for it. */
+/**
+ * Every referenced roleId must exist, a model/effort override needs agent support for it, and a
+ * dispatching node needs an agent at all — otherwise it fails only mid-run, after upstream work.
+ */
 function checkRoleReferences(
   definition: Workflow,
   context: GraphValidationContext
 ): WorkflowProblem[] {
   const problems: WorkflowProblem[] = []
   for (const node of definition.nodes.filter(isRoleDispatchNode)) {
+    if (node.roleId === undefined && node.overrides?.agent === undefined) {
+      problems.push(
+        error({
+          code: 'graph_node_unassigned',
+          message: `Node "${node.id}" has no agent assigned: set a role or an agent override.`,
+          nodeId: node.id
+        })
+      )
+    }
     const role = node.roleId === undefined ? undefined : definition.roles[node.roleId]
     if (node.roleId !== undefined && !role) {
       problems.push(
