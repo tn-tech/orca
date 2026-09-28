@@ -17223,6 +17223,8 @@
           "runBlockedProblems": "Fix the problems below before running.",
           "addProjectAction": "Add a project",
           "selectProjectHint": "Or select an existing project from the sidebar.",
+          "relayout": "Re-layout",
+          "historyBlockedNoProject": "Select a project first.",
           "noActiveProject": "Add or select a project to create workflows."
         },
         "editor": {
@@ -17477,12 +17479,12 @@
             "stateFailed": "Failed",
             "stateCancelled": "Cancelled",
             "objectiveLabel": "Objective",
-            "objectivePlaceholder": "What should this run accomplish?",
+            "objectivePlaceholder": "Add CSV export",
             "stop": "Stop",
             "run": "Run",
-            "relayout": "Re-layout",
             "starting": "Starting the run…",
-            "objectiveRequired": "Enter an objective."
+            "objectiveRequired": "Enter an objective.",
+            "notReady": "Can't run yet."
           },
           "JoinBranchOutcomes": {
             "completed": "Completed",
@@ -17717,7 +17719,8 @@
           "close": "Close"
         },
         "SaveWorkflowButton": {
-          "nothingToSave": "No changes to save yet."
+          "nothingToSave": "No changes to save yet.",
+          "saving": "Saving…"
         }
       }
     },

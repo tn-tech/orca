@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { Loader2, ShieldCheck } from 'lucide-react'
+import { LayoutGrid, Loader2, ShieldCheck } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -177,7 +177,7 @@ export default function WorkflowsPage(): React.JSX.Element {
             </div>
           ) : (
             <>
-              <div className="flex flex-wrap shrink-0 items-center gap-x-2 gap-y-2 border-b border-border px-3 py-2 md:px-5">
+              <div className="flex flex-wrap shrink-0 items-center gap-2 border-b border-border px-3 py-2 md:px-5">
                 <AddNodeMenu
                   hasStartNode={session.editor.state.definition.nodes.some(
                     (node) => node.type === 'start'
@@ -194,27 +194,23 @@ export default function WorkflowsPage(): React.JSX.Element {
                   canUndo={session.status === 'ready' && session.editor.canUndo}
                   onUndo={controller.undo}
                 />
-                <div className="min-w-0 flex-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => session.editor.dispatch({ type: 'auto-layout' })}
+                >
+                  <LayoutGrid />
+                  {translate('auto.components.workflows.WorkflowsPage.relayout', 'Re-layout')}
+                </Button>
+                <div className="min-w-48 flex-1">
                   <RunToolbar
                     runState={run.snapshot?.state}
                     runObjective={run.snapshot?.objective}
                     canRun={controller.canRun}
-                    disabledReason={
-                      session.isDraft
-                        ? translate(
-                            'auto.components.workflows.WorkflowsPage.runBlockedDraft',
-                            'Save this draft before running it.'
-                          )
-                        : blockingProblems
-                          ? translate(
-                              'auto.components.workflows.WorkflowsPage.runBlockedProblems',
-                              'Fix the problems below before running.'
-                            )
-                          : undefined
-                    }
+                    disabledReason={controller.runDisabledReason}
                     starting={run.starting}
                     onRun={(objective) => void run.start(objective)}
-                    onRelayout={() => session.editor.dispatch({ type: 'auto-layout' })}
                   />
                 </div>
                 <RunControls
@@ -227,7 +223,19 @@ export default function WorkflowsPage(): React.JSX.Element {
                   onCancel={() => void run.stop()}
                 />
                 <RunHistoryButton
-                  disabled={!session.openRef || !controller.repoId}
+                  reason={
+                    !controller.repoId
+                      ? translate(
+                          'auto.components.workflows.WorkflowsPage.historyBlockedNoProject',
+                          'Select a project first.'
+                        )
+                      : !session.openRef
+                        ? translate(
+                            'auto.components.workflows.WorkflowsPage.historyBlocked',
+                            'Save the workflow first.'
+                          )
+                        : undefined
+                  }
                   onClick={() => setHistoryOpen(true)}
                 />
               </div>

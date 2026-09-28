@@ -2508,6 +2508,13 @@
           }
         }
       },
+      "workflows": {
+        "use-workflow-editor-session": {
+          "overwriteFailed": "Failed to overwrite the workflow on disk.",
+          "reloadFailed": "Failed to reload the workflow from disk.",
+          "saveFailed": "Failed to save workflow."
+        }
+      },
       "workspace": {
         "cleanup": {
           "WorkspaceCleanupDialog": {

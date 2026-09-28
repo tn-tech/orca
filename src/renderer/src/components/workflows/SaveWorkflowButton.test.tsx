@@ -82,7 +82,7 @@ describe('SaveWorkflowButton', () => {
     expect(onClick).toHaveBeenCalledOnce()
   })
 
-  it('is not draft-blocked: a dirty draft stays enabled with no reason', () => {
+  it('is not draft-blocked: a draft stays enabled even when not dirty', () => {
     renderButton({
       dirty: false,
       isDraft: true,
@@ -95,5 +95,60 @@ describe('SaveWorkflowButton', () => {
       'aria-disabled',
       'true'
     )
+  })
+
+  it('explains that a save is already in flight', async () => {
+    const user = userEvent.setup()
+    renderButton({
+      dirty: true,
+      isDraft: false,
+      saving: true,
+      blockingProblems: false,
+      onClick: vi.fn()
+    })
+
+    const button = screen.getByRole('button', { name: 'Save' })
+    expect(button).toHaveAttribute('aria-disabled', 'true')
+
+    await user.hover(button)
+    expect((await screen.findAllByText('Saving…')).length).toBeGreaterThan(0)
+  })
+
+  // Controller ruling, F5 fix round 1: the Tooltip used to mount only when disabled, so a reason
+  // appearing after Enter re-mounted the button (a different element type at the same position)
+  // and dropped focus. DisabledReasonButton keeps it mounted; this pins the whole flow.
+  it('keeps focus after Enter while dirty makes it un-dirty and disabled', async () => {
+    const user = userEvent.setup()
+    const onClick = vi.fn()
+    const { rerender } = render(
+      <TooltipProvider>
+        <SaveWorkflowButton
+          dirty
+          isDraft={false}
+          saving={false}
+          blockingProblems={false}
+          onClick={onClick}
+        />
+      </TooltipProvider>
+    )
+
+    const button = screen.getByRole('button', { name: 'Save' })
+    button.focus()
+    await user.keyboard('{Enter}')
+    expect(onClick).toHaveBeenCalledOnce()
+
+    rerender(
+      <TooltipProvider>
+        <SaveWorkflowButton
+          dirty={false}
+          isDraft={false}
+          saving={false}
+          blockingProblems={false}
+          onClick={onClick}
+        />
+      </TooltipProvider>
+    )
+
+    expect(screen.getByRole('button', { name: 'Save' })).toHaveFocus()
   })
 })

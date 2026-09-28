@@ -1,10 +1,10 @@
 import React, { useId, useState } from 'react'
-import { LayoutGrid, Play, Square } from 'lucide-react'
+import { Play, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { translate } from '@/i18n/i18n'
+import DisabledReasonButton from '../DisabledReasonButton'
 import type { WorkflowRunState } from '../../../../../shared/workflows/workflow-node-states'
 
 /** Waiting still counts as active (a pending approval/question), FR-032. */
@@ -42,7 +42,7 @@ export type RunToolbarProps = {
   runObjective?: string
   /** FR-009: Run stays disabled while a blocking validation problem remains. */
   canRun: boolean
-  /** Shown as the Run button's title when `canRun` is false and there's a reason to explain
+  /** Shown as the Run button's reason when `canRun` is false and there's a reason to explain
    *  (e.g. US6 AS2: an unsaved draft has no file to run against yet). */
   disabledReason?: string
   starting: boolean
@@ -51,11 +51,11 @@ export type RunToolbarProps = {
   stopping?: boolean
   onRun: (objective: string) => void
   onStop?: () => void
-  /** Re-runs `workflow-auto-layout.ts` for nodes the user hasn't dragged (FR-010). */
-  onRelayout: () => void
 }
 
-/** Run view controls (US1 AS2/AS3): an objective, Run/Stop, and auto-layout. */
+/** Run view controls (US1 AS2/AS3): an objective and Run/Stop. Re-layout lives next to Add node
+ *  / Wrap in Loop in `WorkflowsPage.tsx` — keeping it here nested this row inside the outer
+ *  toolbar's own wrap, which read raggedly once both wrapped independently (F5 fix round 1). */
 export default function RunToolbar({
   runState,
   runObjective,
@@ -64,8 +64,7 @@ export default function RunToolbar({
   starting,
   stopping,
   onRun,
-  onStop,
-  onRelayout
+  onStop
 }: RunToolbarProps): React.JSX.Element {
   // Not cleared on run start/finish: keeping the typed objective around is a relaunch convenience
   // once the input reappears after the run reaches a terminal state.
@@ -73,11 +72,11 @@ export default function RunToolbar({
   const objectiveId = useId()
   const isActive = runState !== undefined && ACTIVE_RUN_STATES.has(runState)
   const objectiveTrimmed = objective.trim()
-  const runDisabled = !canRun || starting || objectiveTrimmed.length === 0
-  // F5: priority is the external reason (draft/blocking problems, from WorkflowsPage), then the
+  // Priority is the external reason (draft/blocking problems, from WorkflowsPage), then the
   // in-flight start, then the empty objective — each state gets exactly one explanation.
   const runReason = !canRun
-    ? disabledReason
+    ? (disabledReason ??
+      translate('auto.components.workflows.run-view.RunToolbar.notReady', "Can't run yet."))
     : starting
       ? translate('auto.components.workflows.run-view.RunToolbar.starting', 'Starting the run…')
       : objectiveTrimmed.length === 0
@@ -87,37 +86,16 @@ export default function RunToolbar({
           )
         : undefined
 
-  const runButton = (
-    <Button
-      type="button"
-      size="sm"
-      aria-disabled={runDisabled}
-      // Inline style, not a class: <Button>'s contract owns opacity (shadcn/no-restyle), and
-      // `disabled:opacity-50` never triggers since `disabled` is deliberately unset above.
-      style={runDisabled ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
-      onClick={(event) => {
-        if (runDisabled) {
-          event.preventDefault()
-          return
-        }
-        onRun(objectiveTrimmed)
-      }}
-    >
-      <Play />
-      {translate('auto.components.workflows.run-view.RunToolbar.run', 'Run')}
-    </Button>
-  )
-
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-      <div className="min-w-40 flex-1">
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="flex min-w-48 flex-1 items-center gap-1.5">
         {isActive ? (
           <p className="truncate text-sm text-foreground" title={runObjective}>
             {runObjective}
           </p>
         ) : (
           <>
-            <Label htmlFor={objectiveId} className="sr-only">
+            <Label htmlFor={objectiveId} className="shrink-0">
               {translate(
                 'auto.components.workflows.run-view.RunToolbar.objectiveLabel',
                 'Objective'
@@ -125,12 +103,12 @@ export default function RunToolbar({
             </Label>
             <Input
               id={objectiveId}
-              className="h-8"
+              className="h-8 min-w-28 flex-1"
               value={objective}
               onChange={(event) => setObjective(event.target.value)}
               placeholder={translate(
                 'auto.components.workflows.run-view.RunToolbar.objectivePlaceholder',
-                'What should this run accomplish?'
+                'Add CSV export'
               )}
             />
           </>
@@ -148,20 +126,16 @@ export default function RunToolbar({
             {translate('auto.components.workflows.run-view.RunToolbar.stop', 'Stop')}
           </Button>
         ) : null
-      ) : runReason === undefined ? (
-        runButton
       ) : (
-        <Tooltip>
-          <TooltipTrigger asChild>{runButton}</TooltipTrigger>
-          <TooltipContent side="top" sideOffset={4}>
-            {runReason}
-          </TooltipContent>
-        </Tooltip>
+        <DisabledReasonButton
+          reason={runReason}
+          onClick={() => onRun(objectiveTrimmed)}
+          className="shrink-0"
+        >
+          <Play />
+          {translate('auto.components.workflows.run-view.RunToolbar.run', 'Run')}
+        </DisabledReasonButton>
       )}
-      <Button type="button" variant="outline" size="sm" onClick={onRelayout}>
-        <LayoutGrid />
-        {translate('auto.components.workflows.run-view.RunToolbar.relayout', 'Re-layout')}
-      </Button>
     </div>
   )
 }

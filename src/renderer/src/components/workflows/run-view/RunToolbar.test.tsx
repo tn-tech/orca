@@ -15,14 +15,7 @@ describe('RunToolbar', () => {
     const onRun = vi.fn()
     render(
       <TooltipProvider>
-        <RunToolbar
-          canRun
-          starting={false}
-          stopping={false}
-          onRun={onRun}
-          onStop={vi.fn()}
-          onRelayout={vi.fn()}
-        />
+        <RunToolbar canRun starting={false} stopping={false} onRun={onRun} onStop={vi.fn()} />
       </TooltipProvider>
     )
 
@@ -38,7 +31,8 @@ describe('RunToolbar', () => {
     expect(onRun).toHaveBeenCalledWith('Add CSV export')
   })
 
-  it('disables Run while validation problems block it', () => {
+  it('disables Run while validation problems block it, with a fallback reason', async () => {
+    const user = userEvent.setup()
     render(
       <TooltipProvider>
         <RunToolbar
@@ -47,7 +41,6 @@ describe('RunToolbar', () => {
           stopping={false}
           onRun={vi.fn()}
           onStop={vi.fn()}
-          onRelayout={vi.fn()}
         />
       </TooltipProvider>
     )
@@ -55,7 +48,11 @@ describe('RunToolbar', () => {
       target: { value: 'Add CSV export' }
     })
 
-    expect(screen.getByRole('button', { name: 'Run' })).toHaveAttribute('aria-disabled', 'true')
+    const runButton = screen.getByRole('button', { name: 'Run' })
+    expect(runButton).toHaveAttribute('aria-disabled', 'true')
+
+    await user.hover(runButton)
+    expect((await screen.findAllByText("Can't run yet.")).length).toBeGreaterThan(0)
   })
 
   // F5: an empty objective used to disable Run with no explanation anywhere (audit B2).
@@ -63,14 +60,7 @@ describe('RunToolbar', () => {
     const user = userEvent.setup()
     render(
       <TooltipProvider>
-        <RunToolbar
-          canRun
-          starting={false}
-          stopping={false}
-          onRun={vi.fn()}
-          onStop={vi.fn()}
-          onRelayout={vi.fn()}
-        />
+        <RunToolbar canRun starting={false} stopping={false} onRun={vi.fn()} onStop={vi.fn()} />
       </TooltipProvider>
     )
 
@@ -92,7 +82,6 @@ describe('RunToolbar', () => {
           stopping={false}
           onRun={onRun}
           onStop={vi.fn()}
-          onRelayout={vi.fn()}
         />
       </TooltipProvider>
     )
@@ -116,7 +105,6 @@ describe('RunToolbar', () => {
           runObjective="Add CSV export"
           onRun={vi.fn()}
           onStop={onStop}
-          onRelayout={vi.fn()}
         />
       </TooltipProvider>
     )
@@ -141,7 +129,6 @@ describe('RunToolbar', () => {
           runObjective="Add CSV export"
           onRun={vi.fn()}
           onStop={vi.fn()}
-          onRelayout={vi.fn()}
         />
       </TooltipProvider>
     )
@@ -152,8 +139,7 @@ describe('RunToolbar', () => {
   })
 
   // F5: disabledReason (draft/blocking-problems, set by WorkflowsPage) takes priority over the
-  // local empty-objective reason, and must reach hover/screen-readers via aria-disabled, not a
-  // `title` attr on a DOM-disabled button (F5 review of the earlier `title`-only approach).
+  // local empty-objective reason, and must reach hover/screen-readers via aria-disabled.
   it('explains an external disabledReason (e.g. an unsaved draft) on hover', async () => {
     const user = userEvent.setup()
     render(
@@ -165,7 +151,6 @@ describe('RunToolbar', () => {
           stopping={false}
           onRun={vi.fn()}
           onStop={vi.fn()}
-          onRelayout={vi.fn()}
         />
       </TooltipProvider>
     )
@@ -187,14 +172,7 @@ describe('RunToolbar', () => {
     const user = userEvent.setup()
     render(
       <TooltipProvider>
-        <RunToolbar
-          canRun
-          starting
-          stopping={false}
-          onRun={vi.fn()}
-          onStop={vi.fn()}
-          onRelayout={vi.fn()}
-        />
+        <RunToolbar canRun starting stopping={false} onRun={vi.fn()} onStop={vi.fn()} />
       </TooltipProvider>
     )
     fireEvent.change(screen.getByRole('textbox', { name: 'Objective' }), {
@@ -206,22 +184,15 @@ describe('RunToolbar', () => {
     expect((await screen.findAllByText('Starting the run…')).length).toBeGreaterThan(0)
   })
 
-  it('calls onRelayout from the Re-layout action', () => {
-    const onRelayout = vi.fn()
+  // Controller ruling, F5 fix round 1: Re-layout moved next to Add node / Wrap in Loop in
+  // WorkflowsPage.tsx, so RunToolbar's own wrap no longer competes with the outer toolbar's.
+  it('has a visible Objective label', () => {
     render(
       <TooltipProvider>
-        <RunToolbar
-          canRun
-          starting={false}
-          stopping={false}
-          onRun={vi.fn()}
-          onStop={vi.fn()}
-          onRelayout={onRelayout}
-        />
+        <RunToolbar canRun starting={false} stopping={false} onRun={vi.fn()} onStop={vi.fn()} />
       </TooltipProvider>
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Re-layout' }))
-    expect(onRelayout).toHaveBeenCalled()
+    expect(screen.getByText('Objective')).not.toHaveClass('sr-only')
   })
 })

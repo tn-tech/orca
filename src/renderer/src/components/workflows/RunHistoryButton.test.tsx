@@ -14,7 +14,7 @@ describe('RunHistoryButton', () => {
   it('is enabled with no tooltip reason when a workflow is open', () => {
     render(
       <TooltipProvider>
-        <RunHistoryButton disabled={false} onClick={vi.fn()} />
+        <RunHistoryButton reason={undefined} onClick={vi.fn()} />
       </TooltipProvider>
     )
 
@@ -28,7 +28,7 @@ describe('RunHistoryButton', () => {
     const user = userEvent.setup()
     render(
       <TooltipProvider>
-        <RunHistoryButton disabled onClick={vi.fn()} />
+        <RunHistoryButton reason="Save the workflow first." onClick={vi.fn()} />
       </TooltipProvider>
     )
 
@@ -44,7 +44,7 @@ describe('RunHistoryButton', () => {
     const onClick = vi.fn()
     render(
       <TooltipProvider>
-        <RunHistoryButton disabled onClick={onClick} />
+        <RunHistoryButton reason="Save the workflow first." onClick={onClick} />
       </TooltipProvider>
     )
 
@@ -56,7 +56,7 @@ describe('RunHistoryButton', () => {
     const onClick = vi.fn()
     render(
       <TooltipProvider>
-        <RunHistoryButton disabled={false} onClick={onClick} />
+        <RunHistoryButton reason={undefined} onClick={onClick} />
       </TooltipProvider>
     )
 

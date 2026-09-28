@@ -11,14 +11,9 @@ export function attemptReasonClassName(state: WorkflowAttemptState): string {
   return state === 'failed' ? 'text-destructive' : 'text-muted-foreground'
 }
 
-/** F2 (moved to F5): `failureCode` (`workflow-attempt-failure-code.ts`) is the open,
- *  machine-readable vocabulary — an unknown or absent code falls back to the free-text
- *  `failureReason`. `join_skipped`/`approval_timed_out`/`approval_rejected` predate that field:
- *  they're machine reason codes stored directly as `failureReason` text
- *  (`workflow-join-settlement.ts`'s `JOIN_SKIPPED_REASON`, `workflow-approval-deadlines.ts`'s
- *  `APPROVAL_TIMED_OUT_REASON`, `workflow-approval-rejection.ts`'s `APPROVAL_REJECTED_REASON`),
- *  not copy meant to be read as-is — every other `failureReason` is already a free-text message
- *  from the engine. */
+/** `failureCode` is the open vocabulary (`workflow-attempt-failure-code.ts`); an unknown or absent
+ *  code falls back to `failureReason`, which is either a legacy machine code
+ *  (`join_skipped`/`approval_timed_out`/`approval_rejected`) or free engine text. */
 export function attemptReasonLabel(failureReason: string, failureCode?: string): string {
   if (failureCode === AGENT_READINESS_TIMEOUT_FAILURE_CODE) {
     return translate(
