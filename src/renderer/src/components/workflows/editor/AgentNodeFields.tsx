@@ -23,7 +23,7 @@ import SkillReferenceList from '../roles/SkillReferenceList'
 import AgentNodeArtifactsField from './AgentNodeArtifactsField'
 import AgentNodeResultContractField from './AgentNodeResultContractField'
 import { InspectorField } from './InspectorField'
-import RoleDispatchFields from './RoleDispatchFields'
+import { NodeRoleDispatchFields } from './RoleDispatchFields'
 import { withRoleDispatchOverrides } from './workflow-role-dispatch-overrides'
 
 export type AgentNodeFieldsProps = {
@@ -72,8 +72,6 @@ export default function AgentNodeFields({
   const systemPromptId = useId()
   const role = node.roleId ? roles[node.roleId] : undefined
   const effectiveAgent = node.overrides?.agent ?? role?.agent
-  const effectiveModel = node.overrides?.model ?? role?.model
-  const effectiveEffort = node.overrides?.effort ?? role?.effort
   const effectiveSystemPrompt = node.overrides?.systemPrompt ?? role?.systemPrompt ?? ''
   const effectiveSkills = node.overrides?.skills ?? role?.skills ?? []
 
@@ -143,20 +141,7 @@ export default function AgentNodeFields({
         </div>
       ) : null}
 
-      <RoleDispatchFields
-        agent={effectiveAgent}
-        model={effectiveModel}
-        effort={effectiveEffort}
-        prompt={node.prompt}
-        onAgentChange={(agent) =>
-          onChange(withRoleDispatchOverrides(node, { agent, model: undefined, effort: undefined }))
-        }
-        onModelChange={(model) =>
-          onChange(withRoleDispatchOverrides(node, { model, effort: undefined }))
-        }
-        onEffortChange={(effort) => onChange(withRoleDispatchOverrides(node, { effort }))}
-        onPromptChange={(prompt) => onChange({ ...node, prompt })}
-      />
+      <NodeRoleDispatchFields node={node} role={role} onChange={onChange} />
 
       <InspectorField htmlFor={systemPromptId} label={roleFieldLabel('systemPrompt')}>
         <Textarea

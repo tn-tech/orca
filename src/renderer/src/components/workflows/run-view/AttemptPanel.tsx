@@ -43,8 +43,9 @@ export type AttemptPanelProps = {
   /** Forwarded to `RoleProposalPanel` (US7): an Accept just wrote the workflow file, so the open
    *  editor should re-check for an external change if it has this workflow open. */
   onWorkflowFileChanged?: () => void
-  /** Forwarded to `RoleProposalPanel`: reloads the open editor from disk, offered on a proposal's
-   *  `workflow_file_conflict`. */
+  /** Forwarded to `RoleProposalPanel`: re-checks the open editor against disk, offered on a
+   *  proposal's `workflow_file_conflict`. Dirty-safe (review round 1) — the caller must route this
+   *  through `session.checkForExternalChange`, never a raw discard-and-reload. */
   onReloadFromDisk?: () => void | Promise<void>
 }
 

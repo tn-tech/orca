@@ -111,6 +111,20 @@ export function diffLineCounts(lines: readonly DiffLine[]): { added: number; rem
   )
 }
 
+/** Review round 1: a proposal that only flips `required` (name/source unchanged) must still show
+ *  as a diff, not disappear into an identical-looking line. */
+function skillRequiredText(skill: SkillReference): string {
+  return skill.required
+    ? translate(
+        'auto.components.workflows.run-view.workflow-role-proposal-diff.skillRequired',
+        'required'
+      )
+    : translate(
+        'auto.components.workflows.run-view.workflow-role-proposal-diff.skillOptional',
+        'optional'
+      )
+}
+
 function skillSourceText(skill: SkillReference): string {
   if (skill.source.kind === 'plugin') {
     return translate(
@@ -135,8 +149,12 @@ export function formatSkillReferenceLines(skills: readonly SkillReference[]): st
     .map((skill) =>
       translate(
         'auto.components.workflows.run-view.workflow-role-proposal-diff.skillLine',
-        '{{name}} ({{source}})',
-        { name: skill.name, source: skillSourceText(skill) }
+        '{{name}} ({{source}}, {{required}})',
+        {
+          name: skill.name,
+          source: skillSourceText(skill),
+          required: skillRequiredText(skill)
+        }
       )
     )
     .join('\n')

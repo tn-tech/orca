@@ -206,7 +206,11 @@ export default function WorkflowsPage(): React.JSX.Element {
                       runtimeEnvironmentId={runtimeEnvironmentId}
                       settings={controller.settings}
                       onWorkflowFileChanged={() => void session.checkForExternalChange()}
-                      onReloadFromDisk={session.reloadFromDisk}
+                      // Review round 1 (Important): not `session.reloadFromDisk` — that discards
+                      // unsaved edits unconditionally. `checkForExternalChange` re-reads the file
+                      // and only adopts it silently when the editor is clean, raising the existing
+                      // conflict dialog instead of clobbering a dirty draft.
+                      onReloadFromDisk={() => void session.checkForExternalChange()}
                     />
                   ) : (
                     <NodeInspector

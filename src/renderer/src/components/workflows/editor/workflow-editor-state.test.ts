@@ -4,6 +4,7 @@ import type {
   AgentNode,
   EndNode,
   LoopNode,
+  ReflectionNode,
   Role,
   StartNode,
   Workflow
@@ -65,6 +66,10 @@ function agentNode(id: string, patch: Partial<AgentNode> = {}): AgentNode {
   }
 }
 
+function reflectionNode(id: string, patch: Partial<ReflectionNode> = {}): ReflectionNode {
+  return { id, type: 'reflection', title: id, prompt: 'Reflect on the run.', ...patch }
+}
+
 function loopNode(id: string, patch: Partial<LoopNode> = {}): LoopNode {
   return {
     id,
@@ -117,6 +122,23 @@ describe('workflow editor state: add node, connect nodes', () => {
 
     expect(state.definition.edges).toHaveLength(1)
     expect(state.definition.edges[0]).toMatchObject({ from: 'start', to: 'end' })
+  })
+
+  it('adds a Reflection node the same way as any other role-dispatching node (review round 1 fold-in)', () => {
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+    state = dispatch(state, { type: 'add-node', node: startNode(), position: { x: 0, y: 0 } })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: reflectionNode('reflect', { roleId: 'dev' }),
+      position: { x: 200, y: 0 }
+    })
+    state = dispatch(state, { type: 'add-node', node: endNode(), position: { x: 400, y: 0 } })
+    state = dispatch(state, { type: 'connect', from: 'start', to: 'reflect' })
+    state = dispatch(state, { type: 'connect', from: 'reflect', to: 'end' })
+
+    expect(state.definition.nodes).toContainEqual(reflectionNode('reflect', { roleId: 'dev' }))
+    expect(state.definition.layout.reflect).toEqual({ x: 200, y: 0 })
+    expect(validateWorkflowGraph(state.definition, permissiveContext)).toEqual([])
   })
 
   it('refuses a connection that would close a cycle outside a Loop node', () => {

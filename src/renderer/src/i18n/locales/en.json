@@ -17481,7 +17481,7 @@
             "fieldSystemPrompt": "System prompt",
             "fieldSkills": "Skills",
             "exportNotImported": "Only a role imported from a repository can be exported.",
-            "fileConflict": "\"{{role}}\" changed on disk since this run. Reload the workflow to see the current version before deciding.",
+            "fileConflict": "\"{{role}}\" changed on disk since this run, so this proposal — a frozen snapshot from when the run happened — can't be applied as-is. Reload the workflow to see the current version before deciding.",
             "reload": "Reload workflow",
             "notAllowlisted": "The role's source is not on the project allowlist. Add it to workflows.allowedSources in {{path}}.",
             "methodNotSupported": "This isn't available on this host yet.",
@@ -17496,7 +17496,9 @@
             "unchangedLineMany": "… {{count}} unchanged lines …",
             "skillSourcePlugin": "plugin: {{plugin}}",
             "skillSourceRepositoryVersioned": "{{location}} @ {{version}}",
-            "skillLine": "{{name}} ({{source}})"
+            "skillLine": "{{name}} ({{source}}, {{required}})",
+            "skillRequired": "required",
+            "skillOptional": "optional"
           }
         },
         "use-workflow-editor-session": {

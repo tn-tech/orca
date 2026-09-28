@@ -10,6 +10,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { getAgentCatalog } from '@/lib/agent-catalog'
 import { translate } from '@/i18n/i18n'
+import type { Role } from '../../../../../shared/workflows/workflow-definition-types'
 import { InspectorField } from './InspectorField'
 import { getModelEffortAvailability } from './workflow-editor-commands'
 import {
@@ -17,6 +18,10 @@ import {
   getAgentCatalogModels,
   getModelEffortChoices
 } from './workflow-agent-model-catalog'
+import {
+  withRoleDispatchOverrides,
+  type RoleDispatchOverrides
+} from './workflow-role-dispatch-overrides'
 
 export type AgentModelEffortFieldsProps = {
   agent?: string
@@ -206,5 +211,64 @@ export default function RoleDispatchFields({
         />
       </InspectorField>
     </>
+  )
+}
+
+/** A role-dispatching node's own shape (data-model.md §1 `roleDispatchShape`): AgentNode,
+ *  RouterNode and ReflectionNode all satisfy this. */
+export type RoleDispatchNode = {
+  prompt: string
+  overrides?: RoleDispatchOverrides
+}
+
+/** Effective agent/model/effort: the node's own override, falling back to its assigned role. */
+export function effectiveRoleDispatch(
+  node: RoleDispatchNode,
+  role: Role | undefined
+): { agent?: string; model?: string; effort?: string } {
+  return {
+    agent: node.overrides?.agent ?? role?.agent,
+    model: node.overrides?.model ?? role?.model,
+    effort: node.overrides?.effort ?? role?.effort
+  }
+}
+
+export type NodeRoleDispatchFieldsProps<T extends RoleDispatchNode> = {
+  node: T
+  role: Role | undefined
+  onChange: (node: T) => void
+}
+
+/**
+ * `RoleDispatchFields` wired to a role-dispatching node's override-merge convention
+ * (`withRoleDispatchOverrides`: an agent change resets model/effort, a model change resets
+ * effort). Extracted from three identical copies in `AgentNodeFields`, `RouterNodeFields` and
+ * `ReflectionNodeFields` (review round 1 fold-in) — a pure refactor, no behavior change.
+ */
+export function NodeRoleDispatchFields<T extends RoleDispatchNode>({
+  node,
+  role,
+  onChange
+}: NodeRoleDispatchFieldsProps<T>): React.JSX.Element {
+  const { agent, model, effort } = effectiveRoleDispatch(node, role)
+  return (
+    <RoleDispatchFields
+      agent={agent}
+      model={model}
+      effort={effort}
+      prompt={node.prompt}
+      onAgentChange={(nextAgent) =>
+        onChange(
+          withRoleDispatchOverrides(node, { agent: nextAgent, model: undefined, effort: undefined })
+        )
+      }
+      onModelChange={(nextModel) =>
+        onChange(withRoleDispatchOverrides(node, { model: nextModel, effort: undefined }))
+      }
+      onEffortChange={(nextEffort) =>
+        onChange(withRoleDispatchOverrides(node, { effort: nextEffort }))
+      }
+      onPromptChange={(prompt) => onChange({ ...node, prompt })}
+    />
   )
 }

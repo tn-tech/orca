@@ -3,8 +3,7 @@ import type {
   ReflectionNode,
   Workflow
 } from '../../../../../shared/workflows/workflow-definition-types'
-import RoleDispatchFields from './RoleDispatchFields'
-import { withRoleDispatchOverrides } from './workflow-role-dispatch-overrides'
+import { NodeRoleDispatchFields } from './RoleDispatchFields'
 
 export type ReflectionNodeFieldsProps = {
   node: ReflectionNode
@@ -22,24 +21,5 @@ export default function ReflectionNodeFields({
   onChange
 }: ReflectionNodeFieldsProps): React.JSX.Element {
   const role = node.roleId ? roles[node.roleId] : undefined
-  const effectiveAgent = node.overrides?.agent ?? role?.agent
-  const effectiveModel = node.overrides?.model ?? role?.model
-  const effectiveEffort = node.overrides?.effort ?? role?.effort
-
-  return (
-    <RoleDispatchFields
-      agent={effectiveAgent}
-      model={effectiveModel}
-      effort={effectiveEffort}
-      prompt={node.prompt}
-      onAgentChange={(agent) =>
-        onChange(withRoleDispatchOverrides(node, { agent, model: undefined, effort: undefined }))
-      }
-      onModelChange={(model) =>
-        onChange(withRoleDispatchOverrides(node, { model, effort: undefined }))
-      }
-      onEffortChange={(effort) => onChange(withRoleDispatchOverrides(node, { effort }))}
-      onPromptChange={(prompt) => onChange({ ...node, prompt })}
-    />
-  )
+  return <NodeRoleDispatchFields node={node} role={role} onChange={onChange} />
 }

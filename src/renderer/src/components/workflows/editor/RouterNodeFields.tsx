@@ -9,9 +9,8 @@ import type {
   Workflow
 } from '../../../../../shared/workflows/workflow-definition-types'
 import { InspectorField } from './InspectorField'
-import RoleDispatchFields from './RoleDispatchFields'
+import { NodeRoleDispatchFields } from './RoleDispatchFields'
 import { invalidChoiceIndices } from './workflow-router-choices'
-import { withRoleDispatchOverrides } from './workflow-role-dispatch-overrides'
 
 export type RouterNodeFieldsProps = {
   node: RouterNode
@@ -28,9 +27,6 @@ export default function RouterNodeFields({
   onChange
 }: RouterNodeFieldsProps): React.JSX.Element {
   const role = node.roleId ? roles[node.roleId] : undefined
-  const effectiveAgent = node.overrides?.agent ?? role?.agent
-  const effectiveModel = node.overrides?.model ?? role?.model
-  const effectiveEffort = node.overrides?.effort ?? role?.effort
 
   // Why: choices have no id of their own; a stable per-row key keeps a row's input (and focus)
   // attached to that row when a different row is removed, instead of the array index. Lazy-
@@ -63,20 +59,7 @@ export default function RouterNodeFields({
 
   return (
     <>
-      <RoleDispatchFields
-        agent={effectiveAgent}
-        model={effectiveModel}
-        effort={effectiveEffort}
-        prompt={node.prompt}
-        onAgentChange={(agent) =>
-          onChange(withRoleDispatchOverrides(node, { agent, model: undefined, effort: undefined }))
-        }
-        onModelChange={(model) =>
-          onChange(withRoleDispatchOverrides(node, { model, effort: undefined }))
-        }
-        onEffortChange={(effort) => onChange(withRoleDispatchOverrides(node, { effort }))}
-        onPromptChange={(prompt) => onChange({ ...node, prompt })}
-      />
+      <NodeRoleDispatchFields node={node} role={role} onChange={onChange} />
 
       <InspectorField
         label={translate(

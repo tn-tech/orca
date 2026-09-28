@@ -121,6 +121,21 @@ describe('roleProposalFieldDiffs', () => {
     ).toBe(true)
   })
 
+  it('reflects a required-flag change even when name and source stay the same (review round 1)', () => {
+    const before = role({
+      skills: [{ name: 'lint', source: { kind: 'plugin', plugin: 'lint-plugin' }, required: true }]
+    })
+    const change: RoleProposalChange = {
+      skills: [{ name: 'lint', source: { kind: 'plugin', plugin: 'lint-plugin' }, required: false }]
+    }
+
+    const diffs = roleProposalFieldDiffs(before, change)
+
+    expect(diffs).toHaveLength(1)
+    expect(diffs[0]?.lines.some((line) => line.kind === 'del')).toBe(true)
+    expect(diffs[0]?.lines.some((line) => line.kind === 'add')).toBe(true)
+  })
+
   it('treats a missing baseline role as an empty value', () => {
     const change: RoleProposalChange = { systemPrompt: 'Brand new prompt.' }
 

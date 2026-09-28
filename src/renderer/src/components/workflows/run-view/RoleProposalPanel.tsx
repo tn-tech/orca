@@ -231,7 +231,7 @@ export function RoleProposalCard({
           <p>
             {translate(
               'auto.components.workflows.run-view.RoleProposalPanel.fileConflict',
-              '"{{role}}" changed on disk since this run. Reload the workflow to see the current version before deciding.',
+              '"{{role}}" changed on disk since this run, so this proposal — a frozen snapshot from when the run happened — can\'t be applied as-is. Reload the workflow to see the current version before deciding.',
               { role: role?.name ?? proposal.roleId }
             )}
           </p>
@@ -319,9 +319,11 @@ export type RoleProposalPanelProps = {
    *  `checkForExternalChange`): silently reloads when clean, or raises the existing conflict
    *  dialog when dirty, so an accepted proposal never gets silently clobbered or silently lost. */
   onWorkflowFileChanged?: () => void
-  /** Discards the open editor's local copy and reloads from disk — offered on
-   *  `workflow_file_conflict` (the role changed on disk since the run), the same action
-   *  `FileConflictDialog`'s Reload button takes. */
+  /** Re-checks the open editor against disk — offered on `workflow_file_conflict` (the role
+   *  changed on disk since the run). Review round 1 (Important): callers must pass
+   *  `session.checkForExternalChange`, not a raw reload — that adopts the newer file silently
+   *  only when the editor has no unsaved edits, and raises the existing conflict dialog instead
+   *  of clobbering them otherwise. */
   onReloadFromDisk?: () => void | Promise<void>
 }
 
