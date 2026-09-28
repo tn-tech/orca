@@ -6,6 +6,7 @@ import { getNewWorktreeCardStyleSearchEntry } from './new-worktree-card-style-se
 import { getNativeChatExperimentalSearchEntry } from './native-chat-experimental-search-entry'
 import { getEphemeralVmsSearchEntry } from './ephemeral-vms-search'
 import { getWorkflowsTrustSearchEntry } from './workflows-trust-search'
+import { getWorkflowsExperimentalSearchEntry } from './workflows-experimental-search-entry'
 
 export const getExperimentalPaneSearchEntries = createLocalizedCatalog(
   (): SettingsSearchEntry[] => [
@@ -182,6 +183,7 @@ export const getExperimentalPaneSearchEntries = createLocalizedCatalog(
     },
     getNewWorktreeCardStyleSearchEntry(),
     getEphemeralVmsSearchEntry(),
+    getWorkflowsExperimentalSearchEntry(),
     getWorkflowsTrustSearchEntry()
   ]
 )
@@ -226,6 +228,9 @@ export function getExperimentalSearchEntry() {
     ),
     ephemeralVms: findEntry(
       translate('auto.components.settings.ephemeralVms.search.cloudVmTitle', 'Cloud VM')
+    ),
+    workflows: findEntry(
+      translate('auto.components.settings.experimental.search.workflows.title', 'Workflows')
     ),
     workflowsTrust: findEntry(
       translate('auto.components.settings.workflowsTrust.search.title', 'Trusted skill sources')

@@ -9628,7 +9628,18 @@
               "board": "board",
               "inWindow": "in-window",
               "worktrees": "worktrees"
+            },
+            "workflows": {
+              "title": "Workflows",
+              "description": "Visual DAG automation that chains agent and tool steps into a repeatable run.",
+              "workflow": "workflow",
+              "dag": "dag",
+              "automation": "automation",
+              "pipeline": "pipeline"
             }
+          },
+          "workflows": {
+            "toggleLabel": "Toggle Workflows"
           }
         },
         "floating": {
@@ -17540,7 +17551,13 @@
             "details": "Details",
             "open": "Open",
             "detailError": "Couldn't load this run's details.",
-            "loadMore": "Load more"
+            "loadMore": "Load more",
+            "listNotImplemented": "Run history isn't available on this host yet.",
+            "retryList": "Retry",
+            "retryDetails": "Retry",
+            "rerunRefused": "This run can't be rerun right now.",
+            "rerunWorkspaceUnavailable": "This run's workspace isn't available right now.",
+            "rerunRestartsLoop": "Restarts the whole loop"
           }
         },
         "use-workflow-editor-session": {

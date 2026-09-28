@@ -472,6 +472,38 @@ describe('ExperimentalPane', () => {
     root.unmount()
   })
 
+  it('renders the Workflows toggle as an off-by-default searchable experimental switch', () => {
+    const settings = getDefaultSettings('/tmp')
+    const markup = renderToStaticMarkup(
+      <ExperimentalPane settings={settings} updateSettings={vi.fn()} />
+    )
+
+    expect(settings.experimentalWorkflows).toBe(false)
+    expect(markup).toContain('Workflows')
+    const workflowsSection = markup.split('id="experimental-workflows"')[1] ?? ''
+    expect(workflowsSection).toContain('aria-checked="false"')
+    expect(getExperimentalPaneSearchEntries().map((entry) => entry.title)).toContain('Workflows')
+  })
+
+  it('enables Workflows through the experimental switch', async () => {
+    const updateSettings = vi.fn()
+    const { root, container } = await renderExperimentalPane({ updateSettings })
+
+    const switchButton = container.querySelector<HTMLButtonElement>(
+      '#experimental-workflows button[role="switch"]'
+    )
+    if (!switchButton) {
+      throw new Error('Workflows switch was not rendered')
+    }
+
+    await act(async () => {
+      switchButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(updateSettings).toHaveBeenCalledWith({ experimentalWorkflows: true })
+    root.unmount()
+  })
+
   it('hides the trusted-sources settings section while Workflows itself is off', () => {
     const markup = renderToStaticMarkup(
       <ExperimentalPane settings={getDefaultSettings('/tmp')} updateSettings={vi.fn()} />
