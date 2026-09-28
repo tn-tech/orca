@@ -7,10 +7,10 @@ import type {
   Workflow,
   WorkflowProblem
 } from './workflow-definition-types'
+import { checkLoopNodes } from './workflow-graph-loop-rules'
 import {
   checkCycles,
   checkJoinNodes,
-  checkLoopNodes,
   checkPortedNodes,
   checkReachability,
   checkStartAndEnd

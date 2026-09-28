@@ -781,6 +781,34 @@ describe('workflow editor state: unwrap Loop (F4)', () => {
     expect(exitEdge?.fromPort).toBeUndefined()
   })
 
+  it('de-duplicates rewritten edges that collide on the same (from, to) after unwrap (F4 re-review 1, Minor: Unwrap duplicate edges)', () => {
+    // A body-sourced exit edge (what wrap-in-loop itself produces) and a loop-sourced one drawn
+    // later, both to 'end', both rewrite to the same "work -> end" — unwrap must keep only one.
+    let state = createInitialWorkflowEditorState(emptyWorkflow())
+    state = dispatch(state, { type: 'add-node', node: startNode(), position: { x: 0, y: 0 } })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: loopNode('loop', { maxIterations: 3 }),
+      position: { x: 200, y: 0 }
+    })
+    state = dispatch(state, {
+      type: 'add-node',
+      node: agentNode('work', { overrides: { agent: 'claude' } }),
+      position: { x: 200, y: 0 }
+    })
+    state = dispatch(state, { type: 'add-node', node: endNode(), position: { x: 400, y: 0 } })
+    state = dispatch(state, { type: 'connect', from: 'start', to: 'loop' })
+    state = dispatch(state, { type: 'connect', from: 'work', to: 'end', fromPort: 'exit' })
+    state = dispatch(state, { type: 'connect', from: 'loop', to: 'end', fromPort: 'exit' })
+
+    state = dispatch(state, { type: 'unwrap-loop', nodeId: 'loop' })
+
+    const toEnd = state.definition.edges.filter((edge) => edge.to === 'end')
+    expect(toEnd).toHaveLength(1)
+    expect(toEnd[0]).toMatchObject({ from: 'work', to: 'end' })
+    expect(toEnd[0]?.fromPort).toBeUndefined()
+  })
+
   it('drops (rather than dangles) an edge whose rewritten target no longer exists as a node', () => {
     // A malformed stand-in for F4 review Important #2: a Loop whose entry/exit were left
     // dangling by a body-node delete (loopNode()'s default entry/exit is 'work', never added

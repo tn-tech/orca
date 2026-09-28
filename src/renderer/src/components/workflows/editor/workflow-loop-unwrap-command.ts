@@ -12,8 +12,10 @@ import type { WorkflowEditorCommandResult } from './workflow-editor-commands'
  * own `exit` handle (`LoopNode.tsx`), which `unwrapLoopInDefinition` previously missed (F4 review
  * round 1, Important #1). A rewritten edge that would point at a node that no longer exists —
  * `entryNodeId`/`exitNodeId` left dangling by a body-node delete elsewhere in the Loop (F4 review
- * round 1, Important #2) — is dropped instead of pointed at a ghost. Refuses, without mutating
- * anything, when `loopNodeId` isn't a Loop node.
+ * round 1, Important #2) — is dropped instead of pointed at a ghost. Two edges that both rewrite
+ * to the same `(from, to, fromPort)` — a body-sourced exit edge and a loop-sourced one drawn to
+ * the same target, say — collapse to one instead of both surviving as identical-looking duplicates
+ * (F4 re-review 1, Minor). Refuses, without mutating anything, when `loopNodeId` isn't a Loop node.
  */
 export function unwrapLoopInDefinition(
   definition: Workflow,
@@ -37,7 +39,7 @@ export function unwrapLoopInDefinition(
   const nodes = definition.nodes.filter((node) => node.id !== loopNodeId)
   const survivingIds = new Set(nodes.map((node) => node.id))
 
-  const edges = definition.edges.flatMap((edge) => {
+  const rewritten = definition.edges.flatMap((edge) => {
     if (edge.to === loopNodeId) {
       return survivingIds.has(entryNodeId) ? [{ ...edge, to: entryNodeId }] : []
     }
@@ -53,6 +55,18 @@ export function unwrapLoopInDefinition(
       return [rest]
     }
     return [edge]
+  })
+
+  // A body-sourced exit edge and a loop-sourced one to the same target both rewrite to the same
+  // (from, to, fromPort) — keep the first, drop the rest (F4 re-review 1, Minor).
+  const seenEdgeKeys = new Set<string>()
+  const edges = rewritten.filter((edge) => {
+    const key = `${edge.from}\u0000${edge.to}\u0000${edge.fromPort ?? ''}`
+    if (seenEdgeKeys.has(key)) {
+      return false
+    }
+    seenEdgeKeys.add(key)
+    return true
   })
 
   const { [loopNodeId]: _removedLayout, ...layout } = definition.layout

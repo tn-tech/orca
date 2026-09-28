@@ -315,6 +315,72 @@ describe('validateWorkflowGraph: loop nodes', () => {
     )
   })
 
+  // F4 re-review 1, controller ruling: this rule used to live only in the renderer
+  // (workflow-loop-integrity-check.ts), so the host's save/run/validate paths never caught a Loop
+  // referencing a node that doesn't exist at all. Moved into checkLoopNodes so every reader agrees.
+  it('rejects an entryNodeId that names a node absent from the workflow entirely, with exactly one error row', () => {
+    const wf = workflow({
+      nodes: baseNodes(
+        loopNode('loop', { body: { nodeIds: ['work'] }, entryNodeId: 'ghost', exitNodeId: 'work' })
+      ),
+      edges: baseEdges
+    })
+    const problems = validateWorkflowGraph(wf, permissiveContext)
+    const forThisLoop = problems.filter(
+      (p) => p.nodeId === 'loop' && p.code.startsWith('graph_loop_')
+    )
+    // Not "not in body" AND "references missing node" both firing for the same entry.
+    expect(forThisLoop).toEqual([
+      expect.objectContaining({ code: 'graph_loop_entry_not_in_body', severity: 'error' })
+    ])
+  })
+
+  it('rejects an exitNodeId that names a node absent from the workflow entirely, with exactly one error row', () => {
+    const wf = workflow({
+      nodes: baseNodes(
+        loopNode('loop', { body: { nodeIds: ['work'] }, entryNodeId: 'work', exitNodeId: 'ghost' })
+      ),
+      edges: baseEdges
+    })
+    const problems = validateWorkflowGraph(wf, permissiveContext)
+    const forThisLoop = problems.filter(
+      (p) => p.nodeId === 'loop' && p.code.startsWith('graph_loop_')
+    )
+    expect(forThisLoop).toEqual([
+      expect.objectContaining({ code: 'graph_loop_exit_not_in_body', severity: 'error' })
+    ])
+  })
+
+  it('rejects a non-entry/exit body member that names a node absent from the workflow', () => {
+    const wf = workflow({
+      nodes: baseNodes(
+        loopNode('loop', {
+          body: { nodeIds: ['work', 'ghost'] },
+          entryNodeId: 'work',
+          exitNodeId: 'work'
+        })
+      ),
+      edges: baseEdges
+    })
+    expect(validateWorkflowGraph(wf, permissiveContext)).toContainEqual(
+      expect.objectContaining({
+        code: 'graph_loop_body_references_missing_node',
+        nodeId: 'loop',
+        severity: 'error'
+      })
+    )
+  })
+
+  it('is clean when body/entry/exit all name real nodes', () => {
+    const wf = workflow({
+      nodes: baseNodes(loopNode('loop')),
+      edges: baseEdges
+    })
+    expect(
+      validateWorkflowGraph(wf, permissiveContext).filter((p) => p.code.startsWith('graph_loop_'))
+    ).toEqual([])
+  })
+
   it('rejects a body edge that leaves the loop without using a loop port', () => {
     const wf = workflow({
       nodes: [

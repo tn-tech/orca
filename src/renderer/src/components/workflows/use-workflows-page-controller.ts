@@ -17,7 +17,6 @@ import type {
 import type { WorkflowRunSource } from '../../../../shared/workflows/workflow-run-types'
 import { validateWorkflowGraph } from '../../../../shared/workflows/workflow-graph-validation'
 import { createLocalGraphValidationContext } from './editor/workflow-graph-validation-context'
-import { checkLoopReferencesMissingNodes } from './editor/workflow-loop-integrity-check'
 import {
   hasBlockingWorkflowProblems,
   mergeWorkflowValidationProblems
@@ -55,13 +54,7 @@ export function useWorkflowsPageController() {
   const definition = session.status === 'ready' ? session.editor.state.definition : null
 
   const localProblems = useMemo(
-    () =>
-      definition
-        ? [
-            ...validateWorkflowGraph(definition, localValidationContext),
-            ...checkLoopReferencesMissingNodes(definition)
-          ]
-        : [],
+    () => (definition ? validateWorkflowGraph(definition, localValidationContext) : []),
     [definition, localValidationContext]
   )
 

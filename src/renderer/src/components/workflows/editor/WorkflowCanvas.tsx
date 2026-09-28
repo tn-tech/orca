@@ -12,36 +12,27 @@ import {
   type NodeMouseHandler,
   type NodeTypes,
   type OnConnect,
+  type OnEdgesChange,
   type OnNodesChange,
   type OnSelectionChangeFunc
 } from '@xyflow/react'
-import type {
-  AgentNode as AgentNodeDefinition,
-  ReflectionNode as ReflectionNodeDefinition,
-  RouterNode as RouterNodeDefinition,
-  Workflow
-} from '../../../../../shared/workflows/workflow-definition-types'
-import type { WorkflowAttemptState } from '../../../../../shared/workflows/workflow-node-states'
-import { computeLoopContainerBounds } from './workflow-auto-layout'
-import { resolveSelectionChange } from './workflow-canvas-selection-change'
-import AgentNode, { type WorkflowAgentFlowNode } from './nodes/AgentNode'
-import ApprovalNode, { type WorkflowApprovalFlowNode } from './nodes/ApprovalNode'
-import EndNode, { type WorkflowEndFlowNode } from './nodes/EndNode'
-import JoinNode, { type WorkflowJoinFlowNode } from './nodes/JoinNode'
-import LoopNode, { type WorkflowLoopFlowNode } from './nodes/LoopNode'
-import ReflectionNode, { type WorkflowReflectionFlowNode } from './nodes/ReflectionNode'
-import RouterNode, { type WorkflowRouterFlowNode } from './nodes/RouterNode'
-import StartNode, { type WorkflowStartFlowNode } from './nodes/StartNode'
-
-type WorkflowFlowNode =
-  | WorkflowAgentFlowNode
-  | WorkflowStartFlowNode
-  | WorkflowEndFlowNode
-  | WorkflowLoopFlowNode
-  | WorkflowJoinFlowNode
-  | WorkflowRouterFlowNode
-  | WorkflowApprovalFlowNode
-  | WorkflowReflectionFlowNode
+import type { Workflow } from '../../../../../shared/workflows/workflow-definition-types'
+import { resolveSelectChange, resolveSelectionChange } from './workflow-canvas-selection-change'
+import {
+  toFlowNodes,
+  type WorkflowCanvasNodeIterations,
+  type WorkflowCanvasNodeStatuses,
+  type WorkflowCanvasNodeWorkspaces,
+  type WorkflowFlowNode
+} from './workflow-canvas-flow-nodes'
+import AgentNode from './nodes/AgentNode'
+import ApprovalNode from './nodes/ApprovalNode'
+import EndNode from './nodes/EndNode'
+import JoinNode from './nodes/JoinNode'
+import LoopNode from './nodes/LoopNode'
+import ReflectionNode from './nodes/ReflectionNode'
+import RouterNode from './nodes/RouterNode'
+import StartNode from './nodes/StartNode'
 
 const NODE_TYPES: NodeTypes = {
   agent: AgentNode,
@@ -54,15 +45,11 @@ const NODE_TYPES: NodeTypes = {
   reflection: ReflectionNode
 }
 
-export type WorkflowCanvasNodeStatuses = Readonly<Record<string, WorkflowAttemptState>>
-
-/** The Loop node currently active for each node id (run view only, T079); keyed by the Loop's own
- *  id — `latestNodeAttempt`'s `iteration` for that Loop's `NodeAttemptView`. */
-export type WorkflowCanvasNodeIterations = Readonly<Record<string, number>>
-
-/** The worktree a dispatching node's attempt ran in (run view only, FR-035's "workspace used per
- *  node"), keyed by node id; only nodes that dispatch a worker (Agent, Router) ever have one. */
-export type WorkflowCanvasNodeWorkspaces = Readonly<Record<string, string>>
+export type {
+  WorkflowCanvasNodeIterations,
+  WorkflowCanvasNodeStatuses,
+  WorkflowCanvasNodeWorkspaces
+} from './workflow-canvas-flow-nodes'
 
 export type WorkflowCanvasConnection = { from: string; to: string; fromPort?: string }
 
@@ -81,14 +68,6 @@ export type WorkflowCanvasProps = {
   /** Fired once, on drag release — the editor state marks the node "manually positioned" (FR-010). */
   onNodeDragStop?: (nodeId: string, position: { x: number; y: number }) => void
   onConnect?: (connection: WorkflowCanvasConnection) => void
-}
-
-function resolveAgentLabel(
-  definition: Workflow,
-  node: AgentNodeDefinition | RouterNodeDefinition | ReflectionNodeDefinition
-): string | undefined {
-  const role = node.roleId ? definition.roles[node.roleId] : undefined
-  return node.overrides?.agent ?? role?.agent
 }
 
 /** Body-node id -> owning Loop id, so those nodes render as React Flow children (T078). */
@@ -124,137 +103,6 @@ export function toAbsoluteNodePosition(
   }
   const parentPosition = layout[parentId] ?? { x: 0, y: 0 }
   return { x: reportedPosition.x + parentPosition.x, y: reportedPosition.y + parentPosition.y }
-}
-
-/**
- * Renders every non-body node first, then Loop body nodes as React Flow children (`parentId`,
- * position relative to the Loop, `extent: 'parent'`) — parents must precede their children in
- * the node array regardless of `definition.nodes`' own order.
- */
-function toFlowNodes(
-  definition: Workflow,
-  nodeStatuses: WorkflowCanvasNodeStatuses | undefined,
-  nodeIterations: WorkflowCanvasNodeIterations | undefined,
-  nodeWorkspaces: WorkflowCanvasNodeWorkspaces | undefined,
-  selectedNodeId: string | undefined,
-  parentOf: ReadonlyMap<string, string>
-): WorkflowFlowNode[] {
-  const [ownNodes, bodyNodes] = [
-    definition.nodes.filter((node) => !parentOf.has(node.id)),
-    definition.nodes.filter((node) => parentOf.has(node.id))
-  ]
-
-  const flowNodes: WorkflowFlowNode[] = []
-  for (const node of [...ownNodes, ...bodyNodes]) {
-    const absolutePosition = definition.layout[node.id] ?? { x: 0, y: 0 }
-    const parentId = parentOf.get(node.id)
-    const parentPosition = parentId ? (definition.layout[parentId] ?? { x: 0, y: 0 }) : undefined
-    const position = parentPosition
-      ? { x: absolutePosition.x - parentPosition.x, y: absolutePosition.y - parentPosition.y }
-      : absolutePosition
-    const selected = node.id === selectedNodeId
-    const attemptState = nodeStatuses?.[node.id]
-    const nesting = parentId ? ({ parentId, extent: 'parent' } as const) : {}
-
-    if (node.type === 'start') {
-      flowNodes.push({
-        id: node.id,
-        type: 'start',
-        position,
-        selected,
-        ...nesting,
-        data: { definitionNode: node, attemptState }
-      })
-    } else if (node.type === 'end') {
-      flowNodes.push({
-        id: node.id,
-        type: 'end',
-        position,
-        selected,
-        ...nesting,
-        data: { definitionNode: node, attemptState }
-      })
-    } else if (node.type === 'agent') {
-      flowNodes.push({
-        id: node.id,
-        type: 'agent',
-        position,
-        selected,
-        ...nesting,
-        data: {
-          definitionNode: node,
-          agentLabel: resolveAgentLabel(definition, node),
-          attemptState,
-          workspaceLabel: nodeWorkspaces?.[node.id]
-        }
-      })
-    } else if (node.type === 'join') {
-      flowNodes.push({
-        id: node.id,
-        type: 'join',
-        position,
-        selected,
-        ...nesting,
-        data: { definitionNode: node, attemptState }
-      })
-    } else if (node.type === 'router') {
-      flowNodes.push({
-        id: node.id,
-        type: 'router',
-        position,
-        selected,
-        ...nesting,
-        data: {
-          definitionNode: node,
-          agentLabel: resolveAgentLabel(definition, node),
-          attemptState,
-          workspaceLabel: nodeWorkspaces?.[node.id]
-        }
-      })
-    } else if (node.type === 'loop') {
-      const bounds = computeLoopContainerBounds(
-        absolutePosition,
-        node.body.nodeIds.map((id) => definition.layout[id] ?? { x: 0, y: 0 })
-      )
-      flowNodes.push({
-        id: node.id,
-        type: 'loop',
-        position,
-        selected,
-        style: { width: bounds.width, height: bounds.height },
-        data: {
-          definitionNode: node,
-          attemptState,
-          iteration: nodeIterations?.[node.id],
-          ...bounds
-        }
-      })
-    } else if (node.type === 'approval') {
-      flowNodes.push({
-        id: node.id,
-        type: 'approval',
-        position,
-        selected,
-        ...nesting,
-        data: { definitionNode: node, attemptState }
-      })
-    } else if (node.type === 'reflection') {
-      flowNodes.push({
-        id: node.id,
-        type: 'reflection',
-        position,
-        selected,
-        ...nesting,
-        data: {
-          definitionNode: node,
-          agentLabel: resolveAgentLabel(definition, node),
-          attemptState,
-          workspaceLabel: nodeWorkspaces?.[node.id]
-        }
-      })
-    }
-  }
-  return flowNodes
 }
 
 /** F4: an edge must look selected once clicked, not just report `selected` to React Flow — the
@@ -311,19 +159,38 @@ export default function WorkflowCanvas({
 
   const handleNodesChange: OnNodesChange<WorkflowFlowNode> = useCallback(
     (changes) => {
-      if (!onNodeDragStop) {
-        return
-      }
       for (const change of changes) {
-        if (change.type === 'position' && change.dragging === false && change.position) {
+        if (
+          onNodeDragStop &&
+          change.type === 'position' &&
+          change.dragging === false &&
+          change.position
+        ) {
           onNodeDragStop(
             change.id,
             toAbsoluteNodePosition(definition.layout, parentOf, change.id, change.position)
           )
         }
       }
+      // F4 re-review 1, Minor #6: keyboard selection (Tab + Enter) arrives here as a `select`
+      // change — see `resolveSelectChange`'s comment for why `onSelectionChange` alone can't
+      // catch it.
+      const selectChange = resolveSelectChange(changes)
+      if (selectChange.changed) {
+        onNodeSelect?.(selectChange.id)
+      }
     },
-    [definition.layout, onNodeDragStop, parentOf]
+    [definition.layout, onNodeDragStop, onNodeSelect, parentOf]
+  )
+
+  const handleEdgesChange: OnEdgesChange<FlowEdge> = useCallback(
+    (changes) => {
+      const selectChange = resolveSelectChange(changes)
+      if (selectChange.changed) {
+        onEdgeSelect?.(selectChange.id)
+      }
+    },
+    [onEdgeSelect]
   )
 
   const handleConnect: OnConnect = useCallback(
@@ -368,6 +235,7 @@ export default function WorkflowCanvas({
         edges={edges}
         nodeTypes={NODE_TYPES}
         onNodesChange={handleNodesChange}
+        onEdgesChange={handleEdgesChange}
         onConnect={handleConnect}
         onNodeClick={handleNodeClick}
         onEdgeClick={handleEdgeClick}
