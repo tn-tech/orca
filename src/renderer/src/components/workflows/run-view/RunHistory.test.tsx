@@ -2,8 +2,10 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import type {
   AgentNode,
+  LoopNode,
   StartNode,
   Workflow
 } from '../../../../../shared/workflows/workflow-definition-types'
@@ -61,6 +63,24 @@ function workflow(): Workflow {
   }
 }
 
+function loopNode(): LoopNode {
+  return {
+    id: 'loop',
+    type: 'loop',
+    title: 'Loop',
+    body: { nodeIds: ['implement'] },
+    entryNodeId: 'implement',
+    exitNodeId: 'implement',
+    maxIterations: 3,
+    exitCondition: { path: 'approved', op: 'truthy' },
+    onCapReached: 'fail'
+  }
+}
+
+function workflowWithLoop(): Workflow {
+  return { ...workflow(), nodes: [startNode(), loopNode(), agentNode('implement', 'Implement')] }
+}
+
 function runSummary(patch: Partial<RunSummary> = {}): RunSummary {
   return {
     id: 'run-1',
@@ -114,13 +134,15 @@ function runDetail(patch: Partial<WorkflowRunSnapshotView> = {}): WorkflowRunSna
 
 function renderHistory(onOpenRun = vi.fn()) {
   return render(
-    <RunHistory
-      settings={settings}
-      repoId="repo-1"
-      name="wf"
-      source="project"
-      onOpenRun={onOpenRun}
-    />
+    <TooltipProvider>
+      <RunHistory
+        settings={settings}
+        repoId="repo-1"
+        name="wf"
+        source="project"
+        onOpenRun={onOpenRun}
+      />
+    </TooltipProvider>
   )
 }
 
@@ -239,7 +261,47 @@ describe('RunHistory', () => {
     )
   })
 
-  it('surfaces the host refusal message when a rerun is refused', async () => {
+  it('maps workflow_rerun_refused to translated copy, not the host’s raw id-bearing text', async () => {
+    workflowRunListMock.mockResolvedValue({ runs: [runSummary({ state: 'failed' })] })
+    workflowRunShowMock.mockResolvedValue(runDetail())
+    // Shaped like the real transport: `RuntimeRpcCallError` carries the machine code on `.code`
+    // separately from the host's human-readable `.message` (which embeds the run id).
+    workflowRunRerunMock.mockRejectedValue({
+      message: 'Run 01HX9ZZZ has a worker that may still be running; stop it first.',
+      code: 'workflow_rerun_refused'
+    })
+
+    renderHistory()
+    fireEvent.click(await screen.findByRole('button', { name: 'Details' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Rerun from this node' }))
+
+    await waitFor(() =>
+      expect(screen.getByText("This run can't be rerun right now.")).toBeInTheDocument()
+    )
+    expect(screen.queryByText(/01HX9ZZZ/)).not.toBeInTheDocument()
+  })
+
+  it('maps workflow_rerun_workspace_unavailable to translated copy, not the host’s raw text', async () => {
+    workflowRunListMock.mockResolvedValue({ runs: [runSummary({ state: 'failed' })] })
+    workflowRunShowMock.mockResolvedValue(runDetail())
+    workflowRunRerunMock.mockRejectedValue({
+      message: "Run 01HX9ZZZ's workspace is not available: worktree missing",
+      code: 'workflow_rerun_workspace_unavailable'
+    })
+
+    renderHistory()
+    fireEvent.click(await screen.findByRole('button', { name: 'Details' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Rerun from this node' }))
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("This run's workspace isn't available right now.")
+      ).toBeInTheDocument()
+    )
+    expect(screen.queryByText(/worktree missing/)).not.toBeInTheDocument()
+  })
+
+  it('falls back to the host’s raw message for a code this renderer does not map', async () => {
     workflowRunListMock.mockResolvedValue({ runs: [runSummary({ state: 'failed' })] })
     workflowRunShowMock.mockResolvedValue(runDetail())
     workflowRunRerunMock.mockRejectedValue(
@@ -251,6 +313,125 @@ describe('RunHistory', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Rerun from this node' }))
 
     await waitFor(() => expect(screen.getByText(/workspace is not available/)).toBeInTheDocument())
+  })
+
+  it('shows the rerun error next to the row that failed, not just anywhere in the list', async () => {
+    workflowRunListMock.mockResolvedValue({ runs: [runSummary({ state: 'failed' })] })
+    workflowRunShowMock.mockResolvedValue(runDetail())
+    workflowRunRerunMock.mockRejectedValue(new Error('workflow_rerun_refused'))
+
+    renderHistory()
+    fireEvent.click(await screen.findByRole('button', { name: 'Details' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Rerun from this node' }))
+
+    const message = await screen.findByText("This run can't be rerun right now.")
+    const nodeRow = message.closest('li')
+    if (!nodeRow) {
+      throw new Error('expected the rerun error to sit inside the failing node’s row')
+    }
+    expect(within(nodeRow).getByText('Implement')).toBeInTheDocument()
+  })
+
+  it('surfaces a translated message for a host that lacks workflow.run.list', async () => {
+    workflowRunListMock.mockRejectedValue(new Error('method_not_found'))
+
+    renderHistory()
+
+    await waitFor(() =>
+      expect(screen.getByText(/isn.t available on this host yet/i)).toBeInTheDocument()
+    )
+  })
+
+  it('retries the list fetch when Retry is clicked', async () => {
+    workflowRunListMock.mockRejectedValueOnce(new Error('host unreachable'))
+    workflowRunListMock.mockResolvedValueOnce({ runs: [runSummary()] })
+
+    renderHistory()
+    await waitFor(() => expect(screen.getByText('host unreachable')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+
+    await waitFor(() => expect(screen.getByText('Completed')).toBeInTheDocument())
+    expect(workflowRunListMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries a failed run.show fetch on re-expand, and again via the row’s Retry action', async () => {
+    workflowRunListMock.mockResolvedValue({ runs: [runSummary({ state: 'failed' })] })
+    workflowRunShowMock.mockRejectedValueOnce(new Error('offline'))
+    workflowRunShowMock.mockRejectedValueOnce(new Error('offline again'))
+    workflowRunShowMock.mockResolvedValueOnce(runDetail())
+
+    renderHistory()
+    fireEvent.click(await screen.findByRole('button', { name: 'Details' }))
+    await waitFor(() =>
+      expect(screen.getByText("Couldn't load this run's details.")).toBeInTheDocument()
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(workflowRunShowMock).toHaveBeenCalledTimes(2))
+    await waitFor(() =>
+      expect(screen.getByText("Couldn't load this run's details.")).toBeInTheDocument()
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(screen.getByText('Implement')).toBeInTheDocument())
+  })
+
+  it('shows an accessible, expandable Details control', async () => {
+    workflowRunListMock.mockResolvedValue({ runs: [runSummary()] })
+
+    renderHistory()
+
+    const detailsButton = await screen.findByRole('button', { name: 'Details' })
+    expect(detailsButton).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(detailsButton)
+    expect(detailsButton).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('hints that rerunning a Loop body node restarts the whole loop', async () => {
+    workflowRunListMock.mockResolvedValue({ runs: [runSummary({ state: 'failed' })] })
+    workflowRunShowMock.mockResolvedValue(
+      runDetail({ workflowSnapshot: workflowWithLoop(), attempts: [attempt()] })
+    )
+
+    renderHistory()
+    fireEvent.click(await screen.findByRole('button', { name: 'Details' }))
+
+    await waitFor(() => expect(screen.getByText('Restarts the whole loop')).toBeInTheDocument())
+  })
+
+  it('never labels a cancelled or join_skipped node as a failure, and offers no rerun for it', async () => {
+    workflowRunListMock.mockResolvedValue({ runs: [runSummary({ state: 'failed' })] })
+    workflowRunShowMock.mockResolvedValue(
+      runDetail({
+        attempts: [attempt({ state: 'cancelled', failureReason: 'join_skipped' })]
+      })
+    )
+
+    renderHistory()
+    fireEvent.click(await screen.findByRole('button', { name: 'Details' }))
+
+    const nodeTitle = await screen.findByText('Implement')
+    const nodeRow = nodeTitle.closest('li')
+    if (!nodeRow) {
+      throw new Error('expected the node title to sit inside a row')
+    }
+    expect(within(nodeRow).getByText('Cancelled')).toBeInTheDocument()
+    expect(within(nodeRow).queryByText('Failed')).not.toBeInTheDocument()
+    expect(
+      within(nodeRow).queryByRole('button', { name: 'Rerun from this node' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('offers Load more when the filtered first page is empty but a later page has this source’s runs', async () => {
+    workflowRunListMock.mockResolvedValueOnce({
+      runs: [runSummary({ id: 'run-personal', workflowSource: 'personal' })],
+      nextCursor: 'cursor-1'
+    })
+
+    renderHistory()
+
+    await waitFor(() => expect(screen.getByText(/no runs yet/i)).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'Load more' })).toBeInTheDocument()
   })
 
   it('loads more runs using the previous page’s cursor', async () => {

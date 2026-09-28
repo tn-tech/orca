@@ -197,7 +197,7 @@ export default function WorkflowsPage(): React.JSX.Element {
                   type="button"
                   variant="outline"
                   size="sm"
-                  disabled={!session.openRef}
+                  disabled={!session.openRef || !controller.repoId}
                   onClick={() => setHistoryOpen(true)}
                 >
                   <History />
