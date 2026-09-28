@@ -4,6 +4,8 @@ import { translate } from '@/i18n/i18n'
 import { hasRuntimeRpcErrorCode } from '@/runtime/runtime-rpc-client'
 import {
   workflowRunCancel,
+  workflowRunPause,
+  workflowRunResume,
   workflowRunStart,
   type RuntimeWorkflowSettings,
   type WorkflowRunSnapshotView
@@ -16,8 +18,16 @@ export type WorkflowRunControls = {
   snapshot: WorkflowRunSnapshotView | null
   starting: boolean
   stopping: boolean
+  pausing: boolean
+  resuming: boolean
   start: (objective: string) => Promise<void>
   stop: () => Promise<void>
+  pause: () => Promise<void>
+  resume: () => Promise<void>
+  /** Displays a past run (RunHistory's "open"/"Rerun from this node"), reusing the same live
+   *  snapshot pipeline a freshly started run uses — `activeRunId` is really "the run currently
+   *  shown", not only "the run this session started". */
+  openRun: (runId: string) => void
 }
 
 export type UseWorkflowRunControlsParams = {
@@ -42,6 +52,8 @@ export function useWorkflowRunControls({
   const [activeRunId, setActiveRunId] = useState<string | null>(null)
   const [runStarting, setRunStarting] = useState(false)
   const [runStopping, setRunStopping] = useState(false)
+  const [runPausing, setRunPausing] = useState(false)
+  const [runResuming, setRunResuming] = useState(false)
   const runSnapshot = useWorkflowRunSnapshot({ settings, runId: activeRunId })
 
   const startRun = useCallback(
@@ -82,9 +94,14 @@ export function useWorkflowRunControls({
     try {
       await workflowRunCancel(settings, activeRunId)
     } catch (error) {
-      // Why not surfaced as an error: `workflow.run.cancel` is a host stub today (US8); this is
-      // an expected, temporary gap rather than a failure the user needs to retry or report.
-      if (hasRuntimeRpcErrorCode(error, 'workflow_not_implemented')) {
+      // `workflow_not_implemented`: an older host whose `workflow.run.cancel` is still the pre-U58
+      // stub. `method_not_found`: a host that predates the method entirely (mixed-version pairing,
+      // see docs/reference/remote-wire-compatibility.md). Either way this is an expected gap, not
+      // a failure the user needs to retry or report.
+      if (
+        hasRuntimeRpcErrorCode(error, 'workflow_not_implemented') ||
+        hasRuntimeRpcErrorCode(error, 'method_not_found')
+      ) {
         toast.message(
           translate(
             'auto.components.workflows.use-workflows-page-controller.runStopNotImplemented',
@@ -106,7 +123,68 @@ export function useWorkflowRunControls({
     }
   }, [activeRunId, settings])
 
+  const pauseRun = useCallback(async () => {
+    if (!activeRunId) {
+      return
+    }
+    setRunPausing(true)
+    try {
+      await workflowRunPause(settings, activeRunId)
+    } catch (error) {
+      if (hasRuntimeRpcErrorCode(error, 'method_not_found')) {
+        toast.message(
+          translate(
+            'auto.components.workflows.use-workflows-page-controller.runPauseNotImplemented',
+            "Pausing a run isn't available on this host yet."
+          )
+        )
+        return
+      }
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : translate(
+              'auto.components.workflows.use-workflows-page-controller.runPauseFailed',
+              'Failed to pause the run.'
+            )
+      )
+    } finally {
+      setRunPausing(false)
+    }
+  }, [activeRunId, settings])
+
+  const resumeRun = useCallback(async () => {
+    if (!activeRunId) {
+      return
+    }
+    setRunResuming(true)
+    try {
+      await workflowRunResume(settings, activeRunId)
+    } catch (error) {
+      if (hasRuntimeRpcErrorCode(error, 'method_not_found')) {
+        toast.message(
+          translate(
+            'auto.components.workflows.use-workflows-page-controller.runResumeNotImplemented',
+            "Resuming a run isn't available on this host yet."
+          )
+        )
+        return
+      }
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : translate(
+              'auto.components.workflows.use-workflows-page-controller.runResumeFailed',
+              'Failed to resume the run.'
+            )
+      )
+    } finally {
+      setRunResuming(false)
+    }
+  }, [activeRunId, settings])
+
   const clearActiveRun = useCallback(() => setActiveRunId(null), [])
+  const openRun = useCallback((runId: string) => setActiveRunId(runId), [])
 
   const run = useMemo(
     () => ({
@@ -114,10 +192,27 @@ export function useWorkflowRunControls({
       snapshot: runSnapshot.snapshot,
       starting: runStarting,
       stopping: runStopping,
+      pausing: runPausing,
+      resuming: runResuming,
       start: startRun,
-      stop: stopRun
+      stop: stopRun,
+      pause: pauseRun,
+      resume: resumeRun,
+      openRun
     }),
-    [activeRunId, runSnapshot.snapshot, runStarting, runStopping, startRun, stopRun]
+    [
+      activeRunId,
+      runSnapshot.snapshot,
+      runStarting,
+      runStopping,
+      runPausing,
+      runResuming,
+      startRun,
+      stopRun,
+      pauseRun,
+      resumeRun,
+      openRun
+    ]
   )
 
   return { run, clearActiveRun }

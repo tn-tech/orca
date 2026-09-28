@@ -14,7 +14,8 @@ const ACTIVE_RUN_STATES: ReadonlySet<WorkflowRunState> = new Set([
   'waiting'
 ])
 
-function runStateLabel(state: WorkflowRunState): string {
+/** Shared with `RunHistory` (list rows show the same vocabulary as this toolbar). */
+export function runStateLabel(state: WorkflowRunState): string {
   switch (state) {
     case 'queued':
       return translate('auto.components.workflows.run-view.RunToolbar.stateQueued', 'Queued')
@@ -44,9 +45,11 @@ export type RunToolbarProps = {
    *  (e.g. US6 AS2: an unsaved draft has no file to run against yet). */
   disabledReason?: string
   starting: boolean
-  stopping: boolean
+  /** Both optional together: omitting them hides Stop entirely, e.g. once `RunControls` (U62)
+   *  owns pause/resume/cancel for this run instead. */
+  stopping?: boolean
   onRun: (objective: string) => void
-  onStop: () => void
+  onStop?: () => void
   /** Re-runs `workflow-auto-layout.ts` for nodes the user hasn't dragged (FR-010). */
   onRelayout: () => void
 }
@@ -103,10 +106,12 @@ export default function RunToolbar({
         </span>
       ) : null}
       {isActive ? (
-        <Button type="button" variant="outline" size="sm" disabled={stopping} onClick={onStop}>
-          <Square />
-          {translate('auto.components.workflows.run-view.RunToolbar.stop', 'Stop')}
-        </Button>
+        onStop ? (
+          <Button type="button" variant="outline" size="sm" disabled={stopping} onClick={onStop}>
+            <Square />
+            {translate('auto.components.workflows.run-view.RunToolbar.stop', 'Stop')}
+          </Button>
+        ) : null
       ) : (
         <Button
           type="button"

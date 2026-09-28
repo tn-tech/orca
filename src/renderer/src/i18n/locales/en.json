@@ -17205,7 +17205,9 @@
           "draftBadge": "Draft",
           "saveDraftTitle": "Save draft",
           "saveDraftSubmit": "Save",
-          "runBlockedDraft": "Save this draft before running it."
+          "runBlockedDraft": "Save this draft before running it.",
+          "runHistory": "History",
+          "runHistoryTitle": "Run history"
         },
         "editor": {
           "AgentNodeArtifactsField": {
@@ -17520,6 +17522,25 @@
             "skillLine": "{{name}} ({{source}}, {{required}})",
             "skillRequired": "required",
             "skillOptional": "optional"
+          },
+          "RunControls": {
+            "resume": "Resume",
+            "pause": "Pause",
+            "cancel": "Cancel",
+            "confirmTitle": "Cancel this run?",
+            "confirmDescription": "Every active node stops. This cannot be undone.",
+            "confirmDismiss": "Keep running",
+            "confirmConfirm": "Cancel run"
+          },
+          "RunHistory": {
+            "rerunFromNode": "Rerun from this node",
+            "rerunNotImplemented": "Rerunning isn't available on this host yet.",
+            "loading": "Loading run history…",
+            "empty": "No runs yet.",
+            "details": "Details",
+            "open": "Open",
+            "detailError": "Couldn't load this run's details.",
+            "loadMore": "Load more"
           }
         },
         "use-workflow-editor-session": {
@@ -17533,7 +17554,11 @@
           "runStartFailed": "Failed to start the run.",
           "runStopNotImplemented": "Stopping a run isn't available yet.",
           "runStopFailed": "Failed to stop the run.",
-          "draftNoRepo": "No active repository."
+          "draftNoRepo": "No active repository.",
+          "runPauseNotImplemented": "Pausing a run isn't available on this host yet.",
+          "runPauseFailed": "Failed to pause the run.",
+          "runResumeNotImplemented": "Resuming a run isn't available on this host yet.",
+          "runResumeFailed": "Failed to resume the run."
         },
         "roles": {
           "ImportRoleDialog": {

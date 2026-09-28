@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   Workflow,
@@ -16,6 +16,8 @@ const {
   workflowDraftMock,
   workflowRunStartMock,
   workflowRunCancelMock,
+  workflowRunPauseMock,
+  workflowRunResumeMock,
   workflowRunShowMock,
   toastErrorMock,
   toastMessageMock
@@ -29,6 +31,8 @@ const {
   workflowDraftMock: vi.fn(),
   workflowRunStartMock: vi.fn(),
   workflowRunCancelMock: vi.fn(),
+  workflowRunPauseMock: vi.fn(),
+  workflowRunResumeMock: vi.fn(),
   workflowRunShowMock: vi.fn(),
   toastErrorMock: vi.fn(),
   toastMessageMock: vi.fn()
@@ -44,6 +48,8 @@ vi.mock('@/runtime/runtime-workflow-client', () => ({
   workflowDraft: workflowDraftMock,
   workflowRunStart: workflowRunStartMock,
   workflowRunCancel: workflowRunCancelMock,
+  workflowRunPause: workflowRunPauseMock,
+  workflowRunResume: workflowRunResumeMock,
   workflowRunShow: workflowRunShowMock
 }))
 
@@ -106,6 +112,8 @@ beforeEach(() => {
   workflowDraftMock.mockReset()
   workflowRunStartMock.mockReset()
   workflowRunCancelMock.mockReset()
+  workflowRunPauseMock.mockReset()
+  workflowRunResumeMock.mockReset()
   workflowRunShowMock.mockReset()
   toastErrorMock.mockReset()
   toastMessageMock.mockReset()
@@ -295,6 +303,70 @@ describe('useWorkflowsPageController', () => {
 
       expect(toastMessageMock).toHaveBeenCalled()
       expect(toastErrorMock).not.toHaveBeenCalled()
+    })
+
+    it('pauses the active run through workflow.run.pause', async () => {
+      workflowRunStartMock.mockResolvedValue({ runId: 'run-1' })
+      workflowRunPauseMock.mockResolvedValue({ state: 'paused' })
+      const { result } = renderHook(() => useWorkflowsPageController())
+      await openReadyWorkflow(result)
+      await act(() => result.current.run.start('Add CSV export'))
+
+      await act(() => result.current.run.pause())
+
+      expect(workflowRunPauseMock).toHaveBeenCalledWith(settings, 'run-1')
+    })
+
+    it('shows a gentle message instead of an error when a host lacks workflow.run.pause', async () => {
+      workflowRunStartMock.mockResolvedValue({ runId: 'run-1' })
+      workflowRunPauseMock.mockRejectedValue(new Error('method_not_found'))
+      const { result } = renderHook(() => useWorkflowsPageController())
+      await openReadyWorkflow(result)
+      await act(() => result.current.run.start('Add CSV export'))
+
+      await act(() => result.current.run.pause())
+
+      expect(toastMessageMock).toHaveBeenCalled()
+      expect(toastErrorMock).not.toHaveBeenCalled()
+    })
+
+    it('resumes the active run through workflow.run.resume', async () => {
+      workflowRunStartMock.mockResolvedValue({ runId: 'run-1' })
+      workflowRunResumeMock.mockResolvedValue({ state: 'running' })
+      const { result } = renderHook(() => useWorkflowsPageController())
+      await openReadyWorkflow(result)
+      await act(() => result.current.run.start('Add CSV export'))
+
+      await act(() => result.current.run.resume())
+
+      expect(workflowRunResumeMock).toHaveBeenCalledWith(settings, 'run-1')
+    })
+
+    it('opens a past run from history, replacing what the run view displays', async () => {
+      const { result } = renderHook(() => useWorkflowsPageController())
+      await openReadyWorkflow(result)
+      workflowRunShowMock.mockResolvedValue({
+        id: 'run-9',
+        workflowName: 'wf-a',
+        workflowSource: 'project',
+        workflowSnapshot: savedWorkflow(),
+        workflowVersion: 'rev-1',
+        objective: 'past objective',
+        repoId: 'repo-1',
+        state: 'failed',
+        concurrencyLimit: 4,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        attempts: [],
+        questions: [],
+        messages: [],
+        events: []
+      })
+
+      act(() => result.current.run.openRun('run-9'))
+
+      expect(result.current.run.runId).toBe('run-9')
+      await waitFor(() => expect(workflowRunShowMock).toHaveBeenCalledWith(settings, 'run-9'))
+      await waitFor(() => expect(result.current.run.snapshot?.id).toBe('run-9'))
     })
 
     it('clears the active run when the user switches to a different workflow', async () => {

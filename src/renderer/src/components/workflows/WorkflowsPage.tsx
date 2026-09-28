@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react'
-import { Loader2, ShieldCheck } from 'lucide-react'
+import { History, Loader2, ShieldCheck } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { translate } from '@/i18n/i18n'
 import { useAppStore } from '@/store'
 import AddNodeMenu from './editor/AddNodeMenu'
@@ -17,6 +18,8 @@ import WorkflowNameDialog from './WorkflowNameDialog'
 import { repoTrustHostKey } from './workflow-repo-trust-host'
 import AttemptPanel from './run-view/AttemptPanel'
 import RunCanvasOverlay from './run-view/RunCanvasOverlay'
+import RunControls from './run-view/RunControls'
+import RunHistory from './run-view/RunHistory'
 import RunToolbar from './run-view/RunToolbar'
 import { useWorkflowsPageController } from './use-workflows-page-controller'
 
@@ -29,6 +32,7 @@ export default function WorkflowsPage(): React.JSX.Element {
     (s) => s.settings?.activeRuntimeEnvironmentId?.trim() || null
   )
   const [trustedSourcesOpen, setTrustedSourcesOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   // US6: names and writes an open draft on its first save; see WorkflowNameDialog generation
   // comment in WorkflowListPane.tsx for why this bumps on every open rather than resetting on close.
   const [namingDraft, setNamingDraft] = useState(false)
@@ -176,12 +180,29 @@ export default function WorkflowsPage(): React.JSX.Element {
                         : undefined
                     }
                     starting={run.starting}
-                    stopping={run.stopping}
                     onRun={(objective) => void run.start(objective)}
-                    onStop={() => void run.stop()}
                     onRelayout={() => session.editor.dispatch({ type: 'auto-layout' })}
                   />
                 </div>
+                <RunControls
+                  runState={run.snapshot?.state}
+                  pausing={run.pausing}
+                  resuming={run.resuming}
+                  cancelling={run.stopping}
+                  onPause={() => void run.pause()}
+                  onResume={() => void run.resume()}
+                  onCancel={() => void run.stop()}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={!session.openRef}
+                  onClick={() => setHistoryOpen(true)}
+                >
+                  <History />
+                  {translate('auto.components.workflows.WorkflowsPage.runHistory', 'History')}
+                </Button>
               </div>
               <WorkflowEditorProblemNotice
                 problem={session.editor.state.lastProblem}
@@ -291,6 +312,28 @@ export default function WorkflowsPage(): React.JSX.Element {
         settings={controller.settings}
         onOpenChange={setTrustedSourcesOpen}
       />
+      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {translate('auto.components.workflows.WorkflowsPage.runHistoryTitle', 'Run history')}
+            </DialogTitle>
+          </DialogHeader>
+          {session.openRef && controller.repoId ? (
+            <RunHistory
+              settings={controller.settings}
+              repoId={controller.repoId}
+              name={session.openRef.name}
+              source={session.openRef.source}
+              currentRunId={run.runId}
+              onOpenRun={(runId) => {
+                run.openRun(runId)
+                setHistoryOpen(false)
+              }}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
       <WorkflowNameDialog
         key={`save-draft-${namingDraftGeneration}`}
         open={namingDraft}

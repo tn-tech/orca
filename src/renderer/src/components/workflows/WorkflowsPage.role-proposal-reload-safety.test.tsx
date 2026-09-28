@@ -48,6 +48,8 @@ vi.mock('./WorkflowNameDialog', () => ({ default: () => null }))
 vi.mock('./TrustedSourcesDialog', () => ({ default: () => null }))
 vi.mock('./run-view/RunCanvasOverlay', () => ({ default: () => null }))
 vi.mock('./run-view/RunToolbar', () => ({ default: () => null }))
+vi.mock('./run-view/RunControls', () => ({ default: () => null }))
+vi.mock('./run-view/RunHistory', () => ({ default: () => null }))
 
 const { checkForExternalChangeMock, reloadFromDiskMock } = vi.hoisted(() => ({
   checkForExternalChangeMock: vi.fn(),
@@ -176,8 +178,13 @@ function fakeController(dirty: boolean) {
       snapshot: snapshot(),
       starting: false,
       stopping: false,
+      pausing: false,
+      resuming: false,
       start: vi.fn(),
-      stop: vi.fn()
+      stop: vi.fn(),
+      pause: vi.fn(),
+      resume: vi.fn(),
+      openRun: vi.fn()
     },
     selectedNodeId: 'reflect',
     selectedEdgeId: undefined,
