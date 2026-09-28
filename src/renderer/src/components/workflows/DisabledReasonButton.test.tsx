@@ -145,4 +145,61 @@ describe('DisabledReasonButton', () => {
     warn.mockRestore()
     error.mockRestore()
   })
+
+  // A tooltip must only be open while the trigger is hovered or focused, whether or not a
+  // reason exists right now. Hovering an enabled control with nothing to say, then leaving,
+  // must not leave a stale "open" intent that pops the tooltip open later when a reason appears
+  // with no further hover or focus at all.
+  it('never pops the tooltip open on its own once a reason appears after an earlier hover', async () => {
+    const user = userEvent.setup()
+    const { rerender } = renderButton({ reason: undefined, onClick: vi.fn(), children: 'Save' })
+
+    await user.hover(screen.getByRole('button', { name: 'Save' }))
+    await user.unhover(screen.getByRole('button', { name: 'Save' }))
+
+    rerender(
+      <TooltipProvider>
+        <DisabledReasonButton reason="No changes to save yet." onClick={vi.fn()}>
+          Save
+        </DisabledReasonButton>
+      </TooltipProvider>
+    )
+
+    expect(screen.queryAllByText('No changes to save yet.').length).toBe(0)
+  })
+
+  // Same scenario, in the exact prop shape WorkflowListPane's icon buttons use (ghost, icon-xs,
+  // no enabledTooltip, sr-only label as the only accessible name) — F6 adopted this component for
+  // its "New workflow" / "Draft from objective" buttons, which hit the same bug.
+  it('never pops the tooltip open for an icon-only, ghost-variant caller either', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(
+      <TooltipProvider>
+        <DisabledReasonButton variant="ghost" size="icon-xs" reason={undefined} onClick={vi.fn()}>
+          <span aria-hidden="true">+</span>
+          <span className="sr-only">New workflow</span>
+        </DisabledReasonButton>
+      </TooltipProvider>
+    )
+
+    const button = screen.getByRole('button', { name: 'New workflow' })
+    await user.hover(button)
+    await user.unhover(button)
+
+    rerender(
+      <TooltipProvider>
+        <DisabledReasonButton
+          variant="ghost"
+          size="icon-xs"
+          reason="Add or select a project to create workflows."
+          onClick={vi.fn()}
+        >
+          <span aria-hidden="true">+</span>
+          <span className="sr-only">New workflow</span>
+        </DisabledReasonButton>
+      </TooltipProvider>
+    )
+
+    expect(screen.queryAllByText('Add or select a project to create workflows.').length).toBe(0)
+  })
 })

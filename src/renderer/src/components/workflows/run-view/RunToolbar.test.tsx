@@ -209,4 +209,68 @@ describe('RunToolbar', () => {
     // Marker + the objective group + Run = 3 direct children of the outer row.
     expect(screen.getByTestId('outer-row').children.length).toBe(3)
   })
+
+  // A run's state and its controls must wrap as one unit, never split across lines — so they
+  // have to share a single parent element, not sit as independent items in the caller's row.
+  it('renders the run state and runControls as one shared unit while active', () => {
+    render(
+      <TooltipProvider>
+        <RunToolbar
+          canRun
+          starting={false}
+          stopping={false}
+          runState="paused"
+          runObjective="Say hello"
+          onRun={vi.fn()}
+          runControls={<button type="button">Resume</button>}
+        />
+      </TooltipProvider>
+    )
+
+    const state = screen.getByText('Paused')
+    const resume = screen.getByRole('button', { name: 'Resume' })
+    expect(state.parentElement).toBe(resume.parentElement)
+  })
+
+  it('keeps the state label alongside Run once a run reaches a terminal state, not inside the shrinking objective group', () => {
+    render(
+      <TooltipProvider>
+        <RunToolbar
+          canRun
+          starting={false}
+          stopping={false}
+          runState="cancelled"
+          runObjective="Say hello"
+          onRun={vi.fn()}
+        />
+      </TooltipProvider>
+    )
+
+    const state = screen.getByText('Cancelled')
+    const runButton = screen.getByRole('button', { name: 'Run' })
+    expect(state.parentElement).toBe(runButton.parentElement)
+    expect(state.parentElement).not.toHaveClass('min-w-48')
+  })
+
+  // Reproduces the reviewer's exact scenario: hover Run while enabled (no reason), leave, then
+  // let a reason appear with no further hover or focus at all — the tooltip must stay closed.
+  it('never pops the tooltip open on Run once the objective is cleared after an earlier hover', async () => {
+    const user = userEvent.setup()
+    render(
+      <TooltipProvider>
+        <RunToolbar canRun starting={false} stopping={false} onRun={vi.fn()} onStop={vi.fn()} />
+      </TooltipProvider>
+    )
+
+    const objectiveInput = screen.getByRole('textbox', { name: 'Objective' })
+    fireEvent.change(objectiveInput, { target: { value: 'Add CSV export' } })
+
+    const runButton = screen.getByRole('button', { name: 'Run' })
+    await user.hover(runButton)
+    await user.unhover(runButton)
+
+    fireEvent.change(objectiveInput, { target: { value: '' } })
+
+    expect(screen.queryAllByText('Enter an objective.').length).toBe(0)
+  })
 })

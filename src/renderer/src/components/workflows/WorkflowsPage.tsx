@@ -194,15 +194,25 @@ export default function WorkflowsPage(): React.JSX.Element {
                   canUndo={session.status === 'ready' && session.editor.canUndo}
                   onUndo={controller.undo}
                 />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => session.editor.dispatch({ type: 'auto-layout' })}
-                >
-                  <LayoutGrid />
-                  {translate('auto.components.workflows.WorkflowsPage.relayout', 'Re-layout')}
-                </Button>
+                <RunToolbar
+                  runState={run.snapshot?.state}
+                  runObjective={run.snapshot?.objective}
+                  canRun={controller.canRun}
+                  disabledReason={controller.runDisabledReason}
+                  starting={run.starting}
+                  onRun={(objective) => void run.start(objective)}
+                  runControls={
+                    <RunControls
+                      runState={run.snapshot?.state}
+                      pausing={run.pausing}
+                      resuming={run.resuming}
+                      cancelling={run.stopping}
+                      onPause={() => void run.pause()}
+                      onResume={() => void run.resume()}
+                      onCancel={() => void run.stop()}
+                    />
+                  }
+                />
                 <RunHistoryButton
                   reason={
                     !controller.repoId
@@ -216,23 +226,15 @@ export default function WorkflowsPage(): React.JSX.Element {
                   }
                   onClick={() => setHistoryOpen(true)}
                 />
-                <RunToolbar
-                  runState={run.snapshot?.state}
-                  runObjective={run.snapshot?.objective}
-                  canRun={controller.canRun}
-                  disabledReason={controller.runDisabledReason}
-                  starting={run.starting}
-                  onRun={(objective) => void run.start(objective)}
-                />
-                <RunControls
-                  runState={run.snapshot?.state}
-                  pausing={run.pausing}
-                  resuming={run.resuming}
-                  cancelling={run.stopping}
-                  onPause={() => void run.pause()}
-                  onResume={() => void run.resume()}
-                  onCancel={() => void run.stop()}
-                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => session.editor.dispatch({ type: 'auto-layout' })}
+                >
+                  <LayoutGrid />
+                  {translate('auto.components.workflows.WorkflowsPage.relayout', 'Re-layout')}
+                </Button>
               </div>
               <WorkflowEditorProblemNotice
                 problem={session.editor.state.lastProblem}

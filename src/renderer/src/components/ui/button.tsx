@@ -50,13 +50,15 @@ const buttonVariants = cva(
         variant: 'outline',
         softDisabled: true,
         class:
-          'hover:border-border hover:bg-background hover:text-foreground dark:hover:bg-input/30'
+          'hover:border-border hover:bg-background hover:text-foreground dark:hover:border-input dark:hover:bg-input/30'
       },
       { variant: 'secondary', softDisabled: true, class: 'hover:bg-secondary' },
       {
+        // No forced hover:text-* — ghost sets no resting text color, so pinning one here would
+        // override a caller's own text className (e.g. a muted-text ghost icon button).
         variant: 'ghost',
         softDisabled: true,
-        class: 'hover:bg-transparent hover:text-foreground dark:hover:bg-transparent'
+        class: 'hover:bg-transparent dark:hover:bg-transparent'
       },
       { variant: 'link', softDisabled: true, class: 'hover:no-underline' }
     ],

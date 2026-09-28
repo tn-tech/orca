@@ -46,16 +46,20 @@ export type RunToolbarProps = {
    *  (e.g. US6 AS2: an unsaved draft has no file to run against yet). */
   disabledReason?: string
   starting: boolean
-  /** Both optional together: omitting them hides Stop entirely, e.g. once `RunControls` (U62)
+  /** Both optional together: omitting them hides Stop entirely, e.g. when `runControls` (below)
    *  owns pause/resume/cancel for this run instead. */
   stopping?: boolean
   onRun: (objective: string) => void
   onStop?: () => void
+  /** Rendered next to the run state while a run is active (e.g. `<RunControls />`) — in the same
+   *  wrapping unit as the state label, so the two never wrap apart from each other. */
+  runControls?: React.ReactNode
 }
 
-/** Run view controls (US1 AS2/AS3): an objective and Run/Stop. Renders a Fragment, not a wrapping
- *  element — its two cells become direct flex items in the caller's own toolbar row so the whole
- *  row wraps as one unit instead of this nesting its own independent `flex-wrap`. */
+/** Run view controls (US1 AS2/AS3): an objective, and either Run or the run's state plus its
+ *  controls. Renders a Fragment, not a wrapping element — its two cells become direct flex items
+ *  in the caller's own toolbar row so the whole row wraps as one flat set instead of this nesting
+ *  its own independent `flex-wrap`. */
 export default function RunToolbar({
   runState,
   runObjective,
@@ -64,7 +68,8 @@ export default function RunToolbar({
   starting,
   stopping,
   onRun,
-  onStop
+  onStop,
+  runControls
 }: RunToolbarProps): React.JSX.Element {
   // Not cleared on run start/finish: keeping the typed objective around is a relaunch convenience
   // once the input reappears after the run reaches a terminal state.
@@ -95,12 +100,9 @@ export default function RunToolbar({
     <>
       <div className="flex min-w-48 flex-1 items-center gap-1.5">
         {isActive ? (
-          <>
-            <p className="truncate text-sm text-foreground" title={runObjective}>
-              {runObjective}
-            </p>
-            {stateLabel}
-          </>
+          <p className="truncate text-sm text-foreground" title={runObjective}>
+            {runObjective}
+          </p>
         ) : (
           <>
             <Label htmlFor={objectiveId} className="shrink-0">
@@ -119,27 +121,36 @@ export default function RunToolbar({
                 'Add CSV export'
               )}
             />
-            {stateLabel}
           </>
         )}
       </div>
-      {isActive ? (
-        onStop ? (
-          <Button type="button" variant="outline" size="sm" disabled={stopping} onClick={onStop}>
-            <Square />
-            {translate('auto.components.workflows.run-view.RunToolbar.stop', 'Stop')}
-          </Button>
-        ) : null
-      ) : (
-        <DisabledReasonButton
-          reason={runReason}
-          onClick={() => onRun(objectiveTrimmed)}
-          className="shrink-0"
-        >
-          <Play />
-          {translate('auto.components.workflows.run-view.RunToolbar.run', 'Run')}
-        </DisabledReasonButton>
-      )}
+      {/* One shrink-0 unit so the run's state and its controls always wrap together, never split
+          across lines. */}
+      <div className="flex shrink-0 items-center gap-2">
+        {stateLabel}
+        {isActive ? (
+          <>
+            {runControls}
+            {onStop ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={stopping}
+                onClick={onStop}
+              >
+                <Square />
+                {translate('auto.components.workflows.run-view.RunToolbar.stop', 'Stop')}
+              </Button>
+            ) : null}
+          </>
+        ) : (
+          <DisabledReasonButton reason={runReason} onClick={() => onRun(objectiveTrimmed)}>
+            <Play />
+            {translate('auto.components.workflows.run-view.RunToolbar.run', 'Run')}
+          </DisabledReasonButton>
+        )}
+      </div>
     </>
   )
 }

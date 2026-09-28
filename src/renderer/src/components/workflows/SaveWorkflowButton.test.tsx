@@ -148,4 +148,39 @@ describe('SaveWorkflowButton', () => {
 
     expect(screen.getByRole('button', { name: 'Save' })).toHaveFocus()
   })
+
+  // Reproduces the reviewer's exact scenario: hover Save while dirty (enabled, no reason), leave,
+  // then let it become clean with no further hover or focus at all — the reason must not pop up.
+  it('never pops the tooltip open once it becomes clean after an earlier hover', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(
+      <TooltipProvider>
+        <SaveWorkflowButton
+          dirty
+          isDraft={false}
+          saving={false}
+          blockingProblems={false}
+          onClick={vi.fn()}
+        />
+      </TooltipProvider>
+    )
+
+    const button = screen.getByRole('button', { name: 'Save' })
+    await user.hover(button)
+    await user.unhover(button)
+
+    rerender(
+      <TooltipProvider>
+        <SaveWorkflowButton
+          dirty={false}
+          isDraft={false}
+          saving={false}
+          blockingProblems={false}
+          onClick={vi.fn()}
+        />
+      </TooltipProvider>
+    )
+
+    expect(screen.queryAllByText('No changes to save yet.').length).toBe(0)
+  })
 })

@@ -42,6 +42,34 @@ describe('Button softDisabled', () => {
     expect(button).not.toHaveClass('hover:bg-accent')
   })
 
+  it('pins the outline variant border in dark mode too, not just light', () => {
+    render(
+      <Button variant="outline" softDisabled>
+        History
+      </Button>
+    )
+
+    const button = screen.getByRole('button', { name: 'History' })
+    // Resting outline border is border-border (light) / dark:border-input (dark); the hover
+    // pin must cover both, or a dark-theme hover still shifts the border.
+    expect(button).toHaveClass('hover:border-border')
+    expect(button).toHaveClass('dark:hover:border-input')
+  })
+
+  it('does not force a text color on the ghost variant, which has none at rest', () => {
+    render(
+      <Button variant="ghost" softDisabled>
+        Draft
+      </Button>
+    )
+
+    const button = screen.getByRole('button', { name: 'Draft' })
+    expect(button).toHaveClass('hover:bg-transparent')
+    // Ghost's resting state sets no text color at all, so a soft-disabled hover must not
+    // introduce one either — that would shift a caller's own muted-text className.
+    expect(button).not.toHaveClass('hover:text-foreground')
+  })
+
   it('stays a plain, focusable button — softDisabled never sets the native disabled attribute', () => {
     render(<Button softDisabled>Save</Button>)
 
