@@ -12,17 +12,23 @@ live under the per-user, git-ignored `.orca/` directory.
 
 ## `brief.md` sections (in order)
 1. **Role** – the role's system prompt (after overrides).
-2. **Task** – the node prompt with `${...}` references resolved.
-3. **Inputs** – table of upstream node results and artifact paths, plus `inputs.json` path.
+2. **Objective** – the run's objective, verbatim, or "No objective set for this run." when the
+   run started with none (the RPC field is optional; the UI's own run/draft dialogs require a
+   non-empty objective, but other callers may omit it). Always rendered, even when the node
+   prompt also resolves a `${objective}` reference inline in Task — agents must be able to find
+   the objective in one fixed place without scanning Task text, so it is not suppressed to avoid
+   the resulting repetition.
+3. **Task** – the node prompt with `${...}` references resolved.
+4. **Inputs** – table of upstream node results and artifact paths, plus `inputs.json` path.
    Reflection nodes also get a **Run record**: every earlier worker attempt's brief, result and
    artifact paths, failure reason, and the `orchestration worker-read --dispatch <id>` command
    for its transcript (also `runRecord` in `inputs.json`).
-4. **Skills** – the skills to use, with the provider-specific invocation (for example
+5. **Skills** – the skills to use, with the provider-specific invocation (for example
    `/speckit-plan`); for agents without workspace skill support, the skill text is inlined here.
-5. **Result** – the JSON Schema the result must satisfy and the exact path to write:
+6. **Result** – the JSON Schema the result must satisfy and the exact path to write:
    `.orca/workflow-runs/<runId>/<attemptId>/result.json`.
-6. **Artifacts** – required artifact globs the node must produce.
-7. **Completion** – restatement of the worker contract: write `result.json`, then send
+7. **Artifacts** – required artifact globs the node must produce.
+8. **Completion** – restatement of the worker contract: write `result.json`, then send
    `worker_done` once with `--report-path <result.json>` and `--outcome succeeded|failed`.
    Questions go through the coordinator `ask` command shown in the preamble; never open a local
    prompt.

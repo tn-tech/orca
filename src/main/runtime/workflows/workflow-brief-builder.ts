@@ -46,6 +46,15 @@ export function artifactsFor(node: BriefNode): { path: string; required: boolean
   return node.type === 'agent' ? node.artifacts : []
 }
 
+/**
+ * Always renders its own section (F3): agents relying only on Task text missed the objective
+ * when the node prompt didn't reference `${objective}`. Kept plain (no "also") so it reads fine
+ * even when Task already resolved the same reference inline.
+ */
+function objectiveSection(objective: string): string {
+  return objective.trim().length === 0 ? 'No objective set for this run.' : objective
+}
+
 function artifactsSection(artifacts: readonly { path: string; required: boolean }[]): string {
   if (artifacts.length === 0) {
     return 'No required artifacts.'
@@ -72,7 +81,7 @@ export type BuildBriefMarkdownArgs = {
   reflection?: { runRecord: RunRecordEntry[]; roles: Workflow['roles'] }
 }
 
-/** Renders brief.md's seven sections, in the order contracts/agent-brief.md defines them. */
+/** Renders brief.md's eight sections, in the order contracts/agent-brief.md defines them. */
 export function buildBriefMarkdown(args: BuildBriefMarkdownArgs): {
   text: string
   problems: WorkflowProblem[]
@@ -90,6 +99,10 @@ export function buildBriefMarkdown(args: BuildBriefMarkdownArgs): {
     '## Role',
     '',
     args.systemPrompt,
+    '',
+    '## Objective',
+    '',
+    objectiveSection(args.briefInputs.objective),
     '',
     '## Task',
     '',

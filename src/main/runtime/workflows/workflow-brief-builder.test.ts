@@ -70,7 +70,7 @@ const briefInputs = {
 }
 
 describe('buildBriefMarkdown', () => {
-  it('contains the seven contract sections in order with references resolved', () => {
+  it('contains the eight contract sections in order with references resolved', () => {
     const { text, problems } = buildBriefMarkdown({
       workflowName: 'feature-with-qa',
       runId: 'run-1',
@@ -81,7 +81,16 @@ describe('buildBriefMarkdown', () => {
       briefInputs
     })
     expect(problems).toEqual([])
-    const sections = ['Role', 'Task', 'Inputs', 'Skills', 'Result', 'Artifacts', 'Completion']
+    const sections = [
+      'Role',
+      'Objective',
+      'Task',
+      'Inputs',
+      'Skills',
+      'Result',
+      'Artifacts',
+      'Completion'
+    ]
     const indices = sections.map((heading) => text.indexOf(`## ${heading}`))
     for (const index of indices) {
       expect(index).toBeGreaterThanOrEqual(0)
@@ -97,6 +106,50 @@ describe('buildBriefMarkdown', () => {
     expect(text).toContain('.orca/workflow-runs/run-1/attempt-1/result.json')
     expect(text).toContain('src/**/*.ts')
     expect(text).toContain('worker_done')
+  })
+
+  it('states the run Objective in its own section even when the prompt does not reference it', () => {
+    const { text } = buildBriefMarkdown({
+      workflowName: 'wf',
+      runId: 'run-1',
+      attemptId: 'attempt-1',
+      node: { ...agentNode, prompt: 'Implement the plan.' },
+      systemPrompt: role.systemPrompt,
+      skills: [],
+      briefInputs
+    })
+    const objectiveSection = text.slice(text.indexOf('## Objective'), text.indexOf('## Task'))
+    expect(objectiveSection).toContain('Add CSV export to the reports page')
+  })
+
+  it('still states the Objective section when the prompt already resolves ${objective} in Task', () => {
+    const { text } = buildBriefMarkdown({
+      workflowName: 'wf',
+      runId: 'run-1',
+      attemptId: 'attempt-1',
+      node: agentNode,
+      systemPrompt: role.systemPrompt,
+      skills: [],
+      briefInputs
+    })
+    const objectiveSection = text.slice(text.indexOf('## Objective'), text.indexOf('## Task'))
+    const taskSection = text.slice(text.indexOf('## Task'), text.indexOf('## Inputs'))
+    expect(objectiveSection).toContain('Add CSV export to the reports page')
+    expect(taskSection).toContain('Add CSV export to the reports page')
+  })
+
+  it('states no objective was set when the run objective is empty', () => {
+    const { text } = buildBriefMarkdown({
+      workflowName: 'wf',
+      runId: 'run-1',
+      attemptId: 'attempt-1',
+      node: { ...agentNode, prompt: 'Implement the plan.' },
+      systemPrompt: role.systemPrompt,
+      skills: [],
+      briefInputs: { ...briefInputs, objective: '' }
+    })
+    const objectiveSection = text.slice(text.indexOf('## Objective'), text.indexOf('## Task'))
+    expect(objectiveSection).toContain('No objective set for this run.')
   })
 
   it('reports unresolved reference problems from the Task section', () => {
