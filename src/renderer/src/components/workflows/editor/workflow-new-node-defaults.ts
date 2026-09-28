@@ -1,7 +1,7 @@
 import { createBrowserUuid } from '@/lib/browser-uuid'
 import { translate } from '@/i18n/i18n'
 import type { Layout, Node } from '../../../../../shared/workflows/workflow-definition-types'
-import { WORKFLOW_NODE_HEIGHT } from './workflow-auto-layout'
+import { computeLoopContainerBounds, WORKFLOW_NODE_HEIGHT } from './workflow-auto-layout'
 
 /**
  * Node kinds the "Add node" menu offers (`WorkflowCanvas.tsx`'s `NODE_TYPES`, minus Loop). A
@@ -29,17 +29,30 @@ const NEW_NODE_GAP = 48
 const DEFAULT_TIMEOUT_MS = 600_000
 const DEFAULT_ESCALATION_GRACE_MS = 300_000
 
-/** A spot below every existing node's box, so a freshly added node never lands on top of one.
- *  `WorkflowCanvas.tsx`'s `fitView` only runs on mount, not after this, so this only needs to
- *  avoid overlap, not guarantee the new node is in the current viewport. */
-export function freeNodePosition(layout: Layout): { x: number; y: number } {
+/** The absolute bottom edge of `node`'s rendered box: a Loop renders as a container sized around
+ *  its body nodes (`computeLoopContainerBounds`, review round 1 minor #1 — can be much taller than
+ *  `WORKFLOW_NODE_HEIGHT`), every other kind renders at the fixed node height. */
+function nodeBottom(node: Node, layout: Layout): number {
+  const position = layout[node.id] ?? { x: 0, y: 0 }
+  if (node.type !== 'loop') {
+    return position.y + WORKFLOW_NODE_HEIGHT
+  }
+  const bodyPositions = node.body.nodeIds.map((id) => layout[id] ?? { x: 0, y: 0 })
+  return position.y + computeLoopContainerBounds(position, bodyPositions).height
+}
+
+/** A spot below every existing node's box, so a freshly added node never lands on top of one —
+ *  including an expanded Loop container, not just its own layout entry. `WorkflowCanvas.tsx`'s
+ *  `fitView` only runs on mount, not after this, so this only needs to avoid overlap, not
+ *  guarantee the new node is in the current viewport. */
+export function freeNodePosition(nodes: readonly Node[], layout: Layout): { x: number; y: number } {
   const positions = Object.values(layout)
   if (positions.length === 0) {
     return { x: 0, y: 0 }
   }
   return {
     x: Math.min(...positions.map((position) => position.x)),
-    y: Math.max(...positions.map((position) => position.y + WORKFLOW_NODE_HEIGHT)) + NEW_NODE_GAP
+    y: Math.max(...nodes.map((node) => nodeBottom(node, layout))) + NEW_NODE_GAP
   }
 }
 

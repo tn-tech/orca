@@ -457,17 +457,25 @@ describe('useWorkflowsPageController', () => {
       const [agent1, agent2] = result.current.session.editor.state.definition.nodes.filter(
         (node) => node.type === 'agent'
       )
-      expect(agent1).toBeDefined()
-      expect(agent2).toBeDefined()
+      if (agent1?.type !== 'agent' || agent2?.type !== 'agent') {
+        throw new Error('expected two Agent nodes to have been added')
+      }
 
       act(() => {
-        result.current.session.editor.dispatch({ type: 'connect', from: 'start', to: agent1!.id })
+        // A freshly added node has no agent assigned (deliberately deferred to a separate unit —
+        // U63-review Important #2); assign one here so this test stays about what U63 owns (the
+        // node wires up and saves cleanly), not about that unrelated, still-unassigned-agent gap.
         result.current.session.editor.dispatch({
-          type: 'connect',
-          from: agent1!.id,
-          to: agent2!.id
+          type: 'update-node',
+          node: { ...agent1, overrides: { agent: 'claude' } }
         })
-        result.current.session.editor.dispatch({ type: 'connect', from: agent2!.id, to: 'end' })
+        result.current.session.editor.dispatch({
+          type: 'update-node',
+          node: { ...agent2, overrides: { agent: 'claude' } }
+        })
+        result.current.session.editor.dispatch({ type: 'connect', from: 'start', to: agent1.id })
+        result.current.session.editor.dispatch({ type: 'connect', from: agent1.id, to: agent2.id })
+        result.current.session.editor.dispatch({ type: 'connect', from: agent2.id, to: 'end' })
       })
 
       expect(result.current.problems.some((problem) => problem.severity === 'error')).toBe(false)
@@ -481,8 +489,8 @@ describe('useWorkflowsPageController', () => {
           name: 'wf-a',
           definition: expect.objectContaining({
             nodes: expect.arrayContaining([
-              expect.objectContaining({ id: agent1!.id, type: 'agent' }),
-              expect.objectContaining({ id: agent2!.id, type: 'agent' })
+              expect.objectContaining({ id: agent1.id, type: 'agent' }),
+              expect.objectContaining({ id: agent2.id, type: 'agent' })
             ])
           })
         })

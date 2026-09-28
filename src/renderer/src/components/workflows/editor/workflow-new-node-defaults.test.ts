@@ -1,7 +1,12 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest'
-import type { Node, Workflow } from '../../../../../shared/workflows/workflow-definition-types'
+import type {
+  LoopNode,
+  Node,
+  Workflow
+} from '../../../../../shared/workflows/workflow-definition-types'
 import { validateWorkflowGraph } from '../../../../../shared/workflows/workflow-graph-validation'
+import { computeLoopContainerBounds } from './workflow-auto-layout'
 import {
   ADDABLE_NODE_KINDS,
   createDefaultNode,
@@ -129,17 +134,58 @@ describe('createDefaultNode', () => {
   })
 })
 
+function loopNode(id: string, bodyNodeIds: string[]): LoopNode {
+  return {
+    id,
+    type: 'loop',
+    title: 'Loop',
+    body: { nodeIds: bodyNodeIds },
+    entryNodeId: bodyNodeIds[0]!,
+    exitNodeId: bodyNodeIds.at(-1)!,
+    maxIterations: 3,
+    exitCondition: { path: 'approved', op: 'truthy' },
+    onCapReached: 'fail'
+  }
+}
+
 describe('freeNodePosition', () => {
   it('starts at the origin for an empty layout', () => {
-    expect(freeNodePosition({})).toEqual({ x: 0, y: 0 })
+    expect(freeNodePosition([], {})).toEqual({ x: 0, y: 0 })
   })
 
   it('lands below every existing node, never on top of one', () => {
+    const nodes: Node[] = [
+      { id: 'start', type: 'start', title: 'Start' },
+      { id: 'end', type: 'end', title: 'End' }
+    ]
     const layout = { start: { x: 0, y: 0 }, end: { x: 320, y: 0 } }
-    const position = freeNodePosition(layout)
+    const position = freeNodePosition(nodes, layout)
     expect(position.y).toBeGreaterThan(0)
     for (const existing of Object.values(layout)) {
       expect(position).not.toEqual(existing)
     }
+  })
+
+  it('lands below an expanded Loop container, not just its own layout entry (review round 1, minor #1)', () => {
+    // A Loop with several body nodes renders much taller than a single node box
+    // (computeLoopContainerBounds), so padding by WORKFLOW_NODE_HEIGHT alone would land the new
+    // node visually inside the loop even though the raw layout coordinates don't collide.
+    const bodyIds = ['a', 'b', 'c']
+    const loop = loopNode('loop-1', bodyIds)
+    const nodes: Node[] = [loop, ...bodyIds.map((id): Node => ({ id, type: 'end', title: id }))]
+    const layout = {
+      'loop-1': { x: 0, y: 0 },
+      a: { x: 40, y: 40 },
+      b: { x: 40, y: 200 },
+      c: { x: 40, y: 360 }
+    }
+    const bounds = computeLoopContainerBounds(
+      layout['loop-1']!,
+      bodyIds.map((id) => layout[id]!)
+    )
+
+    const position = freeNodePosition(nodes, layout)
+
+    expect(position.y).toBeGreaterThanOrEqual(layout['loop-1']!.y + bounds.height)
   })
 })

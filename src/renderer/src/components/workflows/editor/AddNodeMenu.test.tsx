@@ -1,16 +1,11 @@
 // @vitest-environment happy-dom
 import type { ReactNode } from 'react'
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AddableNodeKind } from './workflow-new-node-defaults'
 
 type MenuItemProps = { children?: ReactNode; onSelect?: () => void }
-
-const menuItems = vi.hoisted(() => {
-  const values: MenuItemProps[] = []
-  return { values }
-})
 
 vi.mock('@/components/ui/dropdown-menu', async () => {
   const React_ = await import('react')
@@ -20,12 +15,14 @@ vi.mock('@/components/ui/dropdown-menu', async () => {
     DropdownMenu: passthrough,
     DropdownMenuTrigger: passthrough,
     DropdownMenuContent: passthrough,
-    DropdownMenuItem: (props: MenuItemProps) => {
-      menuItems.values.push(props)
-      // A real wrapping element (unlike the other passthroughs) so each item's label text is its
-      // own match target instead of merging into one big sibling text run under the container.
-      return React_.createElement('div', null, props.children)
-    }
+    // A real `role="menuitem"` button (unlike the other passthroughs) so a test can pick an item
+    // by its accessible name (the label text; icons carry `aria-hidden`) instead of render order.
+    DropdownMenuItem: ({ children, onSelect }: MenuItemProps) =>
+      React_.createElement(
+        'button',
+        { type: 'button', role: 'menuitem', onClick: () => onSelect?.() },
+        children
+      )
   }
 })
 
@@ -33,40 +30,37 @@ import AddNodeMenu from './AddNodeMenu'
 
 afterEach(() => {
   cleanup()
-  menuItems.values = []
 })
 
 describe('AddNodeMenu', () => {
   it('lists every addable kind except Loop when no Start node exists yet', () => {
     render(<AddNodeMenu hasStartNode={false} onAddNode={vi.fn()} />)
 
-    expect(screen.getByText('Start')).toBeInTheDocument()
-    expect(screen.getByText('Agent')).toBeInTheDocument()
-    expect(screen.getByText('Router')).toBeInTheDocument()
-    expect(screen.getByText('Join')).toBeInTheDocument()
-    expect(screen.getByText('Approval')).toBeInTheDocument()
-    expect(screen.getByText('Reflection')).toBeInTheDocument()
-    expect(screen.getByText('End')).toBeInTheDocument()
-    expect(screen.queryByText('Loop')).not.toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Start' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Agent' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Router' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Join' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Approval' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Reflection' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'End' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Loop' })).not.toBeInTheDocument()
   })
 
   it('excludes Start once one already exists (only one is allowed, graph_multiple_start_nodes)', () => {
     render(<AddNodeMenu hasStartNode={true} onAddNode={vi.fn()} />)
 
-    expect(screen.queryByText('Start')).not.toBeInTheDocument()
-    expect(screen.getByText('Agent')).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Start' })).not.toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Agent' })).toBeInTheDocument()
   })
 
-  it('calls onAddNode with the chosen kind when a menu item is selected', () => {
+  it('calls onAddNode with the chosen kind when a menu item is selected, picked by its label', () => {
     const onAddNode = vi.fn<(kind: AddableNodeKind) => void>()
     render(<AddNodeMenu hasStartNode={false} onAddNode={onAddNode} />)
 
-    // Rendered in ADDABLE_NODE_KINDS order (start, agent, router, join, approval, reflection,
-    // end); index 1 is Agent when Start is included.
-    menuItems.values[1]?.onSelect?.()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Agent' }))
     expect(onAddNode).toHaveBeenCalledWith('agent')
 
-    menuItems.values[6]?.onSelect?.()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'End' }))
     expect(onAddNode).toHaveBeenCalledWith('end')
   })
 })

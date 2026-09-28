@@ -227,7 +227,10 @@ export function useWorkflowsPageController() {
         return
       }
       const node = createDefaultNode(kind)
-      const position = freeNodePosition(session.editor.state.definition.layout)
+      const position = freeNodePosition(
+        session.editor.state.definition.nodes,
+        session.editor.state.definition.layout
+      )
       session.editor.dispatch({ type: 'add-node', node, position })
       setSelectedNodeId(node.id)
       setSelectedEdgeId(undefined)

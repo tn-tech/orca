@@ -17406,6 +17406,9 @@
             "approvalQuestion": "Approve this step?",
             "approvalOption": "Approve",
             "reflectionPrompt": "Reflect on the run so far."
+          },
+          "WrapInLoopButton": {
+            "trigger": "Wrap in Loop"
           }
         },
         "run-view": {

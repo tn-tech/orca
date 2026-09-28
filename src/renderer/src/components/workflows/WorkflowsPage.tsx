@@ -10,6 +10,7 @@ import ValidationProblemsPanel from './editor/ValidationProblemsPanel'
 import WorkflowEditorProblemNotice from './editor/WorkflowEditorProblemNotice'
 import { hasBlockingWorkflowProblems } from './editor/workflow-validation-merge'
 import FileConflictDialog from './editor/FileConflictDialog'
+import WrapInLoopButton from './editor/WrapInLoopButton'
 import TrustedSourcesDialog from './TrustedSourcesDialog'
 import WorkflowListPane from './WorkflowListPane'
 import WorkflowNameDialog from './WorkflowNameDialog'
@@ -154,6 +155,12 @@ export default function WorkflowsPage(): React.JSX.Element {
                     (node) => node.type === 'start'
                   )}
                   onAddNode={controller.addNode}
+                />
+                <WrapInLoopButton
+                  selectedNodeIds={controller.selectedNodeId ? [controller.selectedNodeId] : []}
+                  onWrapInLoop={(nodeIds) =>
+                    session.editor.dispatch({ type: 'wrap-in-loop', nodeIds })
+                  }
                 />
                 <div className="min-w-0 flex-1">
                   <RunToolbar
