@@ -25,7 +25,7 @@ function reflectionNode(patch: Partial<ReflectionNode> = {}): ReflectionNode {
 
 const noRoles: Workflow['roles'] = {}
 
-describe('ReflectionNodeFields (US7, data-model.md §1 roleDispatchShape)', () => {
+describe('ReflectionNodeFields (US7, data-model.md §1 roleDispatchFields)', () => {
   it('renders the shared role/model/prompt fields', () => {
     render(<ReflectionNodeFields node={reflectionNode()} roles={noRoles} onChange={vi.fn()} />)
 

@@ -171,7 +171,7 @@ export type RoleDispatchFieldsProps = {
 }
 
 /** Agent/model/effort/prompt fields shared by every role-dispatching node (data-model.md §1's
- *  `roleDispatchShape`: AgentNode, RouterNode, later Reflection). FR-004's disabled-with-reason
+ *  `roleDispatchFields`: AgentNode, RouterNode, later Reflection). FR-004's disabled-with-reason
  *  rule for model/effort lives in `AgentModelEffortFields` once instead of per node type. */
 export default function RoleDispatchFields({
   agent,
@@ -214,7 +214,7 @@ export default function RoleDispatchFields({
   )
 }
 
-/** A role-dispatching node's own shape (data-model.md §1 `roleDispatchShape`): AgentNode,
+/** A role-dispatching node's own shape (data-model.md §1 `roleDispatchFields`): AgentNode,
  *  RouterNode and ReflectionNode all satisfy this. */
 export type RoleDispatchNode = {
   prompt: string

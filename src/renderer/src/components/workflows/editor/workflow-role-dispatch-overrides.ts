@@ -1,7 +1,7 @@
 import type { AgentNode } from '../../../../../shared/workflows/workflow-definition-types'
 
 // AgentNode and RouterNode share the exact same `overrides` shape (both spread
-// `roleDispatchShape`'s `OverridesSchema` in workflow-node-schemas.ts), so one merge helper
+// `roleDispatchFields`'s `OverridesSchema` in workflow-node-schemas.ts), so one merge helper
 // covers both — reusing `AgentNode['overrides']` here rather than declaring the field list again.
 export type RoleDispatchOverrides = NonNullable<AgentNode['overrides']>
 

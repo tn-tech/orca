@@ -11,7 +11,7 @@ export type ReflectionNodeFieldsProps = {
   onChange: (node: ReflectionNode) => void
 }
 
-/** Reflection node settings (US7, FR-034, data-model.md §1 `roleDispatchShape`): the same
+/** Reflection node settings (US7, FR-034, data-model.md §1 `roleDispatchFields`): the same
  *  role/model/effort/prompt fields Agent and Router nodes have. Its result contract is fixed to
  *  `{ proposals: [...] }` (contracts/agent-brief.md) rather than editable per node, so — unlike
  *  `AgentNodeFields` — there is no result-contract or artifacts field here. */
