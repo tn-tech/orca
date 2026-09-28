@@ -396,4 +396,98 @@ describe('useWorkflowsPageController', () => {
       expect(result.current.session.isDraft).toBe(true)
     })
   })
+
+  describe('adding nodes from the editor (U63)', () => {
+    async function openReadyWorkflow(result: {
+      current: ReturnType<typeof useWorkflowsPageController>
+    }): Promise<void> {
+      const definition = savedWorkflow()
+      workflowReadMock.mockResolvedValue({
+        definition,
+        raw: 'raw',
+        revision: 'rev-1',
+        problems: []
+      })
+      workflowValidateMock.mockResolvedValue({ problems: [] })
+      await act(() =>
+        result.current.openWorkflow({ name: 'wf-a', source: 'project', path: '', valid: true })
+      )
+    }
+
+    it('adds a node of the requested kind, marks it dirty, and selects the new node', async () => {
+      const { result } = renderHook(() => useWorkflowsPageController())
+      await openReadyWorkflow(result)
+      const nodeCountBefore = result.current.session.editor.state.definition.nodes.length
+
+      act(() => result.current.addNode('agent'))
+
+      const nodes = result.current.session.editor.state.definition.nodes
+      expect(nodes).toHaveLength(nodeCountBefore + 1)
+      const added = nodes.at(-1)
+      expect(added?.type).toBe('agent')
+      expect(result.current.selectedNodeId).toBe(added?.id)
+      expect(result.current.selectedEdgeId).toBeUndefined()
+      expect(result.current.session.editor.state.dirty).toBe(true)
+    })
+
+    it('places the new node in the layout at a position not already occupied', async () => {
+      const { result } = renderHook(() => useWorkflowsPageController())
+      await openReadyWorkflow(result)
+
+      act(() => result.current.addNode('agent'))
+
+      const { definition } = result.current.session.editor.state
+      const added = definition.nodes.at(-1)
+      expect(added).toBeDefined()
+      const position = added ? definition.layout[added.id] : undefined
+      expect(position).toBeDefined()
+      const occupiedPositions = definition.nodes
+        .filter((node) => node.id !== added?.id)
+        .map((node) => definition.layout[node.id])
+      expect(occupiedPositions).not.toContainEqual(position)
+    })
+
+    it('lets two added Agent nodes be wired start -> agent -> agent -> end and saved clean', async () => {
+      workflowWriteMock.mockResolvedValue({ revision: 'rev-2' })
+      const { result } = renderHook(() => useWorkflowsPageController())
+      await openReadyWorkflow(result)
+
+      act(() => result.current.addNode('agent'))
+      act(() => result.current.addNode('agent'))
+      const [agent1, agent2] = result.current.session.editor.state.definition.nodes.filter(
+        (node) => node.type === 'agent'
+      )
+      expect(agent1).toBeDefined()
+      expect(agent2).toBeDefined()
+
+      act(() => {
+        result.current.session.editor.dispatch({ type: 'connect', from: 'start', to: agent1!.id })
+        result.current.session.editor.dispatch({
+          type: 'connect',
+          from: agent1!.id,
+          to: agent2!.id
+        })
+        result.current.session.editor.dispatch({ type: 'connect', from: agent2!.id, to: 'end' })
+      })
+
+      expect(result.current.problems.some((problem) => problem.severity === 'error')).toBe(false)
+
+      await act(() => result.current.session.save())
+
+      expect(workflowWriteMock).toHaveBeenCalledWith(
+        settings,
+        expect.objectContaining({
+          repo: 'repo-1',
+          name: 'wf-a',
+          definition: expect.objectContaining({
+            nodes: expect.arrayContaining([
+              expect.objectContaining({ id: agent1!.id, type: 'agent' }),
+              expect.objectContaining({ id: agent2!.id, type: 'agent' })
+            ])
+          })
+        })
+      )
+      expect(result.current.session.editor.state.dirty).toBe(false)
+    })
+  })
 })

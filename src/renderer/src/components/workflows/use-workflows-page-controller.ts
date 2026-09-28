@@ -22,6 +22,11 @@ import {
   hasBlockingWorkflowProblems,
   mergeWorkflowValidationProblems
 } from './editor/workflow-validation-merge'
+import {
+  createDefaultNode,
+  freeNodePosition,
+  type AddableNodeKind
+} from './editor/workflow-new-node-defaults'
 import { useWorkflowEditorSession } from './use-workflow-editor-session'
 import { useWorkflowExternalChangeWatch } from './use-workflow-external-change-watch'
 import { useWorkflowListState } from './use-workflow-list-state'
@@ -214,6 +219,22 @@ export function useWorkflowsPageController() {
     [list, session]
   )
 
+  /** U63 "Add node" menu: creates `kind` with sensible defaults, appends it below the existing
+   *  layout (never on top of another node), and selects it so `NodeInspector` opens on it. */
+  const addNode = useCallback(
+    (kind: AddableNodeKind) => {
+      if (session.status !== 'ready') {
+        return
+      }
+      const node = createDefaultNode(kind)
+      const position = freeNodePosition(session.editor.state.definition.layout)
+      session.editor.dispatch({ type: 'add-node', node, position })
+      setSelectedNodeId(node.id)
+      setSelectedEdgeId(undefined)
+    },
+    [session]
+  )
+
   const deleteWorkflow = useCallback(
     async (row: WorkflowSummary) => {
       if (!repoId) {
@@ -249,6 +270,7 @@ export function useWorkflowsPageController() {
     openWorkflow,
     createWorkflow,
     duplicateWorkflow,
+    addNode,
     deleteWorkflow,
     draftWorkflow,
     openDraft,

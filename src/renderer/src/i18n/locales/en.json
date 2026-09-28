@@ -17388,6 +17388,24 @@
           "ReflectionNode": {
             "noAgent": "No agent selected",
             "workspace": "Workspace: {{name}}"
+          },
+          "AddNodeMenu": {
+            "trigger": "Add node"
+          },
+          "workflow-new-node-defaults": {
+            "start": "Start",
+            "agent": "Agent",
+            "router": "Router",
+            "join": "Join",
+            "approval": "Approval",
+            "reflection": "Reflection",
+            "end": "End",
+            "agentPrompt": "Describe the task for this agent.",
+            "routerPrompt": "Describe how this agent should choose between the options below.",
+            "routerChoice": "Option 1",
+            "approvalQuestion": "Approve this step?",
+            "approvalOption": "Approve",
+            "reflectionPrompt": "Reflect on the run so far."
           }
         },
         "run-view": {

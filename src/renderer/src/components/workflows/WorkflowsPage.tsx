@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { translate } from '@/i18n/i18n'
 import { useAppStore } from '@/store'
+import AddNodeMenu from './editor/AddNodeMenu'
 import NodeInspector from './editor/NodeInspector'
 import ValidationProblemsPanel from './editor/ValidationProblemsPanel'
 import WorkflowEditorProblemNotice from './editor/WorkflowEditorProblemNotice'
@@ -147,25 +148,33 @@ export default function WorkflowsPage(): React.JSX.Element {
             </div>
           ) : (
             <>
-              <div className="shrink-0 border-b border-border px-3 py-2 md:px-5">
-                <RunToolbar
-                  runState={run.snapshot?.state}
-                  runObjective={run.snapshot?.objective}
-                  canRun={controller.canRun}
-                  disabledReason={
-                    session.isDraft
-                      ? translate(
-                          'auto.components.workflows.WorkflowsPage.runBlockedDraft',
-                          'Save this draft before running it.'
-                        )
-                      : undefined
-                  }
-                  starting={run.starting}
-                  stopping={run.stopping}
-                  onRun={(objective) => void run.start(objective)}
-                  onStop={() => void run.stop()}
-                  onRelayout={() => session.editor.dispatch({ type: 'auto-layout' })}
+              <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2 md:px-5">
+                <AddNodeMenu
+                  hasStartNode={session.editor.state.definition.nodes.some(
+                    (node) => node.type === 'start'
+                  )}
+                  onAddNode={controller.addNode}
                 />
+                <div className="min-w-0 flex-1">
+                  <RunToolbar
+                    runState={run.snapshot?.state}
+                    runObjective={run.snapshot?.objective}
+                    canRun={controller.canRun}
+                    disabledReason={
+                      session.isDraft
+                        ? translate(
+                            'auto.components.workflows.WorkflowsPage.runBlockedDraft',
+                            'Save this draft before running it.'
+                          )
+                        : undefined
+                    }
+                    starting={run.starting}
+                    stopping={run.stopping}
+                    onRun={(objective) => void run.start(objective)}
+                    onStop={() => void run.stop()}
+                    onRelayout={() => session.editor.dispatch({ type: 'auto-layout' })}
+                  />
+                </div>
               </div>
               <WorkflowEditorProblemNotice
                 problem={session.editor.state.lastProblem}
