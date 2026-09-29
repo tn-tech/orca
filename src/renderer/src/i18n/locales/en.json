@@ -17457,7 +17457,10 @@
             "itemEmpty": "{{field}} {{position}} is empty.",
             "required": "{{field}} is required.",
             "listEmpty": "{{field}}: add at least one.",
-            "invalid": "{{field}} is invalid: {{detail}}"
+            "invalid": "{{field}} is invalid: {{detail}}",
+            "from": "Source node",
+            "to": "Target node",
+            "invalidWorkflow": "This workflow has an invalid value: {{detail}}"
           },
           "workflow-problem-labels": {
             "untitled": "Untitled {{type}}"
@@ -17746,7 +17749,8 @@
         "SaveWorkflowButton": {
           "nothingToSave": "No changes to save yet.",
           "saving": "Saving…",
-          "invalidFields": "Fill in the fields listed under Problems before saving."
+          "invalidFields": "Fill in the fields listed under Problems before saving.",
+          "disallowedSources": "A skill source is not on this project's allowlist. Add it to workflows.allowedSources in orca.yaml before saving."
         },
         "RunUnsavedChangesDialog": {
           "title": "Save before running?",

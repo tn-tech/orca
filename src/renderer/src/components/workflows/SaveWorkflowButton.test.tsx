@@ -183,4 +183,31 @@ describe('SaveWorkflowButton', () => {
 
     expect(screen.queryAllByText('No changes to save yet.').length).toBe(0)
   })
+
+  it('explains a skill source missing from the allowlist and how to fix it (F7 fix round 1)', async () => {
+    const user = userEvent.setup()
+    const onClick = vi.fn()
+    renderButton({
+      dirty: true,
+      isDraft: false,
+      saving: false,
+      invalidFields: false,
+      disallowedSources: true,
+      onClick
+    })
+
+    const button = screen.getByRole('button', { name: 'Save' })
+    expect(button).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(button)
+    expect(onClick).not.toHaveBeenCalled()
+
+    await user.hover(button)
+    expect(
+      (
+        await screen.findAllByText(
+          "A skill source is not on this project's allowlist. Add it to workflows.allowedSources in orca.yaml before saving."
+        )
+      ).length
+    ).toBeGreaterThan(0)
+  })
 })

@@ -50,13 +50,37 @@ describe('describeWorkflowProblem', () => {
     })
   })
 
-  it("names every quoted node id in a message, not just the problem's own node", () => {
+  it('renames only the element the problem declares, leaving other quoted ids raw', () => {
     const described = describeWorkflowProblem(
-      problem({ message: 'Loop "start" exit node "agent-3f2a" is not in its body.' }),
+      problem({
+        message: 'Loop "start" exit node "agent-3f2a" is not in its body.',
+        nodeId: 'start'
+      }),
       definition
     )
 
-    expect(described.message).toBe('Loop "Start" exit node "Review code" is not in its body.')
+    expect(described.message).toBe('Loop "Start" exit node "agent-3f2a" is not in its body.')
+  })
+
+  // A choice text that happens to equal a node id is choice text, not that node.
+  it('never rewrites option text that matches another node id', () => {
+    const described = describeWorkflowProblem(
+      problem({
+        message: 'Node "agent-3f2a" option "end" has more than one outgoing edge.',
+        nodeId: 'agent-3f2a'
+      }),
+      definition
+    )
+
+    expect(described.message).toBe(
+      'Node "Review code" option "end" has more than one outgoing edge.'
+    )
+  })
+
+  it('leaves a message without a declared location untouched', () => {
+    expect(
+      describeWorkflowProblem(problem({ message: 'Node "agent-3f2a" x' }), definition).message
+    ).toBe('Node "agent-3f2a" x')
   })
 
   it("names an edge by its endpoints' titles", () => {

@@ -21,7 +21,8 @@ export default function InspectorProblemList({
     <ul className="space-y-1.5 text-xs" data-testid="node-inspector-problems">
       {problems.map((problem) => (
         <li
-          key={`${problem.code}-${problem.message}`}
+          // Unique: mergeWorkflowValidationProblems dedupes on this same tuple.
+          key={`${problem.code}-${problem.nodeId ?? ''}-${problem.edgeId ?? ''}-${problem.roleId ?? ''}-${problem.message}`}
           className="flex items-start gap-1.5 text-foreground"
         >
           {problem.severity === 'error' ? (

@@ -18,7 +18,8 @@ import { checkWorkflowFields } from './editor/workflow-field-problems'
 import { createLocalGraphValidationContext } from './editor/workflow-graph-validation-context'
 import {
   hasBlockingWorkflowProblems,
-  mergeWorkflowValidationProblems
+  mergeWorkflowValidationProblems,
+  SKILL_SOURCE_NOT_ALLOWLISTED_CODE
 } from './editor/workflow-validation-merge'
 import {
   createDefaultNode,
@@ -83,6 +84,10 @@ export function useWorkflowsPageController() {
   // just no-ops silently.
   const noActiveProjectReason = repoId ? undefined : getNoActiveProjectReason()
   const blockingProblems = hasBlockingWorkflowProblems(problems)
+  // `workflow.write` refuses these outright (workflow-definition-save.ts), unlike other graph errors.
+  const hasDisallowedSources = problems.some(
+    (problem) => problem.code === SKILL_SOURCE_NOT_ALLOWLISTED_CODE
+  )
   // US6 AS2: an unsaved draft has no file to run against yet — save it first.
   const canRun =
     Boolean(repoId) && session.status === 'ready' && !session.isDraft && !blockingProblems
@@ -277,6 +282,7 @@ export function useWorkflowsPageController() {
     session,
     problems,
     hasInvalidFields,
+    hasDisallowedSources,
     canRun,
     noActiveProjectReason,
     runDisabledReason,

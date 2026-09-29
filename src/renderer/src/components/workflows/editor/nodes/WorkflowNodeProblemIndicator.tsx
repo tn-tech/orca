@@ -19,9 +19,8 @@ export default function WorkflowNodeProblemIndicator({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span
-          role="img"
-          tabIndex={0}
+        <button
+          type="button"
           aria-label={translate(
             'auto.components.workflows.editor.WorkflowNodeProblemIndicator.label',
             'Problems: {{count}}',
@@ -40,7 +39,7 @@ export default function WorkflowNodeProblemIndicator({
             <AlertTriangle className="size-3.5" aria-hidden="true" />
           )}
           {count}
-        </span>
+        </button>
       </TooltipTrigger>
       <TooltipContent side="top" sideOffset={4}>
         <ul className="space-y-0.5">

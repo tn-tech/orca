@@ -13,7 +13,8 @@ type NamedElements = Pick<Workflow, 'nodes' | 'edges' | 'roles'>
 
 const EMPTY_DEFINITION: NamedElements = { nodes: [], edges: [], roles: {} }
 
-function nodeName(definition: NamedElements, nodeId: string): string {
+/** A node's title, a type-based name when untitled, or the raw id when it no longer exists. */
+export function workflowNodeName(definition: NamedElements, nodeId: string): string {
   const node = definition.nodes.find((candidate) => candidate.id === nodeId)
   if (!node) {
     return nodeId
@@ -33,30 +34,40 @@ function nodeName(definition: NamedElements, nodeId: string): string {
 
 function edgeName(definition: NamedElements, edgeId: string): string {
   const edge = definition.edges.find((candidate) => candidate.id === edgeId)
-  return edge ? `${nodeName(definition, edge.from)} → ${nodeName(definition, edge.to)}` : edgeId
+  return edge
+    ? `${workflowNodeName(definition, edge.from)} → ${workflowNodeName(definition, edge.to)}`
+    : edgeId
 }
 
 function roleName(definition: NamedElements, roleId: string): string {
   return definition.roles[roleId]?.name || roleId
 }
 
-/** Validation messages are built host-side with raw ids (they also feed the CLI); only the
- *  editor swaps quoted ids for the titles the user actually sees on the canvas. */
-function nameQuotedIds(message: string, definition: NamedElements): string {
-  const nodeIds = new Set(definition.nodes.map((node) => node.id))
-  const edgeIds = new Set(definition.edges.map((edge) => edge.id))
-  return message.replace(/"([^"]+)"/g, (quoted, id: string) => {
-    if (nodeIds.has(id)) {
-      return `"${nodeName(definition, id)}"`
+/** Validation messages are built host-side with raw ids (they also feed the CLI). Only the ids
+ *  the problem itself declares are renamed: other quoted text (router options, agent ids) may
+ *  coincide with an id without naming that element. */
+function nameDeclaredIds(
+  message: string,
+  problem: WorkflowProblem,
+  definition: NamedElements
+): string {
+  const names = new Map<string, string>()
+  if (problem.roleId && definition.roles[problem.roleId]) {
+    names.set(problem.roleId, roleName(definition, problem.roleId))
+  }
+  if (problem.edgeId && definition.edges.some((edge) => edge.id === problem.edgeId)) {
+    names.set(problem.edgeId, edgeName(definition, problem.edgeId))
+  }
+  if (problem.nodeId && definition.nodes.some((node) => node.id === problem.nodeId)) {
+    names.set(problem.nodeId, workflowNodeName(definition, problem.nodeId))
+  }
+  return message.replace(
+    /(\b(?:Node|node|Loop|loop|Join|join|Edge|edge|Role|role) )"([^"]+)"/g,
+    (whole, prefix: string, id: string) => {
+      const name = names.get(id)
+      return name === undefined ? whole : `${prefix}"${name}"`
     }
-    if (edgeIds.has(id)) {
-      return `"${edgeName(definition, id)}"`
-    }
-    if (definition.roles[id]) {
-      return `"${roleName(definition, id)}"`
-    }
-    return quoted
-  })
+  )
 }
 
 function location(problem: WorkflowProblem, definition: NamedElements): string | undefined {
@@ -64,7 +75,7 @@ function location(problem: WorkflowProblem, definition: NamedElements): string |
     return translate(
       'auto.components.workflows.editor.ValidationProblemsPanel.locationNode',
       'Node "{{id}}"',
-      { id: nodeName(definition, problem.nodeId) }
+      { id: workflowNodeName(definition, problem.nodeId) }
     )
   }
   if (problem.edgeId) {
@@ -91,7 +102,7 @@ export function describeWorkflowProblem(
   definition: NamedElements = EMPTY_DEFINITION
 ): DescribedWorkflowProblem {
   return {
-    message: nameQuotedIds(problem.message, definition),
+    message: nameDeclaredIds(problem.message, problem, definition),
     location: location(problem, definition)
   }
 }

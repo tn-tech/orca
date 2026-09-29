@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
-import { AlertCircle, AlertTriangle, ChevronDown, ChevronRight, CircleCheck } from 'lucide-react'
+import { AlertCircle, AlertTriangle, ChevronDown, CircleCheck } from 'lucide-react'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { translate } from '@/i18n/i18n'
+import { cn } from '@/lib/utils'
 import type {
   Workflow,
   WorkflowProblem
@@ -52,25 +54,31 @@ export default function ValidationProblemsPanel({
   const warningCount = problems.length - errorCount
 
   return (
-    <div className="flex min-h-0 flex-col" data-testid="validation-problems-panel">
-      <button
-        type="button"
-        className="flex shrink-0 items-center gap-1.5 px-3 py-2 text-left text-xs font-semibold text-foreground hover:bg-accent"
-        aria-expanded={expanded}
-        onClick={() => setExpanded((value) => !value)}
-      >
-        {expanded ? (
-          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
-        )}
-        {translate(
-          'auto.components.workflows.editor.ValidationProblemsPanel.summary',
-          '{{errorCount}} error(s), {{warningCount}} warning(s)',
-          { errorCount, warningCount }
-        )}
-      </button>
-      {expanded ? (
+    <Collapsible
+      open={expanded}
+      onOpenChange={setExpanded}
+      className="flex min-h-0 flex-col"
+      data-testid="validation-problems-panel"
+    >
+      <CollapsibleTrigger asChild>
+        <button
+          type="button"
+          className="flex shrink-0 items-center gap-1.5 px-3 py-2 text-left text-xs font-semibold text-foreground hover:bg-accent"
+        >
+          <ChevronDown
+            className={cn(
+              'size-3.5 shrink-0 text-muted-foreground transition-transform',
+              !expanded && '-rotate-90'
+            )}
+          />
+          {translate(
+            'auto.components.workflows.editor.ValidationProblemsPanel.summary',
+            '{{errorCount}} error(s), {{warningCount}} warning(s)',
+            { errorCount, warningCount }
+          )}
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
         <ul className="scrollbar-sleek max-h-40 min-h-0 divide-y divide-border/50 overflow-y-auto border-t border-border">
           {sortBySeverity(problems).map((problem) => (
             <ProblemRow
@@ -81,8 +89,8 @@ export default function ValidationProblemsPanel({
             />
           ))}
         </ul>
-      ) : null}
-    </div>
+      </CollapsibleContent>
+    </Collapsible>
   )
 }
 

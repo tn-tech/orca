@@ -4,7 +4,9 @@ import type { WorkflowProblem } from '../../../../../shared/workflows/workflow-d
  *  skill-source allowlist, which the renderer's local validation context never has
  *  (see `workflow-graph-validation-context.ts`). Dropped from the local list so a workflow
  *  that is actually allowlisted doesn't sit blocked on a false positive between edits. */
-const HOST_ONLY_PROBLEM_CODES: ReadonlySet<string> = new Set(['graph_skill_source_not_allowlisted'])
+export const SKILL_SOURCE_NOT_ALLOWLISTED_CODE = 'graph_skill_source_not_allowlisted'
+
+const HOST_ONLY_PROBLEM_CODES: ReadonlySet<string> = new Set([SKILL_SOURCE_NOT_ALLOWLISTED_CODE])
 
 function problemKey(problem: WorkflowProblem): string {
   return [

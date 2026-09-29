@@ -321,7 +321,8 @@ describe('NodeInspector', () => {
         onRemoveRole={vi.fn()}
       />
     )
-    expect(screen.getByText('start → implement')).toBeInTheDocument()
+    // F7 fix round 1: endpoints named by title, not id.
+    expect(screen.getByText('Start → Implement')).toBeInTheDocument()
     expect(screen.getByText('No condition — this edge always fires.')).toBeInTheDocument()
   })
 

@@ -649,6 +649,41 @@ describe('useWorkflowsPageController', () => {
     })
   })
 
+  it('reports a host allowlist refusal as a Save blocker (F7 fix round 1)', async () => {
+    vi.useFakeTimers()
+    try {
+      workflowReadMock.mockResolvedValue({
+        definition: savedWorkflow(),
+        raw: 'raw',
+        revision: 'rev-1',
+        problems: []
+      })
+      workflowValidateMock.mockResolvedValue({
+        problems: [
+          {
+            code: 'graph_skill_source_not_allowlisted',
+            message:
+              'Skill "x" references a repository source that is not on the project allowlist.',
+            roleId: 'dev',
+            severity: 'error'
+          }
+        ]
+      })
+      const { result } = renderHook(() => useWorkflowsPageController())
+      await act(() =>
+        result.current.openWorkflow({ name: 'wf-a', source: 'project', path: '', valid: true })
+      )
+      expect(result.current.hasDisallowedSources).toBe(false)
+
+      await act(() => vi.advanceTimersByTimeAsync(400))
+
+      expect(result.current.hasDisallowedSources).toBe(true)
+      expect(result.current.hasInvalidFields).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   describe('no active project (F6)', () => {
     it('reports noActiveProjectReason and canRun=false from the initial mount, with no active repo', () => {
       useActiveRepoMock.mockReturnValue(undefined)

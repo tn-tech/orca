@@ -19,6 +19,7 @@ import ApprovalNodeFields from './ApprovalNodeFields'
 import ConditionBuilder from './ConditionBuilder'
 import { InspectorField } from './InspectorField'
 import InspectorProblemList from './InspectorProblemList'
+import { workflowNodeName } from './workflow-problem-labels'
 import JoinNodeFields from './JoinNodeFields'
 import LoopNodeFields from './LoopNodeFields'
 import ReflectionNodeFields from './ReflectionNodeFields'
@@ -160,7 +161,10 @@ export default function NodeInspector({
           {translate(
             'auto.components.workflows.editor.NodeInspector.edgeSubheading',
             '{{from}} → {{to}}',
-            { from: edge.from, to: edge.to }
+            {
+              from: workflowNodeName(definition, edge.from),
+              to: workflowNodeName(definition, edge.to)
+            }
           )}
         </p>
         <InspectorProblemList

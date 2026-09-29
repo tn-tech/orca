@@ -28,7 +28,10 @@ export function summarizeNodeProblems(
       summary[problem.nodeId] = { severity: problem.severity, messages: [message] }
       continue
     }
-    existing.messages.push(message)
+    // Deduped: the indicator keys its rows by message text.
+    if (!existing.messages.includes(message)) {
+      existing.messages.push(message)
+    }
     if (problem.severity === 'error') {
       existing.severity = 'error'
     }

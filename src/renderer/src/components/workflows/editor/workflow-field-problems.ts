@@ -7,7 +7,8 @@ import type {
 } from '../../../../../shared/workflows/workflow-definition-types'
 
 export type WorkflowFieldCheck = {
-  /** False when the host's `workflow.write` would reject the definition outright. */
+  /** False when `WorkflowSchema` (the `workflow.write` params schema) rejects the definition. The
+   *  host's other write refusal, a non-allowlisted skill source, comes from host validation. */
   storable: boolean
   problems: WorkflowProblem[]
 }
@@ -40,6 +41,13 @@ function fieldLabel(key: PathKey): string {
       )
     case 'path':
       return translate('auto.components.workflows.editor.workflow-field-problems.path', 'Path')
+    case 'from':
+      return translate(
+        'auto.components.workflows.editor.workflow-field-problems.from',
+        'Source node'
+      )
+    case 'to':
+      return translate('auto.components.workflows.editor.workflow-field-problems.to', 'Target node')
     default:
       return String(key)
   }
@@ -110,12 +118,22 @@ function issueMessage(issue: z.core.$ZodIssue): { code: string; message: string 
       )
     }
   }
+  if (last === undefined) {
+    return {
+      code: 'workflow_field_invalid',
+      message: translate(
+        'auto.components.workflows.editor.workflow-field-problems.invalidWorkflow',
+        'This workflow has an invalid value: {{detail}}',
+        { detail: issue.message }
+      )
+    }
+  }
   return {
     code: 'workflow_field_invalid',
     message: translate(
       'auto.components.workflows.editor.workflow-field-problems.invalid',
       '{{field}} is invalid: {{detail}}',
-      { field: last === undefined ? '' : fieldLabel(last), detail: issue.message }
+      { field: fieldLabel(last), detail: issue.message }
     )
   }
 }

@@ -64,6 +64,7 @@ function fakeController(
     runDisabledReason?: string
     dirty?: boolean
     hasInvalidFields?: boolean
+    hasDisallowedSources?: boolean
     problems?: WorkflowProblem[]
   } = {}
 ) {
@@ -106,6 +107,7 @@ function fakeController(
     },
     problems: overrides.problems ?? [],
     hasInvalidFields: overrides.hasInvalidFields ?? false,
+    hasDisallowedSources: overrides.hasDisallowedSources ?? false,
     canRun: overrides.runDisabledReason === undefined,
     noActiveProjectReason: overrides.repoId ? undefined : 'Add or select a project.',
     runDisabledReason: overrides.runDisabledReason,
@@ -245,6 +247,20 @@ describe('WorkflowsPage: Save with validation problems (F7)', () => {
   it('blocks Save while a field the host cannot store is invalid', () => {
     useWorkflowsPageControllerMock.mockReturnValue(
       fakeController({ dirty: true, hasInvalidFields: true, runDisabledReason: 'Fix problems.' })
+    )
+
+    render(
+      <TooltipProvider>
+        <WorkflowsPage />
+      </TooltipProvider>
+    )
+
+    expect(screen.getByRole('button', { name: 'Save' })).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('blocks Save while a skill source is not on the allowlist, which workflow.write refuses', () => {
+    useWorkflowsPageControllerMock.mockReturnValue(
+      fakeController({ dirty: true, hasDisallowedSources: true, runDisabledReason: 'Fix.' })
     )
 
     render(

@@ -132,6 +132,7 @@ export default function WorkflowsPage(): React.JSX.Element {
             isDraft={session.isDraft}
             saving={session.saving}
             invalidFields={controller.hasInvalidFields}
+            disallowedSources={controller.hasDisallowedSources}
             onClick={() => {
               if (session.isDraft) {
                 setNamingDraftGeneration((generation) => generation + 1)

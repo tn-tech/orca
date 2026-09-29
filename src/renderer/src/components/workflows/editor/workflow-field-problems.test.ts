@@ -131,4 +131,21 @@ describe('checkWorkflowFields', () => {
 
     expect(checkWorkflowFields(workflow([agent, loop]))).toEqual({ storable: false, problems: [] })
   })
+
+  it('names an edge endpoint field instead of its raw schema key', () => {
+    const result = checkWorkflowFields({
+      ...workflow(),
+      edges: [{ id: 'edge-1', from: '', to: 'end' }]
+    })
+
+    expect(result.problems.map((problem) => problem.message)).toEqual(['Source node is required.'])
+  })
+
+  it('words an issue with no field path without a dangling field name', () => {
+    const definition = { ...workflow(), unexpected: true }
+
+    const result = checkWorkflowFields(definition)
+
+    expect(result.problems[0]?.message).toMatch(/^This workflow has an invalid value: /)
+  })
 })

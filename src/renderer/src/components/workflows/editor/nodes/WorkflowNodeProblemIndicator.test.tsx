@@ -31,6 +31,7 @@ describe('WorkflowNodeProblemIndicator', () => {
     expect(indicator).toHaveAttribute('data-severity', 'error')
     expect(indicator).toHaveTextContent('2')
     expect(indicator).toHaveAccessibleName('Problems: 2')
+    expect(screen.getByRole('button', { name: 'Problems: 2' })).toBe(indicator)
 
     await user.hover(indicator)
     expect((await screen.findAllByText('Title is required.')).length).toBeGreaterThan(0)

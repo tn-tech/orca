@@ -47,4 +47,13 @@ describe('summarizeNodeProblems', () => {
       summarizeNodeProblems([problem({ nodeId: 'start', severity: 'warning' })], definition)
     ).toEqual({ start: { severity: 'warning', messages: ['m'] } })
   })
+
+  it('lists identical messages once', () => {
+    expect(
+      summarizeNodeProblems(
+        [problem({ nodeId: 'start', code: 'a' }), problem({ nodeId: 'start', code: 'b' })],
+        definition
+      )
+    ).toEqual({ start: { severity: 'error', messages: ['m'] } })
+  })
 })

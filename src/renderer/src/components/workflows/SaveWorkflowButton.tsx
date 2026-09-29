@@ -9,6 +9,8 @@ export type SaveWorkflowButtonProps = {
   saving: boolean
   /** F7: only fields the host can't store gate Save; graph errors save as a draft and block Run. */
   invalidFields: boolean
+  /** A repository skill source off the project allowlist — `workflow.write` refuses it too. */
+  disallowedSources?: boolean
   onClick: () => void
 }
 
@@ -19,6 +21,7 @@ export default function SaveWorkflowButton({
   isDraft,
   saving,
   invalidFields,
+  disallowedSources = false,
   onClick
 }: SaveWorkflowButtonProps): React.JSX.Element {
   const reason = invalidFields
@@ -26,14 +29,19 @@ export default function SaveWorkflowButton({
         'auto.components.workflows.SaveWorkflowButton.invalidFields',
         'Fill in the fields listed under Problems before saving.'
       )
-    : saving
-      ? translate('auto.components.workflows.SaveWorkflowButton.saving', 'Saving…')
-      : !dirty && !isDraft
-        ? translate(
-            'auto.components.workflows.SaveWorkflowButton.nothingToSave',
-            'No changes to save yet.'
-          )
-        : undefined
+    : disallowedSources
+      ? translate(
+          'auto.components.workflows.SaveWorkflowButton.disallowedSources',
+          "A skill source is not on this project's allowlist. Add it to workflows.allowedSources in orca.yaml before saving."
+        )
+      : saving
+        ? translate('auto.components.workflows.SaveWorkflowButton.saving', 'Saving…')
+        : !dirty && !isDraft
+          ? translate(
+              'auto.components.workflows.SaveWorkflowButton.nothingToSave',
+              'No changes to save yet.'
+            )
+          : undefined
 
   return (
     <DisabledReasonButton reason={reason} onClick={onClick} tooltipSide="bottom">
