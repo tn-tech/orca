@@ -201,6 +201,37 @@ describe('editLoopInDefinition: adding members', () => {
   })
 })
 
+describe('editLoopInDefinition: fix round 1', () => {
+  it('refuses the node right after a freshly wrapped Loop (a body-sourced exit edge)', () => {
+    // `b -> loose [exit]` is exactly what Wrap in Loop leaves on the exit node's outgoing edge.
+    const definition = workflow(
+      [agent('loose')],
+      [{ id: 'e7', from: 'b', to: 'loose', fromPort: 'exit' }]
+    )
+    expect(loopMemberCandidates(definition, 'loop').map((node) => node.id)).not.toContain('loose')
+    expect(
+      editLoopInDefinition(definition, 'loop', { kind: 'add-member', nodeId: 'loose' })
+    ).toMatchObject({
+      ok: false,
+      problem: { code: 'workflow_editor_loop_add_refused' }
+    })
+  })
+
+  it('places a node added to an empty body at the Loop origin plus padding', () => {
+    const next = edited(workflow([approval('approval')], [], { body: { nodeIds: [] } }), {
+      kind: 'add-member',
+      nodeId: 'approval'
+    })
+    expect(next.layout.approval).toEqual({ x: WORKFLOW_LOOP_PADDING, y: WORKFLOW_LOOP_PADDING })
+  })
+
+  it('never deletes an edge when re-homing exit edges', () => {
+    const definition = workflow([], [{ id: 'dup', from: 'loop', to: 'end', fromPort: 'exit' }])
+    const next = edited(definition, { kind: 'set-exit', nodeId: 'a' })
+    expect(next.edges.map((edge) => edge.id).sort()).toEqual(['dup', 'e1', 'e2', 'e3'])
+  })
+})
+
 describe('editLoopInDefinition: removing members', () => {
   it('removes a middle member, re-homes its exit edges, and moves it clear of the container', () => {
     const definition = workflow(

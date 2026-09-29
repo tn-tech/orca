@@ -43,10 +43,15 @@ function notMemberRefusal(): WorkflowEditorCommandResult {
   )
 }
 
-function isWiredToLoop(edges: readonly Edge[], loopId: string, nodeId: string): boolean {
+/** Any edge between the node and the Loop, counting exit edges drawn from a body member (the
+ *  shape Wrap in Loop leaves): a node fed by the Loop's exit can't also sit in its body. */
+function isWiredToLoop(edges: readonly Edge[], loop: LoopNode, nodeId: string): boolean {
+  const body = new Set(loop.body.nodeIds)
   return edges.some(
     (edge) =>
-      (edge.from === loopId && edge.to === nodeId) || (edge.from === nodeId && edge.to === loopId)
+      (edge.from === nodeId && edge.to === loop.id) ||
+      (edge.to === nodeId &&
+        (edge.from === loop.id || (edge.fromPort === 'exit' && body.has(edge.from))))
   )
 }
 
@@ -55,11 +60,15 @@ export function loopMemberCandidates(definition: Workflow, loopId: string): Node
   const owned = new Set(
     definition.nodes.flatMap((node) => (node.type === 'loop' ? node.body.nodeIds : []))
   )
+  const loop = definition.nodes.find((node) => node.id === loopId)
+  if (loop?.type !== 'loop') {
+    return []
+  }
   return definition.nodes.filter(
     (node) =>
       LOOP_BODY_NODE_TYPES.has(node.type) &&
       !owned.has(node.id) &&
-      !isWiredToLoop(definition.edges, loopId, node.id)
+      !isWiredToLoop(definition.edges, loop, node.id)
   )
 }
 
@@ -70,20 +79,9 @@ function rehomeExitEdges(
   loopId: string,
   fromIds: ReadonlySet<string>
 ): Edge[] {
-  const seen = new Set<string>()
-  return edges.flatMap((edge) => {
-    const next =
-      edge.fromPort === 'exit' && fromIds.has(edge.from) ? { ...edge, from: loopId } : edge
-    if (next.fromPort !== 'exit' || next.from !== loopId) {
-      return [next]
-    }
-    const key = `${next.to}\u0000${next.condition ? JSON.stringify(next.condition) : ''}`
-    if (seen.has(key)) {
-      return []
-    }
-    seen.add(key)
-    return [next]
-  })
+  return edges.map((edge) =>
+    edge.fromPort === 'exit' && fromIds.has(edge.from) ? { ...edge, from: loopId } : edge
+  )
 }
 
 function bodyBoxes(definition: Workflow, nodeIds: readonly string[]) {
@@ -115,10 +113,14 @@ function addMember(
   }
   const members = bodyBoxes(definition, loop.body.nodeIds)
   const loopPosition = definition.layout[loop.id] ?? { x: 0, y: 0 }
-  const position = {
-    x: Math.max(...members.map((box) => box.x + box.width)) + WORKFLOW_LOOP_PADDING,
-    y: Math.min(...members.map((box) => box.y))
-  }
+  // A hand-edited empty body has no members to sit beside.
+  const position =
+    members.length === 0
+      ? { x: loopPosition.x + WORKFLOW_LOOP_PADDING, y: loopPosition.y + WORKFLOW_LOOP_PADDING }
+      : {
+          x: Math.max(...members.map((box) => box.x + box.width)) + WORKFLOW_LOOP_PADDING,
+          y: Math.min(...members.map((box) => box.y))
+        }
   const nodeIds = [...loop.body.nodeIds, nodeId]
   const placed: Workflow = {
     ...definition,

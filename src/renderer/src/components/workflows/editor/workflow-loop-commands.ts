@@ -15,11 +15,12 @@ import {
 import type { WorkflowEditorCommandResult, WorkflowEditorProblem } from './workflow-editor-commands'
 import { LOOP_BODY_NODE_TYPES } from './workflow-loop-membership-commands'
 import { nudgeOverlappingSiblings, type Box } from './workflow-loop-neighbour-nudge'
+import { workflowNodeName } from './workflow-problem-labels'
 
 /** An Approval/Router's outgoing edges must be its own option ports, so one can't become the
- *  Loop's `exit` edge (`checkPortedNodes`). */
-function hasPortedExit(definition: Workflow, selected: ReadonlySet<string>): boolean {
-  return definition.edges.some(
+ *  Loop's `exit` edge (`checkPortedNodes`). Returns the first such edge. */
+function findPortedExit(definition: Workflow, selected: ReadonlySet<string>): Edge | undefined {
+  return definition.edges.find(
     (edge) =>
       selected.has(edge.from) &&
       !selected.has(edge.to) &&
@@ -27,6 +28,24 @@ function hasPortedExit(definition: Workflow, selected: ReadonlySet<string>): boo
         (node) => node.id === edge.from && (node.type === 'approval' || node.type === 'router')
       )
   )
+}
+
+function portedExitMessage(definition: Workflow, edge: Edge): string {
+  const names = {
+    node: workflowNodeName(definition, edge.from),
+    target: workflowNodeName(definition, edge.to)
+  }
+  return edge.fromPort === undefined
+    ? translate(
+        'auto.components.workflows.editor.workflow-loop-commands.portedExitEdge',
+        'An edge from {{node}} leads out of the Loop to {{target}}. Delete that edge, or wrap {{target}} as well.',
+        names
+      )
+    : translate(
+        'auto.components.workflows.editor.workflow-loop-commands.portedExitOption',
+        'The "{{option}}" option of {{node}} leads out of the Loop to {{target}}. Delete that edge, or wrap {{target}} as well.',
+        { ...names, option: edge.fromPort }
+      )
 }
 
 function inducedEdges(edges: readonly Edge[], selected: ReadonlySet<string>): Edge[] {
@@ -243,14 +262,9 @@ export function wrapNodesInLoopInDefinition(
       )
     )
   }
-  if (hasPortedExit(definition, new Set(uniqueIds))) {
-    return refusal(
-      'workflow_editor_wrap_ported_exit',
-      translate(
-        'auto.components.workflows.editor.workflow-loop-commands.portedExit',
-        'An Approval or Router option can’t lead out of a Loop. Delete that edge, or wrap the node it leads to as well.'
-      )
-    )
+  const portedExit = findPortedExit(definition, new Set(uniqueIds))
+  if (portedExit) {
+    return refusal('workflow_editor_wrap_ported_exit', portedExitMessage(definition, portedExit))
   }
 
   const resolved = resolveLoopEntryExit(definition, uniqueIds)

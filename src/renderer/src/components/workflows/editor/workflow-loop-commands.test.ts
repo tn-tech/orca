@@ -131,7 +131,11 @@ describe('wrapNodesInLoopInDefinition', () => {
     )
     expect(wrapNodesInLoopInDefinition(definition, ['gate'])).toMatchObject({
       ok: false,
-      problem: { code: 'workflow_editor_wrap_ported_exit' }
+      problem: {
+        code: 'workflow_editor_wrap_ported_exit',
+        message:
+          'The "yes" option of Gate leads out of the Loop to after. Delete that edge, or wrap after as well.'
+      }
     })
   })
 })

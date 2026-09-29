@@ -109,6 +109,78 @@ describe('describeWorkflowProblem', () => {
     })
   })
 
+  it('names an option edge with its port so sibling option edges read differently', () => {
+    const withPort: Workflow = {
+      ...definition,
+      edges: [{ id: 'edge-9', from: 'start', to: 'agent-3f2a', fromPort: 'redo' }]
+    }
+    expect(
+      describeWorkflowProblem(problem({ message: 'Edge "edge-9" x.', edgeId: 'edge-9' }), withPort)
+        .message
+    ).toBe('Edge "Start (redo) → Review code" x.')
+  })
+
+  it('lets a declared edge id win over a node id it collides with in a Loop problem', () => {
+    const colliding: Workflow = {
+      ...definition,
+      edges: [{ id: 'end', from: 'start', to: 'agent-3f2a' }]
+    }
+    const described = describeWorkflowProblem(
+      problem({
+        code: 'graph_loop_body_edge_escapes',
+        message: 'Edge "end" leaves loop "start"\'s body without going through a loop port.',
+        edgeId: 'end',
+        nodeId: 'start'
+      }),
+      colliding
+    )
+    expect(described.message).toBe(
+      'Edge "Start → Review code" leaves loop "Start"\'s body without going through a loop port.'
+    )
+  })
+
+  it('spells out that an unwired Approval option inside a Loop stops the run', () => {
+    const looped: Workflow = {
+      ...definition,
+      nodes: [
+        ...definition.nodes,
+        {
+          id: 'gate',
+          type: 'approval',
+          title: 'Sign off',
+          question: 'q',
+          options: ['redo'],
+          timeoutMs: 1,
+          escalationGraceMs: 1
+        },
+        {
+          id: 'loop',
+          type: 'loop',
+          title: 'Loop',
+          body: { nodeIds: ['gate'] },
+          entryNodeId: 'gate',
+          exitNodeId: 'gate',
+          maxIterations: 2,
+          exitCondition: { path: 'option', op: 'truthy' },
+          onCapReached: 'fail'
+        }
+      ]
+    }
+    const described = describeWorkflowProblem(
+      problem({
+        code: 'graph_option_missing_edge',
+        severity: 'warning',
+        // What an older host sends: the plain, loop-unaware warning.
+        message: 'Node "gate" option "redo" has no outgoing edge; choosing it stops the run.',
+        nodeId: 'gate'
+      }),
+      looped
+    )
+    expect(described.message).toBe(
+      'Node "Sign off" option "redo" has no outgoing edge; answering "redo" will stop the run. Connect it to a node inside the loop to continue iterating.'
+    )
+  })
+
   it('names a role by its display name', () => {
     expect(describeWorkflowProblem(problem({ roleId: 'dev' }), definition).location).toBe(
       'Role "Developer"'

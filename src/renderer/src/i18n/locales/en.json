@@ -17340,7 +17340,8 @@
             "multipleEntries": "These nodes have more than one incoming connection from outside the selection; a Loop can only have one entry point.",
             "multipleExits": "These nodes have more than one outgoing connection to outside the selection; a Loop can only have one exit point.",
             "unwrappableNodeKind": "Start, End and Loop nodes can’t be wrapped in a Loop.",
-            "portedExit": "An Approval or Router option can’t lead out of a Loop. Delete that edge, or wrap the node it leads to as well."
+            "portedExitEdge": "An edge from {{node}} leads out of the Loop to {{target}}. Delete that edge, or wrap {{target}} as well.",
+            "portedExitOption": "The \"{{option}}\" option of {{node}} leads out of the Loop to {{target}}. Delete that edge, or wrap {{target}} as well."
           },
           "WorkflowEditorProblemNotice": {
             "wrapInLoop": "Wrap in Loop",
@@ -17464,7 +17465,8 @@
             "invalidWorkflow": "This workflow has an invalid value: {{detail}}"
           },
           "workflow-problem-labels": {
-            "untitled": "Untitled {{type}}"
+            "untitled": "Untitled {{type}}",
+            "loopApprovalOptionStopsRun": "Node \"{{node}}\" option \"{{option}}\" has no outgoing edge; answering \"{{option}}\" will stop the run. Connect it to a node inside the loop to continue iterating."
           },
           "WorkflowSettingsPanel": {
             "policyLabel": "Workspace policy",

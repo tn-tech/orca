@@ -96,6 +96,21 @@ export function checkLoopNodes(nodes: Node[], edges: Edge[]): WorkflowProblem[] 
       }
     }
     for (const edge of edges) {
+      // An exit edge fires when the Loop settles, so one landing back in its own body never runs.
+      if (
+        edge.fromPort === 'exit' &&
+        (edge.from === loop.id || body.has(edge.from)) &&
+        body.has(edge.to)
+      ) {
+        problems.push(
+          error({
+            code: 'graph_loop_exit_edge_into_body',
+            message: `Edge "${edge.id}" leaves loop "${loop.id}" through its exit but leads back into the loop's body.`,
+            nodeId: loop.id,
+            edgeId: edge.id
+          })
+        )
+      }
       if (
         body.has(edge.from) &&
         !body.has(edge.to) &&

@@ -132,11 +132,26 @@ const LOOP_PORT_NAMES: ReadonlySet<string> = new Set(['exit', 'body'])
  * Every option/choice needs exactly one outgoing edge on that port; no other edges are allowed.
  * An Approval option may have none (spec US5: choosing it stops the run), so that only warns.
  */
+function missingEdgeMessage(
+  nodeId: string,
+  option: string,
+  missingEdge: 'error' | 'warning',
+  inLoop: boolean
+): string {
+  if (missingEdge === 'error') {
+    return `Node "${nodeId}" option "${option}" has no outgoing edge.`
+  }
+  return inLoop
+    ? `Node "${nodeId}" option "${option}" has no outgoing edge; answering "${option}" will stop the run. Connect it to a node inside the loop to continue iterating.`
+    : `Node "${nodeId}" option "${option}" has no outgoing edge; choosing it stops the run.`
+}
+
 function checkPortOptions(
   nodeId: string,
   options: string[],
   edges: Edge[],
-  missingEdge: 'error' | 'warning'
+  missingEdge: 'error' | 'warning',
+  inLoop = false
 ): WorkflowProblem[] {
   const problems: WorkflowProblem[] = []
   const outgoing = edges.filter((edge) => edge.from === nodeId)
@@ -154,10 +169,7 @@ function checkPortOptions(
     if (matches.length === 0) {
       problems.push({
         code: 'graph_option_missing_edge',
-        message:
-          missingEdge === 'error'
-            ? `Node "${nodeId}" option "${option}" has no outgoing edge.`
-            : `Node "${nodeId}" option "${option}" has no outgoing edge; choosing it stops the run.`,
+        message: missingEdgeMessage(nodeId, option, missingEdge, inLoop),
         nodeId,
         severity: missingEdge
       })
@@ -191,9 +203,15 @@ function checkPortOptions(
 /** Approval options and Router choices are both "exactly one edge per port, no other edges". */
 export function checkPortedNodes(nodes: Node[], edges: Edge[]): WorkflowProblem[] {
   const problems: WorkflowProblem[] = []
+  const inLoopBody = new Set(
+    nodes.flatMap((node) => (node.type === 'loop' ? node.body.nodeIds : []))
+  )
   for (const node of nodes) {
     if (node.type === 'approval') {
-      problems.push(...checkPortOptions(node.id, node.options, edges, 'warning'))
+      // An unwired option stops the run even inside a Loop (spec US5), so say so explicitly there.
+      problems.push(
+        ...checkPortOptions(node.id, node.options, edges, 'warning', inLoopBody.has(node.id))
+      )
     } else if (node.type === 'router') {
       problems.push(...checkPortOptions(node.id, node.choices, edges, 'error'))
     }

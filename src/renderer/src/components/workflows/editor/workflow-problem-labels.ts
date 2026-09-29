@@ -32,11 +32,14 @@ export function workflowNodeName(definition: NamedElements, nodeId: string): str
   )
 }
 
+/** Option edges carry their port, so an Approval's sibling option edges read differently. */
 function edgeName(definition: NamedElements, edgeId: string): string {
   const edge = definition.edges.find((candidate) => candidate.id === edgeId)
-  return edge
-    ? `${workflowNodeName(definition, edge.from)} → ${workflowNodeName(definition, edge.to)}`
-    : edgeId
+  if (!edge) {
+    return edgeId
+  }
+  const port = edge.fromPort === undefined ? '' : ` (${edge.fromPort})`
+  return `${workflowNodeName(definition, edge.from)}${port} → ${workflowNodeName(definition, edge.to)}`
 }
 
 function roleName(definition: NamedElements, roleId: string): string {
@@ -52,6 +55,13 @@ function nameDeclaredIds(
   definition: NamedElements
 ): string {
   const names = new Map<string, string>()
+  // Loop rule messages (workflow-graph-loop-rules.ts) quote node ids plus the declared edge id,
+  // so every node is named; declared ids are set after so they win a collision.
+  if (problem.code.startsWith('graph_loop_')) {
+    for (const node of definition.nodes) {
+      names.set(node.id, workflowNodeName(definition, node.id))
+    }
+  }
   if (problem.roleId && definition.roles[problem.roleId]) {
     names.set(problem.roleId, roleName(definition, problem.roleId))
   }
@@ -60,12 +70,6 @@ function nameDeclaredIds(
   }
   if (problem.nodeId && definition.nodes.some((node) => node.id === problem.nodeId)) {
     names.set(problem.nodeId, workflowNodeName(definition, problem.nodeId))
-  }
-  // Loop rule messages (workflow-graph-loop-rules.ts) quote nothing but node ids.
-  if (problem.code.startsWith('graph_loop_')) {
-    for (const node of definition.nodes) {
-      names.set(node.id, workflowNodeName(definition, node.id))
-    }
   }
   return message.replace(
     /(\b(?:Node|node|Loop|loop|Join|join|Edge|edge|Role|role) )"([^"]+)"/g,
@@ -103,12 +107,42 @@ function location(problem: WorkflowProblem, definition: NamedElements): string |
 
 /** N7: a problem as the editor shows it — nodes, edges and roles named by title, not id. Without
  *  a definition every element keeps its raw id. */
+/** F11: an unwired Approval option inside a Loop still stops the run (spec US5), which the plain
+ *  warning an older host sends doesn't say; the option is read back from that warning. */
+function loopApprovalOptionMessage(
+  problem: WorkflowProblem,
+  definition: NamedElements
+): string | undefined {
+  const nodeId = problem.nodeId
+  const option = /option "([^"]+)"/.exec(problem.message)?.[1]
+  const inLoop = definition.nodes.some(
+    (node) => node.type === 'loop' && nodeId !== undefined && node.body.nodeIds.includes(nodeId)
+  )
+  const isApproval = definition.nodes.some((node) => node.id === nodeId && node.type === 'approval')
+  if (
+    problem.code !== 'graph_option_missing_edge' ||
+    !nodeId ||
+    !option ||
+    !inLoop ||
+    !isApproval
+  ) {
+    return undefined
+  }
+  return translate(
+    'auto.components.workflows.editor.workflow-problem-labels.loopApprovalOptionStopsRun',
+    'Node "{{node}}" option "{{option}}" has no outgoing edge; answering "{{option}}" will stop the run. Connect it to a node inside the loop to continue iterating.',
+    { node: workflowNodeName(definition, nodeId), option }
+  )
+}
+
 export function describeWorkflowProblem(
   problem: WorkflowProblem,
   definition: NamedElements = EMPTY_DEFINITION
 ): DescribedWorkflowProblem {
   return {
-    message: nameDeclaredIds(problem.message, problem, definition),
+    message:
+      loopApprovalOptionMessage(problem, definition) ??
+      nameDeclaredIds(problem.message, problem, definition),
     location: location(problem, definition)
   }
 }
