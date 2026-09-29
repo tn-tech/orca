@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 // F9: leaving a shown run for editing, and run-level pending prompts.
 import '@testing-library/jest-dom/vitest'
+import { useState } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -148,7 +149,8 @@ function fakeController(shown: WorkflowRunSnapshotView | null, selectedNodeId?: 
     selectedNodeId,
     selectedEdgeId: undefined,
     setSelectedNodeId: vi.fn(),
-    setSelectedEdgeId: vi.fn()
+    setSelectedEdgeId: vi.fn(),
+    selectNode: vi.fn()
   }
 }
 
@@ -190,10 +192,20 @@ describe('WorkflowsPage: leaving a run and run-level prompts (F9)', () => {
     expect(controller.backToEditing).toHaveBeenCalledTimes(1)
   })
 
-  it('shows node settings, no attempt panel, banner or Back button once the run is dropped', () => {
-    useWorkflowsPageControllerMock.mockReturnValue(fakeController(null, 'gate'))
+  it('returns to node settings after Back to editing, dropping the attempt panel, banner and button', () => {
+    useWorkflowsPageControllerMock.mockImplementation(() => {
+      const [shown, setShown] = useState(true)
+      return {
+        ...fakeController(shown ? snapshot : null, 'gate'),
+        backToEditing: () => setShown(false)
+      }
+    })
 
     renderPage()
+    expect(screen.getByTestId('attempt-panel')).toBeInTheDocument()
+    expect(screen.queryByTestId('node-inspector')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to editing' }))
 
     expect(screen.getByTestId('node-inspector')).toHaveTextContent('gate')
     expect(screen.queryByTestId('attempt-panel')).toBeNull()
@@ -201,12 +213,11 @@ describe('WorkflowsPage: leaving a run and run-level prompts (F9)', () => {
     expect(screen.queryByRole('button', { name: 'Back to editing' })).toBeNull()
   })
 
-  it('shows the attempt panel instead of settings while the run is shown and a node is selected', () => {
+  it("does not repeat the selected node's question in the run-level list", () => {
     useWorkflowsPageControllerMock.mockReturnValue(fakeController(snapshot, 'gate'))
 
     renderPage()
 
-    expect(screen.getByTestId('attempt-panel')).toBeInTheDocument()
-    expect(screen.queryByTestId('node-inspector')).toBeNull()
+    expect(screen.queryByText('Ship it to production?')).toBeNull()
   })
 })

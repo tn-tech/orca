@@ -23,6 +23,7 @@ import WorkflowListPane from './WorkflowListPane'
 import WorkflowNameDialog from './WorkflowNameDialog'
 import { repoTrustHostKey } from './workflow-repo-trust-host'
 import AttemptPanel from './run-view/AttemptPanel'
+import BackToEditingButton from './run-view/BackToEditingButton'
 import RunCanvasOverlay from './run-view/RunCanvasOverlay'
 import RunControls from './run-view/RunControls'
 import RunHistory from './run-view/RunHistory'
@@ -209,6 +210,7 @@ export default function WorkflowsPage(): React.JSX.Element {
                     canUndo={session.status === 'ready' && session.editor.canUndo}
                     onUndo={controller.undo}
                   />
+                  {run.snapshot ? <BackToEditingButton onClick={controller.backToEditing} /> : null}
                 </div>
                 <RunToolbar
                   runState={run.snapshot?.state}
@@ -217,7 +219,6 @@ export default function WorkflowsPage(): React.JSX.Element {
                   disabledReason={runSaveGuard.busyReason ?? controller.runDisabledReason}
                   starting={run.starting}
                   onRun={runSaveGuard.requestRun}
-                  onBackToEditing={run.snapshot ? controller.backToEditing : undefined}
                   runControls={
                     <RunControls
                       runState={run.snapshot?.state}
@@ -269,13 +270,10 @@ export default function WorkflowsPage(): React.JSX.Element {
               />
               {run.snapshot ? (
                 <RunPendingPrompts
-                  definition={session.editor.state.definition}
                   snapshot={run.snapshot}
                   settings={controller.settings}
-                  onSelectNode={(nodeId) => {
-                    controller.setSelectedNodeId(nodeId)
-                    controller.setSelectedEdgeId(undefined)
-                  }}
+                  selectedNodeId={showAttemptPanel ? controller.selectedNodeId : undefined}
+                  onSelectNode={controller.selectNode}
                 />
               ) : null}
               <div className="flex min-h-0 flex-1">
@@ -286,13 +284,12 @@ export default function WorkflowsPage(): React.JSX.Element {
                     snapshot={run.snapshot}
                     selectedNodeId={controller.selectedNodeId}
                     selectedEdgeId={controller.selectedEdgeId}
-                    onNodeSelect={(nodeId) => {
-                      controller.setSelectedNodeId(nodeId)
-                      controller.setSelectedEdgeId(undefined)
-                    }}
+                    onNodeSelect={controller.selectNode}
                     onEdgeSelect={(edgeId) => {
                       controller.setSelectedEdgeId(edgeId)
-                      controller.setSelectedNodeId(undefined)
+                      if (edgeId) {
+                        controller.setSelectedNodeId(undefined)
+                      }
                     }}
                     onNodeDragStop={(nodeId, position) =>
                       session.editor.dispatch({ type: 'move-node', nodeId, position })

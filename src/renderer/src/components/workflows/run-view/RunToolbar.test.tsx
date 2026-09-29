@@ -308,30 +308,4 @@ describe('RunToolbar', () => {
 
     expect(screen.queryAllByText('Enter an objective.').length).toBe(0)
   })
-
-  it('offers Back to editing once a run is shown, and only then (F9)', () => {
-    const onBackToEditing = vi.fn()
-    const { rerender } = render(
-      <TooltipProvider>
-        <RunToolbar
-          runState="completed"
-          runObjective="Ship it"
-          canRun
-          starting={false}
-          onRun={vi.fn()}
-          onBackToEditing={onBackToEditing}
-        />
-      </TooltipProvider>
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Back to editing' }))
-    expect(onBackToEditing).toHaveBeenCalledTimes(1)
-
-    rerender(
-      <TooltipProvider>
-        <RunToolbar canRun starting={false} onRun={vi.fn()} onBackToEditing={onBackToEditing} />
-      </TooltipProvider>
-    )
-    expect(screen.queryByRole('button', { name: 'Back to editing' })).toBeNull()
-  })
 })

@@ -21,7 +21,7 @@ import {
 } from '@xyflow/react'
 import type { Edge, Workflow } from '../../../../../shared/workflows/workflow-definition-types'
 import type { MeasuredNodeSize } from './workflow-auto-layout'
-import { resolveSelectChange, resolveSelectionChange } from './workflow-canvas-selection-change'
+import { resolveSelectChange, selectionToReport } from './workflow-canvas-selection-change'
 import { loopParentMap } from './workflow-auto-layout'
 import { computeEdgeBendLanes } from './workflow-edge-routing'
 import {
@@ -285,9 +285,11 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasHandle, WorkflowCanvasProps>(
 
     const handleSelectionChange: OnSelectionChangeFunc<WorkflowFlowNode, FlowEdge> = useCallback(
       (params) => {
-        const { nodeId, edgeId } = resolveSelectionChange(params)
-        onNodeSelect?.(nodeId)
-        onEdgeSelect?.(edgeId)
+        const report = selectionToReport(params)
+        if (report) {
+          onNodeSelect?.(report.nodeId)
+          onEdgeSelect?.(report.edgeId)
+        }
       },
       [onNodeSelect, onEdgeSelect]
     )

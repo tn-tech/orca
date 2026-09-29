@@ -17733,6 +17733,9 @@
         },
         "use-workflow-run-save-guard": {
           "saving": "Saving…"
+        },
+        "use-workflow-page-resume": {
+          "runUnavailable": "The run you were viewing is no longer available."
         }
       }
     },

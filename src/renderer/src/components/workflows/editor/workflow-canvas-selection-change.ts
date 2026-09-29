@@ -57,3 +57,14 @@ export function resolveSelectionChange(params: {
   }
   return { nodeId: params.nodes[0]?.id, edgeId: undefined }
 }
+
+/** What `onSelectionChange` may forward, or null when nothing is selected. Clearing is owned by
+ *  pane clicks and `select: false` changes: this callback lags the controlled `selected` prop, so
+ *  forwarding its empty report undoes a fresh selection and the two ping-pong forever (F9). */
+export function selectionToReport(params: {
+  nodes: readonly { id: string }[]
+  edges: readonly { id: string }[]
+}): { nodeId: string | undefined; edgeId: string | undefined } | null {
+  const resolved = resolveSelectionChange(params)
+  return resolved.nodeId === undefined && resolved.edgeId === undefined ? null : resolved
+}

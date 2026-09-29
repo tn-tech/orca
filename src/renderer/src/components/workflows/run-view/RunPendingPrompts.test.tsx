@@ -91,7 +91,6 @@ describe('RunPendingPrompts', () => {
   it('lists a pending question with its node title without any node being selected (F9)', () => {
     render(
       <RunPendingPrompts
-        definition={definition}
         snapshot={snapshot([question()])}
         settings={settings}
         onSelectNode={vi.fn()}
@@ -105,9 +104,39 @@ describe('RunPendingPrompts', () => {
   it('renders nothing when every question is settled', () => {
     const { container } = render(
       <RunPendingPrompts
-        definition={definition}
         snapshot={snapshot([question({ state: 'answered', answer: 'yes' })])}
         settings={settings}
+        onSelectNode={vi.fn()}
+      />
+    )
+
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it("takes node titles from the run's own snapshot of the workflow", () => {
+    const renamed = {
+      ...definition,
+      nodes: definition.nodes.map((node) =>
+        node.id === 'gate' ? { ...node, title: 'Old gate title' } : node
+      )
+    }
+    render(
+      <RunPendingPrompts
+        snapshot={{ ...snapshot([question()]), workflowSnapshot: renamed }}
+        settings={settings}
+        onSelectNode={vi.fn()}
+      />
+    )
+
+    expect(screen.getByRole('button', { name: 'Old gate title' })).toBeInTheDocument()
+  })
+
+  it('leaves out the question of the selected node, whose attempt panel already shows it', () => {
+    const { container } = render(
+      <RunPendingPrompts
+        snapshot={snapshot([question()])}
+        settings={settings}
+        selectedNodeId="gate"
         onSelectNode={vi.fn()}
       />
     )
@@ -119,7 +148,6 @@ describe('RunPendingPrompts', () => {
     const onSelectNode = vi.fn()
     render(
       <RunPendingPrompts
-        definition={definition}
         snapshot={snapshot([question({ state: 'escalated' })])}
         settings={settings}
         onSelectNode={onSelectNode}

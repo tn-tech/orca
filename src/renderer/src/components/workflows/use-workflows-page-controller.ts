@@ -126,8 +126,10 @@ export function useWorkflowsPageController() {
     repoId,
     openRef: session.openRef,
     runId: run.runId,
+    runLoadFailed: run.loadFailed,
     open: session.open,
-    openRun: run.openRun
+    openRun: run.openRun,
+    dropRun: clearActiveRun
   })
 
   const focusProblem = useWorkflowProblemFocus({ definition, setSelectedNodeId, setSelectedEdgeId })
@@ -182,6 +184,11 @@ export function useWorkflowsPageController() {
     },
     [clearActiveRun, list, repoId, session, settings]
   )
+
+  const selectNode = useCallback((nodeId: string | undefined) => {
+    setSelectedNodeId(nodeId)
+    setSelectedEdgeId(undefined)
+  }, [])
 
   /** Calls `workflow.draft` (US6 AS1) — does not touch the editor session; see `openDraft`. */
   const draftWorkflow = useCallback(
@@ -289,6 +296,7 @@ export function useWorkflowsPageController() {
     selectedEdgeId,
     setSelectedNodeId,
     setSelectedEdgeId,
+    selectNode,
     focusProblem,
     openWorkflow,
     createWorkflow,

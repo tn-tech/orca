@@ -16,6 +16,8 @@ import { useWorkflowRunSnapshot } from './run-view/use-workflow-run-snapshot'
 export type WorkflowRunControls = {
   runId: string | null
   snapshot: WorkflowRunSnapshotView | null
+  /** The shown run's snapshot could not be fetched. */
+  loadFailed: boolean
   starting: boolean
   stopping: boolean
   pausing: boolean
@@ -190,6 +192,7 @@ export function useWorkflowRunControls({
     () => ({
       runId: activeRunId,
       snapshot: runSnapshot.snapshot,
+      loadFailed: runSnapshot.error !== null,
       starting: runStarting,
       stopping: runStopping,
       pausing: runPausing,
@@ -203,6 +206,7 @@ export function useWorkflowRunControls({
     [
       activeRunId,
       runSnapshot.snapshot,
+      runSnapshot.error,
       runStarting,
       runStopping,
       runPausing,
