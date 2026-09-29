@@ -3,7 +3,10 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { WorkflowProblem } from '../../../../../shared/workflows/workflow-definition-types'
+import type {
+  Workflow,
+  WorkflowProblem
+} from '../../../../../shared/workflows/workflow-definition-types'
 import ValidationProblemsPanel from './ValidationProblemsPanel'
 
 afterEach(() => {
@@ -69,5 +72,44 @@ describe('ValidationProblemsPanel', () => {
     fireEvent.click(screen.getByTestId('validation-problem-row'))
 
     expect(onFocusProblem).toHaveBeenCalledExactlyOnceWith(target)
+  })
+
+  it('names nodes by title rather than id when given the definition (N7)', () => {
+    const definition: Workflow = {
+      version: 1,
+      name: 'wf',
+      workspacePolicy: 'run-workspace',
+      roles: {},
+      nodes: [{ id: 'agent-3f2a', type: 'start', title: 'Kickoff' }],
+      edges: [],
+      layout: {}
+    }
+
+    render(
+      <ValidationProblemsPanel
+        problems={[problem({ message: 'Node "agent-3f2a" is unreachable.', nodeId: 'agent-3f2a' })]}
+        definition={definition}
+        onFocusProblem={vi.fn()}
+      />
+    )
+
+    const row = screen.getByTestId('validation-problem-row')
+    expect(row).toHaveTextContent('Node "Kickoff" is unreachable.')
+    expect(row).toHaveTextContent('Node "Kickoff"')
+    expect(row).not.toHaveTextContent('agent-3f2a')
+  })
+
+  it('collapses to its summary line and expands again', () => {
+    render(<ValidationProblemsPanel problems={[problem()]} onFocusProblem={vi.fn()} />)
+
+    const toggle = screen.getByRole('button', { name: /1 error\(s\), 0 warning\(s\)/ })
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByTestId('validation-problem-row')).not.toBeInTheDocument()
+
+    fireEvent.click(toggle)
+    expect(screen.getByTestId('validation-problem-row')).toBeInTheDocument()
   })
 })

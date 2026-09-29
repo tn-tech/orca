@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useAppStore } from '@/store'
 import { useActiveRepo, useActiveWorktree } from '@/store/selectors'
@@ -8,16 +8,13 @@ import {
   workflowDelete,
   workflowDraft,
   workflowDuplicate,
-  workflowValidate,
   type WorkflowDraftResult,
   type WorkflowSummary
 } from '@/runtime/runtime-workflow-client'
-import type {
-  Workflow,
-  WorkflowProblem
-} from '../../../../shared/workflows/workflow-definition-types'
+import type { Workflow } from '../../../../shared/workflows/workflow-definition-types'
 import type { WorkflowRunSource } from '../../../../shared/workflows/workflow-run-types'
 import { validateWorkflowGraph } from '../../../../shared/workflows/workflow-graph-validation'
+import { checkWorkflowFields } from './editor/workflow-field-problems'
 import { createLocalGraphValidationContext } from './editor/workflow-graph-validation-context'
 import {
   hasBlockingWorkflowProblems,
@@ -31,13 +28,12 @@ import {
 import { useWorkflowEditorMutations } from './use-workflow-editor-mutations'
 import { useWorkflowEditorSession } from './use-workflow-editor-session'
 import { useWorkflowExternalChangeWatch } from './use-workflow-external-change-watch'
+import { useWorkflowHostValidation } from './use-workflow-host-validation'
 import { useWorkflowListState } from './use-workflow-list-state'
 import { useWorkflowProblemFocus } from './use-workflow-problem-focus'
 import { useWorkflowSourceAllowlist } from './use-workflow-source-allowlist'
 import { useWorkflowPageResume } from './use-workflow-page-resume'
 import { useWorkflowRunControls } from './use-workflow-run-controls'
-
-const HOST_VALIDATE_DEBOUNCE_MS = 400
 
 export function useWorkflowsPageController() {
   const settings = useAppStore((s) => s.settings)
@@ -51,42 +47,32 @@ export function useWorkflowsPageController() {
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>()
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | undefined>()
-  const [hostProblems, setHostProblems] = useState<WorkflowProblem[]>([])
 
   const localValidationContext = useMemo(() => createLocalGraphValidationContext(), [])
   const definition = session.status === 'ready' ? session.editor.state.definition : null
 
-  const localProblems = useMemo(
-    () => (definition ? validateWorkflowGraph(definition, localValidationContext) : []),
-    [definition, localValidationContext]
+  // F7: schema-level field problems first (they block Save), then the graph rules (Run only).
+  const fieldCheck = useMemo(
+    () => (definition ? checkWorkflowFields(definition) : null),
+    [definition]
   )
-
-  // Debounced host re-validation (FR-009): the authoritative check for anything the renderer
-  // can't verify on its own (e.g. the project's skill-source allowlist).
-  useEffect(() => {
-    if (!definition || !repoId) {
-      setHostProblems([])
-      return
-    }
-    // Why: a slower, earlier request (a stale definition, or a workflow the user has since
-    // switched away from) must never overwrite a later one's result once it finally resolves.
-    let ignore = false
-    const timer = window.setTimeout(() => {
-      void workflowValidate(settings, { repo: repoId, definition })
-        .then((result) => {
-          if (!ignore) {
-            setHostProblems(result.problems)
-          }
-        })
-        .catch(() => {
-          // Best-effort: local validation still surfaces structural problems while offline/racing.
-        })
-    }, HOST_VALIDATE_DEBOUNCE_MS)
-    return () => {
-      ignore = true
-      window.clearTimeout(timer)
-    }
-  }, [definition, repoId, settings])
+  const localProblems = useMemo(
+    () =>
+      definition
+        ? [
+            ...(fieldCheck?.problems ?? []),
+            ...validateWorkflowGraph(definition, localValidationContext)
+          ]
+        : [],
+    [definition, fieldCheck, localValidationContext]
+  )
+  const hasInvalidFields = fieldCheck !== null && !fieldCheck.storable
+  const hostProblems = useWorkflowHostValidation({
+    settings,
+    repoId,
+    definition,
+    storable: !hasInvalidFields
+  })
 
   const problems = useMemo(
     () => mergeWorkflowValidationProblems(localProblems, hostProblems),
@@ -290,6 +276,7 @@ export function useWorkflowsPageController() {
     list,
     session,
     problems,
+    hasInvalidFields,
     canRun,
     noActiveProjectReason,
     runDisabledReason,

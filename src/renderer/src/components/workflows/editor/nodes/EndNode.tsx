@@ -6,10 +6,13 @@ import type { EndNode as EndNodeDefinition } from '../../../../../../shared/work
 import type { WorkflowAttemptState } from '../../../../../../shared/workflows/workflow-node-states'
 import { WORKFLOW_NODE_HEIGHT } from '../workflow-auto-layout'
 import { workflowNodeStatusDotClassName } from './workflow-node-run-status-style'
+import type { WorkflowNodeProblemSummary } from '../workflow-node-problem-summary'
+import WorkflowNodeProblemIndicator from './WorkflowNodeProblemIndicator'
 
 export type WorkflowEndNodeData = {
   definitionNode: EndNodeDefinition
   attemptState?: WorkflowAttemptState
+  problem?: WorkflowNodeProblemSummary
 }
 
 export type WorkflowEndFlowNode = FlowNode<WorkflowEndNodeData, 'end'>
@@ -35,6 +38,7 @@ export default function EndNode({
       />
       <Flag className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       <span className="truncate text-sm font-medium">{data.definitionNode.title}</span>
+      <WorkflowNodeProblemIndicator problem={data.problem} />
       {statusDotClassName ? (
         <span
           className={cn('ml-auto size-2 shrink-0 rounded-full', statusDotClassName)}

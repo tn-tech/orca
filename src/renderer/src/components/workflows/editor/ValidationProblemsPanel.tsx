@@ -1,37 +1,18 @@
-import React from 'react'
-import { AlertCircle, AlertTriangle, CircleCheck } from 'lucide-react'
+import React, { useState } from 'react'
+import { AlertCircle, AlertTriangle, ChevronDown, ChevronRight, CircleCheck } from 'lucide-react'
 import { translate } from '@/i18n/i18n'
-import type { WorkflowProblem } from '../../../../../shared/workflows/workflow-definition-types'
+import type {
+  Workflow,
+  WorkflowProblem
+} from '../../../../../shared/workflows/workflow-definition-types'
+import { describeWorkflowProblem } from './workflow-problem-labels'
 
 export type ValidationProblemsPanelProps = {
   problems: readonly WorkflowProblem[]
+  /** Names nodes/edges/roles by title (N7); without it rows show raw ids. */
+  definition?: Workflow
   /** Selects the offending node/edge (or a node that uses the offending role) on the canvas. */
   onFocusProblem: (problem: WorkflowProblem) => void
-}
-
-function problemLocationLabel(problem: WorkflowProblem): string | undefined {
-  if (problem.nodeId) {
-    return translate(
-      'auto.components.workflows.editor.ValidationProblemsPanel.locationNode',
-      'Node "{{id}}"',
-      { id: problem.nodeId }
-    )
-  }
-  if (problem.edgeId) {
-    return translate(
-      'auto.components.workflows.editor.ValidationProblemsPanel.locationEdge',
-      'Edge "{{id}}"',
-      { id: problem.edgeId }
-    )
-  }
-  if (problem.roleId) {
-    return translate(
-      'auto.components.workflows.editor.ValidationProblemsPanel.locationRole',
-      'Role "{{id}}"',
-      { id: problem.roleId }
-    )
-  }
-  return undefined
 }
 
 /** Errors first, in list order otherwise — a stable sort keeps rows from jumping on re-render. */
@@ -48,8 +29,10 @@ function sortBySeverity(problems: readonly WorkflowProblem[]): WorkflowProblem[]
  *  result (merged and deduped by the caller), click-to-focus the offending node/edge/role. */
 export default function ValidationProblemsPanel({
   problems,
+  definition,
   onFocusProblem
 }: ValidationProblemsPanelProps): React.JSX.Element {
+  const [expanded, setExpanded] = useState(true)
   if (problems.length === 0) {
     return (
       <div
@@ -69,43 +52,71 @@ export default function ValidationProblemsPanel({
   const warningCount = problems.length - errorCount
 
   return (
-    <div className="flex h-full min-h-0 flex-col" data-testid="validation-problems-panel">
-      <div className="shrink-0 border-b border-border px-3 py-2 text-xs font-semibold text-foreground">
+    <div className="flex min-h-0 flex-col" data-testid="validation-problems-panel">
+      <button
+        type="button"
+        className="flex shrink-0 items-center gap-1.5 px-3 py-2 text-left text-xs font-semibold text-foreground hover:bg-accent"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}
+      >
+        {expanded ? (
+          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+        )}
         {translate(
           'auto.components.workflows.editor.ValidationProblemsPanel.summary',
           '{{errorCount}} error(s), {{warningCount}} warning(s)',
           { errorCount, warningCount }
         )}
-      </div>
-      <ul className="scrollbar-sleek min-h-0 flex-1 divide-y divide-border/50 overflow-y-auto">
-        {sortBySeverity(problems).map((problem) => (
-          <li
-            key={`${problem.code}-${problem.nodeId ?? ''}-${problem.edgeId ?? ''}-${problem.roleId ?? ''}-${problem.message}`}
-          >
-            <button
-              type="button"
-              className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs hover:bg-accent"
-              onClick={() => onFocusProblem(problem)}
-              data-testid="validation-problem-row"
-              data-severity={problem.severity}
-            >
-              {problem.severity === 'error' ? (
-                <AlertCircle className="mt-0.5 size-3.5 shrink-0 text-destructive" />
-              ) : (
-                <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-annotation-highlight" />
-              )}
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-foreground">{problem.message}</span>
-                {problemLocationLabel(problem) ? (
-                  <span className="block text-[11px] text-muted-foreground">
-                    {problemLocationLabel(problem)}
-                  </span>
-                ) : null}
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
+      </button>
+      {expanded ? (
+        <ul className="scrollbar-sleek max-h-40 min-h-0 divide-y divide-border/50 overflow-y-auto border-t border-border">
+          {sortBySeverity(problems).map((problem) => (
+            <ProblemRow
+              key={`${problem.code}-${problem.nodeId ?? ''}-${problem.edgeId ?? ''}-${problem.roleId ?? ''}-${problem.message}`}
+              problem={problem}
+              definition={definition}
+              onFocusProblem={onFocusProblem}
+            />
+          ))}
+        </ul>
+      ) : null}
     </div>
+  )
+}
+
+function ProblemRow({
+  problem,
+  definition,
+  onFocusProblem
+}: {
+  problem: WorkflowProblem
+  definition: Workflow | undefined
+  onFocusProblem: (problem: WorkflowProblem) => void
+}): React.JSX.Element {
+  const { message, location } = describeWorkflowProblem(problem, definition)
+  return (
+    <li>
+      <button
+        type="button"
+        className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs hover:bg-accent"
+        onClick={() => onFocusProblem(problem)}
+        data-testid="validation-problem-row"
+        data-severity={problem.severity}
+      >
+        {problem.severity === 'error' ? (
+          <AlertCircle className="mt-0.5 size-3.5 shrink-0 text-destructive" />
+        ) : (
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-annotation-highlight" />
+        )}
+        <span className="min-w-0 flex-1">
+          <span className="block break-words text-foreground">{message}</span>
+          {location ? (
+            <span className="block text-[11px] text-muted-foreground">{location}</span>
+          ) : null}
+        </span>
+      </button>
+    </li>
   )
 }

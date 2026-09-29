@@ -7,12 +7,15 @@ import type { AgentNode as AgentNodeDefinition } from '../../../../../../shared/
 import type { WorkflowAttemptState } from '../../../../../../shared/workflows/workflow-node-states'
 import { measureWorkflowNodeSize } from '../workflow-auto-layout'
 import { workflowNodeStatusDotClassName } from './workflow-node-run-status-style'
+import type { WorkflowNodeProblemSummary } from '../workflow-node-problem-summary'
+import WorkflowNodeProblemIndicator from './WorkflowNodeProblemIndicator'
 
 export type WorkflowAgentNodeData = {
   definitionNode: AgentNodeDefinition
   /** Resolved `overrides.agent ?? role.agent` (WorkflowCanvas has the roles map, this node doesn't). */
   agentLabel?: string
   attemptState?: WorkflowAttemptState
+  problem?: WorkflowNodeProblemSummary
   /** The worktree the attempt's dispatch ran in (FR-035, "workspace used per node"); absent
    *  before the node has run. */
   workspaceLabel?: string
@@ -50,6 +53,7 @@ export default function AgentNode({
       <div className="flex items-center gap-1.5">
         <Bot className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         <span className="truncate text-sm font-medium">{definitionNode.title}</span>
+        <WorkflowNodeProblemIndicator problem={data.problem} />
         {statusDotClassName ? (
           <span
             className={cn('ml-auto size-2 shrink-0 rounded-full', statusDotClassName)}

@@ -7,10 +7,13 @@ import { translate } from '@/i18n/i18n'
 import type { LoopNode as LoopNodeDefinition } from '../../../../../../shared/workflows/workflow-definition-types'
 import type { WorkflowAttemptState } from '../../../../../../shared/workflows/workflow-node-states'
 import { workflowNodeStatusDotClassName } from './workflow-node-run-status-style'
+import type { WorkflowNodeProblemSummary } from '../workflow-node-problem-summary'
+import WorkflowNodeProblemIndicator from './WorkflowNodeProblemIndicator'
 
 export type WorkflowLoopNodeData = {
   definitionNode: LoopNodeDefinition
   attemptState?: WorkflowAttemptState
+  problem?: WorkflowNodeProblemSummary
   /** The loop's currently active iteration in the run view (FR-035); absent while plain editing. */
   iteration?: number
   /** Container box, computed by `WorkflowCanvas` from the body nodes' current positions. */
@@ -50,6 +53,7 @@ export default function LoopNode({
       <div className="flex shrink-0 items-center gap-1.5 rounded-t-[7px] border-b border-dashed border-border bg-card px-3 py-1.5 text-card-foreground">
         <Repeat className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         <span className="truncate text-sm font-medium">{definitionNode.title}</span>
+        <WorkflowNodeProblemIndicator problem={data.problem} />
         {iteration !== undefined ? (
           <Badge variant="secondary">
             {translate(

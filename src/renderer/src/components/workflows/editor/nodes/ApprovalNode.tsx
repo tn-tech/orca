@@ -9,10 +9,13 @@ import type { WorkflowAttemptState } from '../../../../../../shared/workflows/wo
 import { measureWorkflowNodeSize } from '../workflow-auto-layout'
 import { routableChoiceIndices } from '../workflow-router-choices'
 import { workflowNodeStatusDotClassName } from './workflow-node-run-status-style'
+import type { WorkflowNodeProblemSummary } from '../workflow-node-problem-summary'
+import WorkflowNodeProblemIndicator from './WorkflowNodeProblemIndicator'
 
 export type WorkflowApprovalNodeData = {
   definitionNode: ApprovalNodeDefinition
   attemptState?: WorkflowAttemptState
+  problem?: WorkflowNodeProblemSummary
 }
 
 export type WorkflowApprovalFlowNode = FlowNode<WorkflowApprovalNodeData, 'approval'>
@@ -71,6 +74,7 @@ export default function ApprovalNode({
       <div className="flex items-center gap-1.5">
         <UserCheck className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         <span className="truncate text-sm font-medium">{definitionNode.title}</span>
+        <WorkflowNodeProblemIndicator problem={data.problem} />
         {statusDotClassName ? (
           <span
             className={cn('ml-auto size-2 shrink-0 rounded-full', statusDotClassName)}

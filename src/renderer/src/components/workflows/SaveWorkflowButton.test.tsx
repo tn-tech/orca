@@ -24,7 +24,7 @@ describe('SaveWorkflowButton', () => {
       dirty: true,
       isDraft: false,
       saving: false,
-      blockingProblems: false,
+      invalidFields: false,
       onClick: vi.fn()
     })
 
@@ -32,13 +32,13 @@ describe('SaveWorkflowButton', () => {
     expect(button).not.toHaveAttribute('aria-disabled', 'true')
   })
 
-  it('explains blocking problems on hover, not DOM-disabled (F5)', async () => {
+  it('explains invalid fields on hover, not DOM-disabled (F5, F7)', async () => {
     const user = userEvent.setup()
     renderButton({
       dirty: true,
       isDraft: false,
       saving: false,
-      blockingProblems: true,
+      invalidFields: true,
       onClick: vi.fn()
     })
 
@@ -48,7 +48,7 @@ describe('SaveWorkflowButton', () => {
 
     await user.hover(button)
     expect(
-      (await screen.findAllByText('Fix the problems below before saving.')).length
+      (await screen.findAllByText('Fill in the fields listed under Problems before saving.')).length
     ).toBeGreaterThan(0)
   })
 
@@ -58,7 +58,7 @@ describe('SaveWorkflowButton', () => {
       dirty: false,
       isDraft: false,
       saving: false,
-      blockingProblems: false,
+      invalidFields: false,
       onClick: vi.fn()
     })
 
@@ -68,7 +68,7 @@ describe('SaveWorkflowButton', () => {
 
   it('swallows the click while blocked', () => {
     const onClick = vi.fn()
-    renderButton({ dirty: true, isDraft: false, saving: false, blockingProblems: true, onClick })
+    renderButton({ dirty: true, isDraft: false, saving: false, invalidFields: true, onClick })
 
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(onClick).not.toHaveBeenCalled()
@@ -76,7 +76,7 @@ describe('SaveWorkflowButton', () => {
 
   it('calls onClick when enabled', () => {
     const onClick = vi.fn()
-    renderButton({ dirty: true, isDraft: false, saving: false, blockingProblems: false, onClick })
+    renderButton({ dirty: true, isDraft: false, saving: false, invalidFields: false, onClick })
 
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(onClick).toHaveBeenCalledOnce()
@@ -87,7 +87,7 @@ describe('SaveWorkflowButton', () => {
       dirty: false,
       isDraft: true,
       saving: false,
-      blockingProblems: false,
+      invalidFields: false,
       onClick: vi.fn()
     })
 
@@ -103,7 +103,7 @@ describe('SaveWorkflowButton', () => {
       dirty: true,
       isDraft: false,
       saving: true,
-      blockingProblems: false,
+      invalidFields: false,
       onClick: vi.fn()
     })
 
@@ -123,7 +123,7 @@ describe('SaveWorkflowButton', () => {
           dirty
           isDraft={false}
           saving={false}
-          blockingProblems={false}
+          invalidFields={false}
           onClick={onClick}
         />
       </TooltipProvider>
@@ -140,7 +140,7 @@ describe('SaveWorkflowButton', () => {
           dirty={false}
           isDraft={false}
           saving={false}
-          blockingProblems={false}
+          invalidFields={false}
           onClick={onClick}
         />
       </TooltipProvider>
@@ -159,7 +159,7 @@ describe('SaveWorkflowButton', () => {
           dirty
           isDraft={false}
           saving={false}
-          blockingProblems={false}
+          invalidFields={false}
           onClick={vi.fn()}
         />
       </TooltipProvider>
@@ -175,7 +175,7 @@ describe('SaveWorkflowButton', () => {
           dirty={false}
           isDraft={false}
           saving={false}
-          blockingProblems={false}
+          invalidFields={false}
           onClick={vi.fn()}
         />
       </TooltipProvider>

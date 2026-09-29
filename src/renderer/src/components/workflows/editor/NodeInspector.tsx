@@ -10,13 +10,15 @@ import type {
   Edge,
   Node,
   Role,
-  Workflow
+  Workflow,
+  WorkflowProblem
 } from '../../../../../shared/workflows/workflow-definition-types'
 import RolesPanel, { type RoleEditorWorkflowContext } from '../roles/RolesPanel'
 import AgentNodeFields from './AgentNodeFields'
 import ApprovalNodeFields from './ApprovalNodeFields'
 import ConditionBuilder from './ConditionBuilder'
 import { InspectorField } from './InspectorField'
+import InspectorProblemList from './InspectorProblemList'
 import JoinNodeFields from './JoinNodeFields'
 import LoopNodeFields from './LoopNodeFields'
 import ReflectionNodeFields from './ReflectionNodeFields'
@@ -26,6 +28,8 @@ export type NodeInspectorProps = {
   definition: Workflow
   selectedNodeId?: string
   selectedEdgeId?: string
+  /** F7: every validation problem; the inspector shows the selected element's own. */
+  problems?: readonly WorkflowProblem[]
   onNodeChange: (node: Node) => void
   onEdgeConditionChange: (edgeId: string, condition: Condition | undefined) => void
   /** US4 AS1: the workflow-level roles list, shown by `RolesPanel` when nothing is selected. */
@@ -45,6 +49,8 @@ export type NodeInspectorProps = {
   workflow?: RoleEditorWorkflowContext
   onReloadFromDisk?: () => void | Promise<void>
 }
+
+const NO_PROBLEMS: readonly WorkflowProblem[] = []
 
 function nodeTypeLabel(type: Node['type']): string {
   switch (type) {
@@ -88,6 +94,7 @@ function NodeBaseFields({
         <Input
           id={titleId}
           value={node.title}
+          aria-invalid={node.title === ''}
           onChange={(event) => onChange({ ...node, title: event.target.value })}
           className="h-8"
         />
@@ -122,6 +129,7 @@ export default function NodeInspector({
   definition,
   selectedNodeId,
   selectedEdgeId,
+  problems = NO_PROBLEMS,
   onNodeChange,
   onEdgeConditionChange,
   onSetRole,
@@ -155,6 +163,10 @@ export default function NodeInspector({
             { from: edge.from, to: edge.to }
           )}
         </p>
+        <InspectorProblemList
+          problems={problems.filter((problem) => problem.edgeId === edge.id)}
+          definition={definition}
+        />
         <ConditionBuilder
           key={edge.id}
           condition={edge.condition}
@@ -195,6 +207,10 @@ export default function NodeInspector({
   return (
     <div key={node.id} className="flex h-full flex-col gap-4 overflow-y-auto scrollbar-sleek p-4">
       <h2 className="text-sm font-semibold">{nodeTypeLabel(node.type)}</h2>
+      <InspectorProblemList
+        problems={problems.filter((problem) => problem.nodeId === node.id)}
+        definition={definition}
+      />
       <NodeBaseFields node={node} onChange={onNodeChange} />
       {node.type === 'agent' ? (
         <AgentNodeFields

@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react'
-import { LayoutGrid, Loader2, ShieldCheck } from 'lucide-react'
+import { LayoutGrid, ShieldCheck } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -12,13 +12,14 @@ import type { WorkflowCanvasHandle } from './editor/WorkflowCanvas'
 import ValidationProblemsPanel from './editor/ValidationProblemsPanel'
 import { useWorkflowEditorKeyboardShortcuts } from './editor/workflow-editor-keyboard-shortcuts'
 import WorkflowEditorProblemNotice from './editor/WorkflowEditorProblemNotice'
-import { hasBlockingWorkflowProblems } from './editor/workflow-validation-merge'
+import { summarizeNodeProblems } from './editor/workflow-node-problem-summary'
 import FileConflictDialog from './editor/FileConflictDialog'
 import WrapInLoopButton from './editor/WrapInLoopButton'
 import RunHistoryButton from './RunHistoryButton'
 import RunUnsavedChangesDialog from './RunUnsavedChangesDialog'
 import SaveWorkflowButton from './SaveWorkflowButton'
 import TrustedSourcesDialog from './TrustedSourcesDialog'
+import WorkflowEditorPlaceholder from './WorkflowEditorPlaceholder'
 import WorkflowListPane from './WorkflowListPane'
 import WorkflowNameDialog from './WorkflowNameDialog'
 import { repoTrustHostKey } from './workflow-repo-trust-host'
@@ -74,8 +75,12 @@ export default function WorkflowsPage(): React.JSX.Element {
   // (FR-036); edge conditions still go through NodeInspector regardless.
   const showAttemptPanel =
     run.snapshot !== null && Boolean(controller.selectedNodeId) && !controller.selectedEdgeId
-  // Shared by Save's and Run's disabled-reason tooltips (FR-009).
-  const blockingProblems = hasBlockingWorkflowProblems(controller.problems)
+  const definition = session.editor.state.definition
+  // F7: flags each node with problems inline on the canvas.
+  const nodeProblems = useMemo(
+    () => summarizeNodeProblems(controller.problems, definition),
+    [controller.problems, definition]
+  )
   // F8: Run must never silently run the on-disk file while the editor has unsaved edits.
   const runSaveGuard = useWorkflowRunSaveGuard({
     session,
@@ -126,7 +131,7 @@ export default function WorkflowsPage(): React.JSX.Element {
             dirty={session.editor.state.dirty}
             isDraft={session.isDraft}
             saving={session.saving}
-            blockingProblems={blockingProblems}
+            invalidFields={controller.hasInvalidFields}
             onClick={() => {
               if (session.isDraft) {
                 setNamingDraftGeneration((generation) => generation + 1)
@@ -154,40 +159,13 @@ export default function WorkflowsPage(): React.JSX.Element {
           disabledReason={controller.noActiveProjectReason}
         />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {session.status === 'empty' ? (
-            controller.noActiveProjectReason ? (
-              <div className="flex flex-1 flex-col items-center justify-center gap-3 p-4 text-center text-sm text-muted-foreground">
-                <p>{controller.noActiveProjectReason}</p>
-                <Button type="button" size="sm" onClick={() => openModal('add-repo')}>
-                  {translate(
-                    'auto.components.workflows.WorkflowsPage.addProjectAction',
-                    'Add a project'
-                  )}
-                </Button>
-                <p className="text-xs">
-                  {translate(
-                    'auto.components.workflows.WorkflowsPage.selectProjectHint',
-                    'Or select an existing project from the sidebar.'
-                  )}
-                </p>
-              </div>
-            ) : (
-              <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-                {translate(
-                  'auto.components.workflows.WorkflowsPage.placeholder',
-                  'Select a workflow, or create a new one.'
-                )}
-              </div>
-            )
-          ) : session.status === 'loading' ? (
-            <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-              <Loader2 className="mr-2 size-4 animate-spin" />
-              {translate('auto.components.workflows.WorkflowsPage.loading', 'Loading…')}
-            </div>
-          ) : session.status === 'error' ? (
-            <div className="flex flex-1 items-center justify-center p-4 text-center text-sm text-destructive">
-              {session.loadError}
-            </div>
+          {session.status !== 'ready' ? (
+            <WorkflowEditorPlaceholder
+              status={session.status}
+              loadError={session.loadError}
+              noActiveProjectReason={controller.noActiveProjectReason}
+              onAddProject={() => openModal('add-repo')}
+            />
           ) : (
             <>
               {/* Three groups that each wrap whole: editing tools, the run (objective, state and
@@ -282,6 +260,7 @@ export default function WorkflowsPage(): React.JSX.Element {
                     ref={canvasRef}
                     definition={session.editor.state.definition}
                     snapshot={run.snapshot}
+                    nodeProblems={nodeProblems}
                     selectedNodeId={controller.selectedNodeId}
                     selectedEdgeId={controller.selectedEdgeId}
                     onNodeSelect={controller.selectNode}
@@ -319,6 +298,7 @@ export default function WorkflowsPage(): React.JSX.Element {
                       definition={session.editor.state.definition}
                       selectedNodeId={controller.selectedNodeId}
                       selectedEdgeId={controller.selectedEdgeId}
+                      problems={controller.problems}
                       onNodeChange={(node) =>
                         session.editor.dispatch({ type: 'update-node', node })
                       }
@@ -357,9 +337,10 @@ export default function WorkflowsPage(): React.JSX.Element {
                   )}
                 </div>
               </div>
-              <div className="h-48 shrink-0 border-t border-border">
+              <div className="shrink-0 border-t border-border">
                 <ValidationProblemsPanel
                   problems={controller.problems}
+                  definition={session.editor.state.definition}
                   onFocusProblem={controller.focusProblem}
                 />
               </div>

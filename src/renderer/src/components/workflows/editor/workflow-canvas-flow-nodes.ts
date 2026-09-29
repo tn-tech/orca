@@ -14,6 +14,7 @@ import type { WorkflowLoopFlowNode } from './nodes/LoopNode'
 import type { WorkflowReflectionFlowNode } from './nodes/ReflectionNode'
 import type { WorkflowRouterFlowNode } from './nodes/RouterNode'
 import type { WorkflowStartFlowNode } from './nodes/StartNode'
+import type { WorkflowCanvasNodeProblems } from './workflow-node-problem-summary'
 
 // Split out of WorkflowCanvas.tsx (F4 re-review 1) to keep that file under the 400-line `.tsx` cap.
 export type WorkflowFlowNode =
@@ -49,13 +50,25 @@ function resolveAgentLabel(
  * position relative to the Loop, `extent: 'parent'`) — parents must precede their children in
  * the node array regardless of `definition.nodes`' own order.
  */
+export type ToFlowNodesOptions = {
+  nodeStatuses?: WorkflowCanvasNodeStatuses
+  nodeIterations?: WorkflowCanvasNodeIterations
+  nodeWorkspaces?: WorkflowCanvasNodeWorkspaces
+  nodeProblems?: WorkflowCanvasNodeProblems
+  selectedNodeId: string | undefined
+  parentOf: ReadonlyMap<string, string>
+}
+
 export function toFlowNodes(
   definition: Workflow,
-  nodeStatuses: WorkflowCanvasNodeStatuses | undefined,
-  nodeIterations: WorkflowCanvasNodeIterations | undefined,
-  nodeWorkspaces: WorkflowCanvasNodeWorkspaces | undefined,
-  selectedNodeId: string | undefined,
-  parentOf: ReadonlyMap<string, string>
+  {
+    nodeStatuses,
+    nodeIterations,
+    nodeWorkspaces,
+    nodeProblems,
+    selectedNodeId,
+    parentOf
+  }: ToFlowNodesOptions
 ): WorkflowFlowNode[] {
   const [ownNodes, bodyNodes] = [
     definition.nodes.filter((node) => !parentOf.has(node.id)),
@@ -73,6 +86,7 @@ export function toFlowNodes(
       : absolutePosition
     const selected = node.id === selectedNodeId
     const attemptState = nodeStatuses?.[node.id]
+    const problem = nodeProblems?.[node.id]
     const nesting = parentId ? ({ parentId, extent: 'parent' } as const) : {}
 
     if (node.type === 'start') {
@@ -82,7 +96,7 @@ export function toFlowNodes(
         position,
         selected,
         ...nesting,
-        data: { definitionNode: node, attemptState }
+        data: { definitionNode: node, attemptState, problem }
       })
     } else if (node.type === 'end') {
       flowNodes.push({
@@ -91,7 +105,7 @@ export function toFlowNodes(
         position,
         selected,
         ...nesting,
-        data: { definitionNode: node, attemptState }
+        data: { definitionNode: node, attemptState, problem }
       })
     } else if (node.type === 'agent') {
       flowNodes.push({
@@ -104,6 +118,7 @@ export function toFlowNodes(
           definitionNode: node,
           agentLabel: resolveAgentLabel(definition, node),
           attemptState,
+          problem,
           workspaceLabel: nodeWorkspaces?.[node.id]
         }
       })
@@ -114,7 +129,7 @@ export function toFlowNodes(
         position,
         selected,
         ...nesting,
-        data: { definitionNode: node, attemptState }
+        data: { definitionNode: node, attemptState, problem }
       })
     } else if (node.type === 'router') {
       flowNodes.push({
@@ -127,6 +142,7 @@ export function toFlowNodes(
           definitionNode: node,
           agentLabel: resolveAgentLabel(definition, node),
           attemptState,
+          problem,
           workspaceLabel: nodeWorkspaces?.[node.id]
         }
       })
@@ -150,6 +166,7 @@ export function toFlowNodes(
         data: {
           definitionNode: node,
           attemptState,
+          problem,
           iteration: nodeIterations?.[node.id],
           ...bounds
         }
@@ -161,7 +178,7 @@ export function toFlowNodes(
         position,
         selected,
         ...nesting,
-        data: { definitionNode: node, attemptState }
+        data: { definitionNode: node, attemptState, problem }
       })
     } else if (node.type === 'reflection') {
       flowNodes.push({
@@ -174,6 +191,7 @@ export function toFlowNodes(
           definitionNode: node,
           agentLabel: resolveAgentLabel(definition, node),
           attemptState,
+          problem,
           workspaceLabel: nodeWorkspaces?.[node.id]
         }
       })

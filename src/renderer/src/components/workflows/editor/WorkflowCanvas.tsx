@@ -30,6 +30,7 @@ import {
   type WorkflowCanvasNodeWorkspaces,
   type WorkflowFlowNode
 } from './workflow-canvas-flow-nodes'
+import type { WorkflowCanvasNodeProblems } from './workflow-node-problem-summary'
 import AgentNode from './nodes/AgentNode'
 import ApprovalNode from './nodes/ApprovalNode'
 import EndNode from './nodes/EndNode'
@@ -72,6 +73,8 @@ export type WorkflowCanvasProps = {
   nodeIterations?: WorkflowCanvasNodeIterations
   /** Per-node workspace label (run view overlay, T087/T089); absent in plain editing. */
   nodeWorkspaces?: WorkflowCanvasNodeWorkspaces
+  /** F7: per-node validation problems, flagged inline on each card. */
+  nodeProblems?: WorkflowCanvasNodeProblems
   selectedNodeId?: string
   selectedEdgeId?: string
   onNodeSelect?: (nodeId: string | undefined) => void
@@ -162,6 +165,7 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasHandle, WorkflowCanvasProps>(
       nodeStatuses,
       nodeIterations,
       nodeWorkspaces,
+      nodeProblems,
       selectedNodeId,
       selectedEdgeId,
       onNodeSelect,
@@ -199,15 +203,23 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasHandle, WorkflowCanvasProps>(
     const parentOf = useMemo(() => loopParentMap(definition.nodes), [definition.nodes])
     const nodes = useMemo(
       () =>
-        toFlowNodes(
-          definition,
+        toFlowNodes(definition, {
           nodeStatuses,
           nodeIterations,
           nodeWorkspaces,
+          nodeProblems,
           selectedNodeId,
           parentOf
-        ),
-      [definition, nodeStatuses, nodeIterations, nodeWorkspaces, selectedNodeId, parentOf]
+        }),
+      [
+        definition,
+        nodeStatuses,
+        nodeIterations,
+        nodeWorkspaces,
+        nodeProblems,
+        selectedNodeId,
+        parentOf
+      ]
     )
     const bendLanes = useMemo(
       () => computeEdgeBendLanes(definition.nodes, definition.edges, definition.layout),

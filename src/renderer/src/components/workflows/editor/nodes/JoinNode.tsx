@@ -8,10 +8,13 @@ import type { JoinNode as JoinNodeDefinition } from '../../../../../../shared/wo
 import type { WorkflowAttemptState } from '../../../../../../shared/workflows/workflow-node-states'
 import { WORKFLOW_NODE_HEIGHT, WORKFLOW_NODE_WIDTH } from '../workflow-auto-layout'
 import { workflowNodeStatusDotClassName } from './workflow-node-run-status-style'
+import type { WorkflowNodeProblemSummary } from '../workflow-node-problem-summary'
+import WorkflowNodeProblemIndicator from './WorkflowNodeProblemIndicator'
 
 export type WorkflowJoinNodeData = {
   definitionNode: JoinNodeDefinition
   attemptState?: WorkflowAttemptState
+  problem?: WorkflowNodeProblemSummary
 }
 
 export type WorkflowJoinFlowNode = FlowNode<WorkflowJoinNodeData, 'join'>
@@ -54,6 +57,7 @@ export default function JoinNode({
       <div className="flex items-center gap-1.5">
         <GitMerge className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         <span className="truncate text-sm font-medium">{definitionNode.title}</span>
+        <WorkflowNodeProblemIndicator problem={data.problem} />
         {statusDotClassName ? (
           <span
             className={cn('ml-auto size-2 shrink-0 rounded-full', statusDotClassName)}

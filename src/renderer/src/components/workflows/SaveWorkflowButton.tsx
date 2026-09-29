@@ -7,8 +7,8 @@ export type SaveWorkflowButtonProps = {
   dirty: boolean
   isDraft: boolean
   saving: boolean
-  /** FR-009: a blocking validation error also gates Save (`WorkflowsPage.tsx`). */
-  blockingProblems: boolean
+  /** F7: only fields the host can't store gate Save; graph errors save as a draft and block Run. */
+  invalidFields: boolean
   onClick: () => void
 }
 
@@ -18,13 +18,13 @@ export default function SaveWorkflowButton({
   dirty,
   isDraft,
   saving,
-  blockingProblems,
+  invalidFields,
   onClick
 }: SaveWorkflowButtonProps): React.JSX.Element {
-  const reason = blockingProblems
+  const reason = invalidFields
     ? translate(
-        'auto.components.workflows.WorkflowsPage.saveBlocked',
-        'Fix the problems below before saving.'
+        'auto.components.workflows.SaveWorkflowButton.invalidFields',
+        'Fill in the fields listed under Problems before saving.'
       )
     : saving
       ? translate('auto.components.workflows.SaveWorkflowButton.saving', 'Saving…')

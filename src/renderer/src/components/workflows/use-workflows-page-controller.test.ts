@@ -612,6 +612,41 @@ describe('useWorkflowsPageController', () => {
       )
       expect(result.current.session.editor.state.dirty).toBe(false)
     })
+
+    it('keeps Save allowed for a graph-only error but blocks Run (F7 drafts)', async () => {
+      const { result } = renderHook(() => useWorkflowsPageController())
+      await openReadyWorkflow(result)
+
+      act(() => result.current.addNode('agent'))
+
+      expect(result.current.problems.some((problem) => problem.severity === 'error')).toBe(true)
+      expect(result.current.hasInvalidFields).toBe(false)
+      expect(result.current.canRun).toBe(false)
+    })
+
+    it('flags an empty title as a friendly field problem that blocks Save (F7)', async () => {
+      const { result } = renderHook(() => useWorkflowsPageController())
+      await openReadyWorkflow(result)
+      const end = result.current.session.editor.state.definition.nodes.find(
+        (node) => node.id === 'end'
+      )
+      if (!end) {
+        throw new Error('expected an End node')
+      }
+
+      act(() =>
+        result.current.session.editor.dispatch({ type: 'update-node', node: { ...end, title: '' } })
+      )
+
+      expect(result.current.hasInvalidFields).toBe(true)
+      expect(result.current.problems).toContainEqual(
+        expect.objectContaining({
+          code: 'workflow_field_required',
+          message: 'Title is required.',
+          nodeId: 'end'
+        })
+      )
+    })
   })
 
   describe('no active project (F6)', () => {

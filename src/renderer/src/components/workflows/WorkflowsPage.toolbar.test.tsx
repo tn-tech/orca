@@ -5,7 +5,10 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import type { Workflow } from '../../../../shared/workflows/workflow-definition-types'
+import type {
+  Workflow,
+  WorkflowProblem
+} from '../../../../shared/workflows/workflow-definition-types'
 
 vi.mock('@/store', () => ({
   useAppStore: (
@@ -55,7 +58,15 @@ function readyWorkflow(): Workflow {
   }
 }
 
-function fakeController(overrides: { repoId?: string; runDisabledReason?: string } = {}) {
+function fakeController(
+  overrides: {
+    repoId?: string
+    runDisabledReason?: string
+    dirty?: boolean
+    hasInvalidFields?: boolean
+    problems?: WorkflowProblem[]
+  } = {}
+) {
   return {
     activeRepo: undefined,
     repoId: overrides.repoId ?? 'repo-1',
@@ -70,7 +81,7 @@ function fakeController(overrides: { repoId?: string; runDisabledReason?: string
           definition: readyWorkflow(),
           manualPositionIds: new Set<string>(),
           history: [],
-          dirty: false,
+          dirty: overrides.dirty ?? false,
           revision: 0,
           lastProblem: null
         },
@@ -93,7 +104,8 @@ function fakeController(overrides: { repoId?: string; runDisabledReason?: string
       close: vi.fn(),
       checkForExternalChange: vi.fn()
     },
-    problems: [],
+    problems: overrides.problems ?? [],
+    hasInvalidFields: overrides.hasInvalidFields ?? false,
     canRun: overrides.runDisabledReason === undefined,
     noActiveProjectReason: overrides.repoId ? undefined : 'Add or select a project.',
     runDisabledReason: overrides.runDisabledReason,
@@ -202,5 +214,45 @@ describe('WorkflowsPage: toolbar groups', () => {
       'History',
       'Re-layout'
     ])
+  })
+})
+
+describe('WorkflowsPage: Save with validation problems (F7)', () => {
+  const graphError: WorkflowProblem = {
+    code: 'graph_unreachable_node',
+    message: 'Node "x" is not reachable from Start.',
+    nodeId: 'x',
+    severity: 'error'
+  }
+
+  it('keeps Save enabled for a dirty workflow whose only errors are graph problems', () => {
+    useWorkflowsPageControllerMock.mockReturnValue(
+      fakeController({ dirty: true, problems: [graphError], runDisabledReason: 'Fix problems.' })
+    )
+
+    render(
+      <TooltipProvider>
+        <WorkflowsPage />
+      </TooltipProvider>
+    )
+
+    expect(screen.getByRole('button', { name: 'Save' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true'
+    )
+  })
+
+  it('blocks Save while a field the host cannot store is invalid', () => {
+    useWorkflowsPageControllerMock.mockReturnValue(
+      fakeController({ dirty: true, hasInvalidFields: true, runDisabledReason: 'Fix problems.' })
+    )
+
+    render(
+      <TooltipProvider>
+        <WorkflowsPage />
+      </TooltipProvider>
+    )
+
+    expect(screen.getByRole('button', { name: 'Save' })).toHaveAttribute('aria-disabled', 'true')
   })
 })

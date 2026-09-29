@@ -6,10 +6,13 @@ import type { StartNode as StartNodeDefinition } from '../../../../../../shared/
 import type { WorkflowAttemptState } from '../../../../../../shared/workflows/workflow-node-states'
 import { WORKFLOW_NODE_HEIGHT } from '../workflow-auto-layout'
 import { workflowNodeStatusDotClassName } from './workflow-node-run-status-style'
+import type { WorkflowNodeProblemSummary } from '../workflow-node-problem-summary'
+import WorkflowNodeProblemIndicator from './WorkflowNodeProblemIndicator'
 
 export type WorkflowStartNodeData = {
   definitionNode: StartNodeDefinition
   attemptState?: WorkflowAttemptState
+  problem?: WorkflowNodeProblemSummary
 }
 
 export type WorkflowStartFlowNode = FlowNode<WorkflowStartNodeData, 'start'>
@@ -30,6 +33,7 @@ export default function StartNode({
     >
       <Play className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       <span className="truncate text-sm font-medium">{data.definitionNode.title}</span>
+      <WorkflowNodeProblemIndicator problem={data.problem} />
       {statusDotClassName ? (
         <span
           className={cn('ml-auto size-2 shrink-0 rounded-full', statusDotClassName)}

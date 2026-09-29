@@ -17210,7 +17210,6 @@
           "save": "Save",
           "placeholder": "Select a workflow, or create a new one.",
           "loading": "Loading…",
-          "saveBlocked": "Fix the problems below before saving.",
           "trustedSources": "Trusted sources",
           "untitledDraft": "Untitled draft",
           "draftBadge": "Draft",
@@ -17439,6 +17438,29 @@
           },
           "workflow-loop-unwrap-command": {
             "notALoop": "Select a Loop node to unwrap."
+          },
+          "WorkflowNodeProblemIndicator": {
+            "label": "Problems: {{count}}"
+          },
+          "workflow-field-problems": {
+            "title": "Title",
+            "prompt": "Prompt",
+            "choice": "Choice",
+            "option": "Option",
+            "question": "Question",
+            "name": "Name",
+            "agent": "Agent",
+            "systemPrompt": "System prompt",
+            "path": "Path",
+            "choices": "Choices",
+            "options": "Options",
+            "itemEmpty": "{{field}} {{position}} is empty.",
+            "required": "{{field}} is required.",
+            "listEmpty": "{{field}}: add at least one.",
+            "invalid": "{{field}} is invalid: {{detail}}"
+          },
+          "workflow-problem-labels": {
+            "untitled": "Untitled {{type}}"
           }
         },
         "run-view": {
@@ -17723,7 +17745,8 @@
         },
         "SaveWorkflowButton": {
           "nothingToSave": "No changes to save yet.",
-          "saving": "Saving…"
+          "saving": "Saving…",
+          "invalidFields": "Fill in the fields listed under Problems before saving."
         },
         "RunUnsavedChangesDialog": {
           "title": "Save before running?",
@@ -17736,6 +17759,9 @@
         },
         "use-workflow-page-resume": {
           "runUnavailable": "The run you were viewing is no longer available."
+        },
+        "use-workflow-host-validation": {
+          "failed": "Couldn't run the host's checks ({{error}}). Only local checks are shown."
         }
       }
     },
