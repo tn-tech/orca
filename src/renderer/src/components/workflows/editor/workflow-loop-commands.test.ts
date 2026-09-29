@@ -75,4 +75,63 @@ describe('wrapNodesInLoopInDefinition', () => {
       expect(result.definition.layout.sibling).toEqual({ x: 2000, y: 2000 })
     }
   })
+
+  it('wraps every node kind the engine runs inside a Loop (US5 AS4: an Approval in a Loop)', () => {
+    const kinds: Node[] = [
+      {
+        id: 'approval',
+        type: 'approval',
+        title: 'Check',
+        question: 'Continue?',
+        options: ['ok'],
+        timeoutMs: 1,
+        escalationGraceMs: 1
+      },
+      { id: 'router', type: 'router', title: 'Route', prompt: 'pick', choices: ['x'] },
+      { id: 'join', type: 'join', title: 'Join', policy: 'all', onFailure: 'fail' },
+      { id: 'reflection', type: 'reflection', title: 'Reflect', prompt: 'think' }
+    ]
+    for (const node of kinds) {
+      const result = wrapNodesInLoopInDefinition(
+        workflow([node], [], { [node.id]: { x: 0, y: 0 } }),
+        [node.id]
+      )
+      expect(result.ok).toBe(true)
+    }
+  })
+
+  it('refuses Start, End and Loop nodes', () => {
+    const nodes: Node[] = [
+      { id: 'start', type: 'start', title: 'Start' },
+      { id: 'end', type: 'end', title: 'End' }
+    ]
+    for (const node of nodes) {
+      const result = wrapNodesInLoopInDefinition(workflow([node], [], {}), [node.id])
+      expect(result).toMatchObject({
+        ok: false,
+        problem: { code: 'workflow_editor_wrap_unwrappable_node' }
+      })
+    }
+  })
+
+  it('refuses an Approval whose option edge would have to leave the Loop', () => {
+    const gate: Node = {
+      id: 'gate',
+      type: 'approval',
+      title: 'Gate',
+      question: 'Ship?',
+      options: ['yes'],
+      timeoutMs: 1,
+      escalationGraceMs: 1
+    }
+    const definition = workflow(
+      [gate, agentNode('after')],
+      [{ id: 'e1', from: 'gate', to: 'after', fromPort: 'yes' }],
+      {}
+    )
+    expect(wrapNodesInLoopInDefinition(definition, ['gate'])).toMatchObject({
+      ok: false,
+      problem: { code: 'workflow_editor_wrap_ported_exit' }
+    })
+  })
 })

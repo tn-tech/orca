@@ -21,10 +21,12 @@ import { InspectorField } from './InspectorField'
 import InspectorProblemList from './InspectorProblemList'
 import { workflowNodeName } from './workflow-problem-labels'
 import JoinNodeFields from './JoinNodeFields'
+import LoopMembershipFields from './LoopMembershipFields'
 import LoopNodeFields from './LoopNodeFields'
 import ReflectionNodeFields from './ReflectionNodeFields'
 import RouterNodeFields from './RouterNodeFields'
 import WorkflowSettingsPanel from './WorkflowSettingsPanel'
+import type { LoopEdit } from './workflow-loop-membership-commands'
 import type { WorkflowSettingsPatch } from './workflow-settings-command'
 
 export type NodeInspectorProps = {
@@ -47,6 +49,8 @@ export type NodeInspectorProps = {
   onDeleteEdge?: (edgeId: string) => void
   /** F4: removes the Loop node, keeps its body, re-links entry/exit edges. */
   onUnwrapLoop?: (nodeId: string) => void
+  /** F11: entry/exit/body edits for the selected Loop. */
+  onEditLoop?: (loopId: string, edit: LoopEdit) => void
   allowlistedSources?: readonly string[]
   repo?: string
   /** The open repo's trust host (FR-018a); forwarded to `RolesPanel` -> `RoleEditor`. */
@@ -145,6 +149,7 @@ export default function NodeInspector({
   onDeleteNode,
   onDeleteEdge,
   onUnwrapLoop,
+  onEditLoop,
   allowlistedSources,
   repo,
   host,
@@ -241,7 +246,16 @@ export default function NodeInspector({
           isFolderWorkspace={isFolderWorkspace}
         />
       ) : node.type === 'loop' ? (
-        <LoopNodeFields node={node} onChange={onNodeChange} />
+        <>
+          <LoopNodeFields node={node} onChange={onNodeChange} />
+          {onEditLoop ? (
+            <LoopMembershipFields
+              node={node}
+              definition={definition}
+              onEditLoop={(edit) => onEditLoop(node.id, edit)}
+            />
+          ) : null}
+        </>
       ) : node.type === 'join' ? (
         <JoinNodeFields
           node={node}

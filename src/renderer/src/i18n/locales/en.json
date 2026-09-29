@@ -17335,11 +17335,12 @@
           },
           "workflow-loop-commands": {
             "invalidSelection": "Select at least one existing node to wrap in a Loop.",
-            "unwrappableSelection": "Only Agent and Reflection nodes can be wrapped in a Loop.",
             "loopTitle": "Loop",
             "disconnectedSelection": "The selected nodes must form a single connected group to wrap in a Loop.",
             "multipleEntries": "These nodes have more than one incoming connection from outside the selection; a Loop can only have one entry point.",
-            "multipleExits": "These nodes have more than one outgoing connection to outside the selection; a Loop can only have one exit point."
+            "multipleExits": "These nodes have more than one outgoing connection to outside the selection; a Loop can only have one exit point.",
+            "unwrappableNodeKind": "Start, End and Loop nodes can’t be wrapped in a Loop.",
+            "portedExit": "An Approval or Router option can’t lead out of a Loop. Delete that edge, or wrap the node it leads to as well."
           },
           "WorkflowEditorProblemNotice": {
             "wrapInLoop": "Wrap in Loop",
@@ -17480,6 +17481,21 @@
           },
           "AgentNodeWorkspaceField": {
             "folderReason": "Folder workspaces have no worktrees, so child workspaces are unavailable."
+          },
+          "LoopMembershipFields": {
+            "addLabel": "Add a node to this Loop",
+            "entryLabel": "Entry node",
+            "exitLabel": "Exit node",
+            "membersLabel": "Nodes in this Loop",
+            "endpointLocked": "Choose a different entry or exit node before removing this one.",
+            "removeMember": "Remove {{name}} from the Loop",
+            "noCandidates": "Add an Agent, Reflection, Router, Join or Approval node outside any Loop to move it in here."
+          },
+          "workflow-loop-membership-commands": {
+            "notMember": "Choose a node that is inside this Loop.",
+            "addRefused": "Only an Agent, Reflection, Router, Join or Approval node that is not in another Loop and not connected to this Loop can be added.",
+            "removeEndpoint": "Choose a different entry or exit node before removing this one from the Loop.",
+            "notALoop": "Select a Loop node to edit."
           }
         },
         "run-view": {

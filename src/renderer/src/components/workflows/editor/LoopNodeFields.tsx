@@ -18,9 +18,8 @@ function parseMaxIterations(text: string): number {
 }
 
 /** Loop node settings (FR-006): a required maximum iteration count and an exit condition over
- *  the exit node's result, edited with the same `ConditionBuilder` an edge condition uses. Entry/
- *  exit/body membership come from "wrap selection in Loop" (`workflow-loop-commands.ts`) — this
- *  panel doesn't let the user repoint them, matching how AgentNodeFields doesn't expose node ids. */
+ *  the exit node's result, edited with the same `ConditionBuilder` an edge condition uses. Entry,
+ *  exit and body membership live in `LoopMembershipFields`. */
 export default function LoopNodeFields({ node, onChange }: LoopNodeFieldsProps): React.JSX.Element {
   const maxIterationsId = useId()
   const missingCap = node.maxIterations < 1

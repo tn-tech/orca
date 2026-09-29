@@ -265,7 +265,7 @@ export function useWorkflowsPageController() {
     [clearActiveRun, list, repoId, session, settings]
   )
 
-  const { deleteNode, deleteEdge, deleteSelection, unwrapLoop, undo } = useWorkflowEditorMutations({
+  const editorMutations = useWorkflowEditorMutations({
     session,
     selectedNodeId,
     selectedEdgeId,
@@ -302,11 +302,7 @@ export function useWorkflowsPageController() {
     draftWorkflow,
     openDraft,
     saveDraft,
-    deleteNode,
-    deleteEdge,
-    deleteSelection,
-    unwrapLoop,
-    undo
+    ...editorMutations
   }
 }
 

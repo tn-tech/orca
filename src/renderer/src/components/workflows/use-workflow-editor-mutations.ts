@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { workflowEditorReducer } from './editor/use-workflow-editor-state'
+import type { LoopEdit } from './editor/workflow-loop-membership-commands'
 import type { WorkflowEditorSession } from './workflow-editor-session-types'
 
 export type UseWorkflowEditorMutationsParams = {
@@ -16,6 +17,7 @@ export type WorkflowEditorMutations = {
   /** Keyboard Delete/Backspace (F4): acts on whichever of the two the canvas currently selects. */
   deleteSelection: () => void
   unwrapLoop: (nodeId: string) => void
+  editLoop: (loopId: string, edit: LoopEdit) => void
   undo: () => void
 }
 
@@ -76,6 +78,15 @@ export function useWorkflowEditorMutations({
     [session, setSelectedNodeId]
   )
 
+  const editLoop = useCallback(
+    (loopId: string, edit: LoopEdit) => {
+      if (session.status === 'ready') {
+        session.editor.dispatch({ type: 'edit-loop', loopId, edit })
+      }
+    },
+    [session]
+  )
+
   /** F4 review round 1, Minor #4: undoing e.g. an `add-node` while that node is selected left
    *  `selectedNodeId` pointing at a node the reducer just made disappear — `canDelete` stayed
    *  true, so the next Backspace dispatched a no-op `delete-elements` for a missing id. Peeks at
@@ -95,5 +106,5 @@ export function useWorkflowEditorMutations({
     }
   }, [session, selectedNodeId, selectedEdgeId, setSelectedNodeId, setSelectedEdgeId])
 
-  return { deleteNode, deleteEdge, deleteSelection, unwrapLoop, undo }
+  return { deleteNode, deleteEdge, deleteSelection, unwrapLoop, editLoop, undo }
 }

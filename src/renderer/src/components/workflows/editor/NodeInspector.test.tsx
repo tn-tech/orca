@@ -266,6 +266,23 @@ describe('NodeInspector', () => {
     expect(onNodeChange).toHaveBeenLastCalledWith(expect.objectContaining({ maxIterations: 3 }))
   })
 
+  it('edits a Loop body from its inspector, adding an Approval (F11, US5 AS4)', () => {
+    const onEditLoop = vi.fn()
+    renderInspector({
+      definition: workflow({ nodes: [startNode(), loopNode(), agentNode(), approvalNode()] }),
+      selectedNodeId: 'loop',
+      onNodeChange: vi.fn(),
+      onEdgeConditionChange: vi.fn(),
+      onEditLoop
+    })
+
+    expect(screen.getByRole('combobox', { name: 'Entry node' })).toHaveTextContent('Implement')
+    fireEvent.click(screen.getByRole('combobox', { name: 'Add a node to this Loop' }))
+    fireEvent.click(screen.getByRole('option', { name: 'Approve the plan' }))
+
+    expect(onEditLoop).toHaveBeenCalledWith('loop', { kind: 'add-member', nodeId: 'approval' })
+  })
+
   it('renders JoinNodeFields for a selected join node, with its incoming edge count', () => {
     render(
       <NodeInspector

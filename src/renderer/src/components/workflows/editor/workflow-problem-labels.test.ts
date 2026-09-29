@@ -62,6 +62,20 @@ describe('describeWorkflowProblem', () => {
     expect(described.message).toBe('Loop "Start" exit node "agent-3f2a" is not in its body.')
   })
 
+  // Loop rule messages quote only node ids, so every one of them can be named (F11).
+  it('names every node a Loop problem quotes', () => {
+    const described = describeWorkflowProblem(
+      problem({
+        code: 'graph_loop_exit_not_in_body',
+        message: 'Loop "start" exit node "agent-3f2a" is not in its body.',
+        nodeId: 'start'
+      }),
+      definition
+    )
+
+    expect(described.message).toBe('Loop "Start" exit node "Review code" is not in its body.')
+  })
+
   // A choice text that happens to equal a node id is choice text, not that node.
   it('never rewrites option text that matches another node id', () => {
     const described = describeWorkflowProblem(

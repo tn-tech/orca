@@ -21,6 +21,7 @@ import {
   type WorkflowSettingsPatch
 } from './workflow-settings-command'
 import { wrapNodesInLoopInDefinition } from './workflow-loop-commands'
+import { editLoopInDefinition, type LoopEdit } from './workflow-loop-membership-commands'
 import { unwrapLoopInDefinition } from './workflow-loop-unwrap-command'
 
 const MAX_HISTORY_ENTRIES = 50
@@ -61,6 +62,8 @@ export type WorkflowEditorAction =
   /** F4: reverses `wrap-in-loop` — removes the Loop node, keeps its body, re-links entry/exit
    *  edges (`workflow-loop-unwrap-command.ts`'s `unwrapLoopInDefinition`). */
   | { type: 'unwrap-loop'; nodeId: string }
+  /** F11: entry/exit/body edits from the Loop inspector. */
+  | { type: 'edit-loop'; loopId: string; edit: LoopEdit }
   /** US4 AS1: creates or updates a role in `definition.roles` (`roles/RolesPanel.tsx`,
    *  `roles/RoleEditor.tsx`). */
   | { type: 'set-role'; roleId: string; role: Role }
@@ -221,6 +224,11 @@ export function workflowEditorReducer(
         result.definition,
         pruneManualPositionIds(state.manualPositionIds, result.definition)
       )
+    }
+
+    case 'edit-loop': {
+      const result = editLoopInDefinition(state.definition, action.loopId, action.edit)
+      return result.ok ? commit(state, result.definition) : refuse(state, result.problem)
     }
 
     case 'set-role':

@@ -4,11 +4,9 @@ import type { Layout, Node } from '../../../../../shared/workflows/workflow-defi
 import { computeLoopContainerBounds, measureWorkflowNodeSize } from './workflow-auto-layout'
 
 /**
- * Node kinds the "Add node" menu offers (`WorkflowCanvas.tsx`'s `NODE_TYPES`, minus Loop). A
- * Loop's body/entry/exit have no editing UI of their own — `LoopNodeFields.tsx` deliberately
- * doesn't let the user repoint them — and the only supported way to create one is wrapping an
- * existing selection (`workflow-loop-commands.ts`); a standalone Loop from this menu would have
- * an empty body with no UI path to ever populate it, so it's left out.
+ * Node kinds the "Add node" menu offers (`WorkflowCanvas.tsx`'s `NODE_TYPES`, minus Loop). A Loop
+ * needs at least one body node, so it is created by wrapping a selection
+ * (`workflow-loop-commands.ts`) and grown from its inspector (`LoopMembershipFields.tsx`).
  */
 export const ADDABLE_NODE_KINDS = [
   'start',

@@ -44,8 +44,8 @@ function roleName(definition: NamedElements, roleId: string): string {
 }
 
 /** Validation messages are built host-side with raw ids (they also feed the CLI). Only the ids
- *  the problem itself declares are renamed: other quoted text (router options, agent ids) may
- *  coincide with an id without naming that element. */
+ *  the problem itself declares are renamed (plus Loop rules' node ids): other quoted text (router
+ *  options, agent ids) may coincide with an id without naming that element. */
 function nameDeclaredIds(
   message: string,
   problem: WorkflowProblem,
@@ -60,6 +60,12 @@ function nameDeclaredIds(
   }
   if (problem.nodeId && definition.nodes.some((node) => node.id === problem.nodeId)) {
     names.set(problem.nodeId, workflowNodeName(definition, problem.nodeId))
+  }
+  // Loop rule messages (workflow-graph-loop-rules.ts) quote nothing but node ids.
+  if (problem.code.startsWith('graph_loop_')) {
+    for (const node of definition.nodes) {
+      names.set(node.id, workflowNodeName(definition, node.id))
+    }
   }
   return message.replace(
     /(\b(?:Node|node|Loop|loop|Join|join|Edge|edge|Role|role) )"([^"]+)"/g,

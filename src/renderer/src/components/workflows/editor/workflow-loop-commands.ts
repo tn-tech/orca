@@ -13,12 +13,21 @@ import {
   WORKFLOW_LOOP_PADDING
 } from './workflow-auto-layout'
 import type { WorkflowEditorCommandResult, WorkflowEditorProblem } from './workflow-editor-commands'
+import { LOOP_BODY_NODE_TYPES } from './workflow-loop-membership-commands'
 import { nudgeOverlappingSiblings, type Box } from './workflow-loop-neighbour-nudge'
 
-/** Node types with no port semantics of their own (data-model.md §1): safe to wrap, because
- *  forcing their outgoing edge to the Loop's `exit` port can't collide with a Router/Approval/
- *  Join's own required ports (`checkPortedNodes`/`checkJoinNodes`). */
-const WRAPPABLE_NODE_TYPES: ReadonlySet<Node['type']> = new Set(['agent', 'reflection'])
+/** An Approval/Router's outgoing edges must be its own option ports, so one can't become the
+ *  Loop's `exit` edge (`checkPortedNodes`). */
+function hasPortedExit(definition: Workflow, selected: ReadonlySet<string>): boolean {
+  return definition.edges.some(
+    (edge) =>
+      selected.has(edge.from) &&
+      !selected.has(edge.to) &&
+      definition.nodes.some(
+        (node) => node.id === edge.from && (node.type === 'approval' || node.type === 'router')
+      )
+  )
+}
 
 function inducedEdges(edges: readonly Edge[], selected: ReadonlySet<string>): Edge[] {
   return edges.filter((edge) => selected.has(edge.from) && selected.has(edge.to))
@@ -225,12 +234,21 @@ export function wrapNodesInLoopInDefinition(
       )
     )
   }
-  if (selectedNodes.some((node) => !WRAPPABLE_NODE_TYPES.has(node.type))) {
+  if (selectedNodes.some((node) => !LOOP_BODY_NODE_TYPES.has(node.type))) {
     return refusal(
       'workflow_editor_wrap_unwrappable_node',
       translate(
-        'auto.components.workflows.editor.workflow-loop-commands.unwrappableSelection',
-        'Only Agent and Reflection nodes can be wrapped in a Loop.'
+        'auto.components.workflows.editor.workflow-loop-commands.unwrappableNodeKind',
+        'Start, End and Loop nodes can’t be wrapped in a Loop.'
+      )
+    )
+  }
+  if (hasPortedExit(definition, new Set(uniqueIds))) {
+    return refusal(
+      'workflow_editor_wrap_ported_exit',
+      translate(
+        'auto.components.workflows.editor.workflow-loop-commands.portedExit',
+        'An Approval or Router option can’t lead out of a Loop. Delete that edge, or wrap the node it leads to as well.'
       )
     )
   }

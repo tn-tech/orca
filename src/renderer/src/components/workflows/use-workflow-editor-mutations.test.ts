@@ -153,6 +153,40 @@ describe('useWorkflowEditorMutations', () => {
     expect(view.result.current.selectedNodeId).toBeUndefined()
   })
 
+  it('editLoop adds a node to the Loop body and keeps the Loop selected (F11)', async () => {
+    const view = await readyHarness(
+      workflow({
+        nodes: [
+          { id: 'start', type: 'start', title: 'Start' },
+          loopNode(),
+          { id: 'end', type: 'end', title: 'End' },
+          {
+            id: 'gate',
+            type: 'approval',
+            title: 'Gate',
+            question: 'Again?',
+            options: ['ok'],
+            timeoutMs: 1,
+            escalationGraceMs: 1
+          }
+        ],
+        edges: [],
+        layout: { loop: { x: 0, y: 0 }, work: { x: 40, y: 40 } }
+      })
+    )
+    act(() => view.result.current.setSelectedNodeId('loop'))
+
+    act(() =>
+      view.result.current.mutations.editLoop('loop', { kind: 'add-member', nodeId: 'gate' })
+    )
+
+    const loop = view.result.current.session.editor.state.definition.nodes.find(
+      (node) => node.id === 'loop'
+    )
+    expect(loop).toMatchObject({ body: { nodeIds: ['work', 'gate'] } })
+    expect(view.result.current.selectedNodeId).toBe('loop')
+  })
+
   it('undo restores the prior definition', async () => {
     const view = await readyHarness(workflow())
     act(() =>
