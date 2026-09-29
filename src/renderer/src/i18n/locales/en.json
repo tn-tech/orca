@@ -17726,6 +17726,9 @@
           "description": "This workflow has unsaved changes. Running now would run the last saved version instead.",
           "cancel": "Cancel",
           "saveAndRun": "Save and run"
+        },
+        "use-workflow-run-save-guard": {
+          "saving": "Saving…"
         }
       }
     },

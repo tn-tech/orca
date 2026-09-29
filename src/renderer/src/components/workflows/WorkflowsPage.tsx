@@ -75,7 +75,12 @@ export default function WorkflowsPage(): React.JSX.Element {
   // Shared by Save's and Run's disabled-reason tooltips (FR-009).
   const blockingProblems = hasBlockingWorkflowProblems(controller.problems)
   // F8: Run must never silently run the on-disk file while the editor has unsaved edits.
-  const runSaveGuard = useWorkflowRunSaveGuard({ session, blockingProblems, start: run.start })
+  const runSaveGuard = useWorkflowRunSaveGuard({
+    session,
+    settings: controller.settings,
+    repoId: controller.repoId,
+    start: run.start
+  })
 
   // F4: Delete/Backspace and Cmd/Ctrl+Z, scoped to whatever the canvas currently selects. Not
   // gated on a shown run — Delete and Undo follow the same rule as every other edit here (F4
@@ -207,8 +212,8 @@ export default function WorkflowsPage(): React.JSX.Element {
                 <RunToolbar
                   runState={run.snapshot?.state}
                   runObjective={run.snapshot?.objective}
-                  canRun={controller.canRun}
-                  disabledReason={controller.runDisabledReason}
+                  canRun={controller.canRun && !runSaveGuard.busy}
+                  disabledReason={runSaveGuard.busyReason ?? controller.runDisabledReason}
                   starting={run.starting}
                   onRun={runSaveGuard.requestRun}
                   runControls={
