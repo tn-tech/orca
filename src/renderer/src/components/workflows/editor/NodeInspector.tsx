@@ -238,6 +238,7 @@ export default function NodeInspector({
           roles={definition.roles}
           onChange={onNodeChange}
           allowlistedSources={allowlistedSources}
+          isFolderWorkspace={isFolderWorkspace}
         />
       ) : node.type === 'loop' ? (
         <LoopNodeFields node={node} onChange={onNodeChange} />
