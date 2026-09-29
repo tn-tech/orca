@@ -16,6 +16,10 @@ import {
   updateNodeInDefinition,
   type WorkflowEditorProblem
 } from './workflow-editor-commands'
+import {
+  updateWorkflowSettingsInDefinition,
+  type WorkflowSettingsPatch
+} from './workflow-settings-command'
 import { wrapNodesInLoopInDefinition } from './workflow-loop-commands'
 import { unwrapLoopInDefinition } from './workflow-loop-unwrap-command'
 
@@ -62,6 +66,8 @@ export type WorkflowEditorAction =
   | { type: 'set-role'; roleId: string; role: Role }
   /** Removes a role and clears it from every node that referenced it. */
   | { type: 'remove-role'; roleId: string }
+  /** F13: workspace policy / default concurrency limit (`WorkflowSettingsPanel`). */
+  | { type: 'update-settings'; patch: WorkflowSettingsPatch }
   /** A fresh definition arrived (reload, or a run snapshot); see FR-010 handling below. */
   | { type: 'load-definition'; definition: Workflow }
   | { type: 'undo' }
@@ -222,6 +228,9 @@ export function workflowEditorReducer(
 
     case 'remove-role':
       return commit(state, removeRoleFromDefinition(state.definition, action.roleId))
+
+    case 'update-settings':
+      return commit(state, updateWorkflowSettingsInDefinition(state.definition, action.patch))
 
     case 'auto-layout': {
       // Prefers a real measured size over the estimate; anchors a pinned Loop-body node to its

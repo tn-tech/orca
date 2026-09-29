@@ -2,13 +2,14 @@
 // reflection). Pure and stateless — every call recounts in-flight attempts from persisted state, so
 // a rehydrated run enforces the same budget a live one would (data-model.md workflow_runs
 // .concurrency_limit). Structural nodes (start/end/loop/join) settle inline and never hold a slot.
+import { DEFAULT_WORKFLOW_CONCURRENCY_LIMIT } from '../../../shared/workflows/workflow-concurrency-default'
 import type { Workflow } from '../../../shared/workflows/workflow-definition-types'
 import { ACTIVE_ATTEMPT_STATES } from '../../../shared/workflows/workflow-node-states'
 import type { NodeAttemptView } from '../../../shared/workflows/workflow-run-types'
 import type { IterationNode } from './workflow-loop-unrolling'
 import { WORKER_DISPATCH_NODE_TYPES } from './workflow-run-node-launch'
 
-export const DEFAULT_WORKFLOW_CONCURRENCY_LIMIT = 4
+export { DEFAULT_WORKFLOW_CONCURRENCY_LIMIT }
 
 /** `overrides.concurrencyLimit` (workflow.run.start) wins; else the workflow file's own value, else the default. */
 export function resolveConcurrencyLimit(

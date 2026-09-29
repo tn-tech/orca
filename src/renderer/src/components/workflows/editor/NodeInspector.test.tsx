@@ -145,6 +145,35 @@ describe('NodeInspector', () => {
     ).toBeInTheDocument()
   })
 
+  it('shows workflow settings above Roles with nothing selected, and hides them for a node (F13)', () => {
+    const onWorkflowSettingsChange = vi.fn()
+    const { rerender } = render(
+      <NodeInspector
+        definition={workflow()}
+        onNodeChange={vi.fn()}
+        onEdgeConditionChange={vi.fn()}
+        onSetRole={vi.fn()}
+        onRemoveRole={vi.fn()}
+        onWorkflowSettingsChange={onWorkflowSettingsChange}
+      />
+    )
+    expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('radio', { name: 'In place' }))
+    expect(onWorkflowSettingsChange).toHaveBeenCalledWith({ workspacePolicy: 'in-place' })
+    rerender(
+      <NodeInspector
+        definition={workflow()}
+        selectedNodeId="start"
+        onNodeChange={vi.fn()}
+        onEdgeConditionChange={vi.fn()}
+        onSetRole={vi.fn()}
+        onRemoveRole={vi.fn()}
+        onWorkflowSettingsChange={onWorkflowSettingsChange}
+      />
+    )
+    expect(screen.queryByRole('heading', { name: 'Settings' })).not.toBeInTheDocument()
+  })
+
   it('renders AgentNodeFields for a selected agent node', () => {
     render(
       <NodeInspector

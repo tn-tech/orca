@@ -24,6 +24,8 @@ import JoinNodeFields from './JoinNodeFields'
 import LoopNodeFields from './LoopNodeFields'
 import ReflectionNodeFields from './ReflectionNodeFields'
 import RouterNodeFields from './RouterNodeFields'
+import WorkflowSettingsPanel from './WorkflowSettingsPanel'
+import type { WorkflowSettingsPatch } from './workflow-settings-command'
 
 export type NodeInspectorProps = {
   definition: Workflow
@@ -36,6 +38,9 @@ export type NodeInspectorProps = {
   /** US4 AS1: the workflow-level roles list, shown by `RolesPanel` when nothing is selected. */
   onSetRole: (roleId: string, role: Role) => void
   onRemoveRole: (roleId: string) => void
+  /** F13: workspace policy / concurrency limit, shown above the roles when nothing is selected. */
+  onWorkflowSettingsChange?: (patch: WorkflowSettingsPatch) => void
+  isFolderWorkspace?: boolean
   /** F4: deleting a Loop node also removes its body (`deleteElementsFromDefinition`'s cascade) —
    *  this button doesn't need a Loop-specific variant to do that. */
   onDeleteNode?: (nodeId: string) => void
@@ -135,6 +140,8 @@ export default function NodeInspector({
   onEdgeConditionChange,
   onSetRole,
   onRemoveRole,
+  onWorkflowSettingsChange,
+  isFolderWorkspace,
   onDeleteNode,
   onDeleteEdge,
   onUnwrapLoop,
@@ -194,17 +201,26 @@ export default function NodeInspector({
 
   if (!node) {
     return (
-      <RolesPanel
-        roles={definition.roles}
-        onSetRole={onSetRole}
-        onRemoveRole={onRemoveRole}
-        allowlistedSources={allowlistedSources}
-        repo={repo}
-        host={host}
-        settings={settings}
-        workflow={workflow}
-        onReloadFromDisk={onReloadFromDisk}
-      />
+      <div className="flex h-full flex-col overflow-y-auto scrollbar-sleek">
+        {onWorkflowSettingsChange ? (
+          <WorkflowSettingsPanel
+            definition={definition}
+            isFolderWorkspace={isFolderWorkspace}
+            onChange={onWorkflowSettingsChange}
+          />
+        ) : null}
+        <RolesPanel
+          roles={definition.roles}
+          onSetRole={onSetRole}
+          onRemoveRole={onRemoveRole}
+          allowlistedSources={allowlistedSources}
+          repo={repo}
+          host={host}
+          settings={settings}
+          workflow={workflow}
+          onReloadFromDisk={onReloadFromDisk}
+        />
+      </div>
     )
   }
 

@@ -17464,6 +17464,19 @@
           },
           "workflow-problem-labels": {
             "untitled": "Untitled {{type}}"
+          },
+          "WorkflowSettingsPanel": {
+            "policyLabel": "Workspace policy",
+            "heading": "Settings",
+            "policyRun": "Run workspace",
+            "policyInPlace": "In place",
+            "policyInPlaceHelp": "Agents work directly in the project folder. Child workspaces are unavailable.",
+            "policyRunHelp": "Each run gets its own workspace, so the project folder stays untouched.",
+            "folderNote": "This project is a folder without version control, so child workspaces are unavailable.",
+            "childNodesWarning": "{{count}} agent node(s) request a child workspace, which in-place workflows disallow. Switch them to the run workspace.",
+            "concurrencyLabel": "Concurrency limit",
+            "concurrencyHelp": "Most agents that run at once. Leave blank for the default ({{default}}).",
+            "concurrencyInvalid": "Enter a whole number of at least 1."
           }
         },
         "run-view": {

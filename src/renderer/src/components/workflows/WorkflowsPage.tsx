@@ -23,6 +23,7 @@ import WorkflowEditorPlaceholder from './WorkflowEditorPlaceholder'
 import WorkflowListPane from './WorkflowListPane'
 import WorkflowNameDialog from './WorkflowNameDialog'
 import { repoTrustHostKey } from './workflow-repo-trust-host'
+import { isFolderRepo } from '../../../../shared/repo-kind'
 import AttemptPanel from './run-view/AttemptPanel'
 import BackToEditingButton from './run-view/BackToEditingButton'
 import RunCanvasOverlay from './run-view/RunCanvasOverlay'
@@ -315,6 +316,12 @@ export default function WorkflowsPage(): React.JSX.Element {
                       }
                       onRemoveRole={(roleId) =>
                         session.editor.dispatch({ type: 'remove-role', roleId })
+                      }
+                      onWorkflowSettingsChange={(patch) =>
+                        session.editor.dispatch({ type: 'update-settings', patch })
+                      }
+                      isFolderWorkspace={
+                        controller.activeRepo ? isFolderRepo(controller.activeRepo) : false
                       }
                       onDeleteNode={controller.deleteNode}
                       onDeleteEdge={controller.deleteEdge}
