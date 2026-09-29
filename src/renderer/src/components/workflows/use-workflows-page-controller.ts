@@ -185,9 +185,12 @@ export function useWorkflowsPageController() {
     [clearActiveRun, list, repoId, session, settings]
   )
 
+  // A deselect must not clear an edge selected in the same batch (keyboard node -> edge).
   const selectNode = useCallback((nodeId: string | undefined) => {
     setSelectedNodeId(nodeId)
-    setSelectedEdgeId(undefined)
+    if (nodeId) {
+      setSelectedEdgeId(undefined)
+    }
   }, [])
 
   /** Calls `workflow.draft` (US6 AS1) — does not touch the editor session; see `openDraft`. */

@@ -1,38 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  resolveSelectChange,
-  resolveSelectionChange,
-  selectionToReport
-} from './workflow-canvas-selection-change'
-
-describe('resolveSelectionChange (F4 review round 1, Minor #6: keyboard edge selection)', () => {
-  it('selects the edge when React Flow reports one', () => {
-    expect(resolveSelectionChange({ nodes: [], edges: [{ id: 'edge-1' }] })).toEqual({
-      nodeId: undefined,
-      edgeId: 'edge-1'
-    })
-  })
-
-  it('selects the node when React Flow reports one and no edge', () => {
-    expect(resolveSelectionChange({ nodes: [{ id: 'node-1' }], edges: [] })).toEqual({
-      nodeId: 'node-1',
-      edgeId: undefined
-    })
-  })
-
-  it('clears both when nothing is selected', () => {
-    expect(resolveSelectionChange({ nodes: [], edges: [] })).toEqual({
-      nodeId: undefined,
-      edgeId: undefined
-    })
-  })
-
-  it('prefers the edge if both are somehow reported together', () => {
-    expect(
-      resolveSelectionChange({ nodes: [{ id: 'node-1' }], edges: [{ id: 'edge-1' }] })
-    ).toEqual({ nodeId: undefined, edgeId: 'edge-1' })
-  })
-})
+import { resolveSelectChange } from './workflow-canvas-selection-change'
 
 describe('resolveSelectChange (F4 re-review 1: keyboard selection actually reaches onNodesChange/onEdgesChange)', () => {
   it('reports the newly selected id for a select-true change', () => {
@@ -66,25 +33,5 @@ describe('resolveSelectChange (F4 re-review 1: keyboard selection actually reach
 
   it('reports no change for an empty batch', () => {
     expect(resolveSelectChange([])).toEqual({ changed: false, id: undefined })
-  })
-})
-
-describe('selectionToReport (F9: a stale empty report must not clear the controlled selection)', () => {
-  it('is null when React Flow reports nothing selected, so it cannot undo a just-made selection', () => {
-    expect(selectionToReport({ nodes: [], edges: [] })).toBeNull()
-  })
-
-  it('reports the selected node', () => {
-    expect(selectionToReport({ nodes: [{ id: 'node-1' }], edges: [] })).toEqual({
-      nodeId: 'node-1',
-      edgeId: undefined
-    })
-  })
-
-  it('reports the selected edge', () => {
-    expect(selectionToReport({ nodes: [], edges: [{ id: 'edge-1' }] })).toEqual({
-      nodeId: undefined,
-      edgeId: 'edge-1'
-    })
   })
 })

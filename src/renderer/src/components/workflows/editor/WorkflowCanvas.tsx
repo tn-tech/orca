@@ -16,12 +16,11 @@ import {
   type OnEdgesChange,
   type OnInit,
   type OnNodesChange,
-  type OnSelectionChangeFunc,
   type ReactFlowInstance
 } from '@xyflow/react'
 import type { Edge, Workflow } from '../../../../../shared/workflows/workflow-definition-types'
 import type { MeasuredNodeSize } from './workflow-auto-layout'
-import { resolveSelectChange, selectionToReport } from './workflow-canvas-selection-change'
+import { resolveSelectChange } from './workflow-canvas-selection-change'
 import { loopParentMap } from './workflow-auto-layout'
 import { computeEdgeBendLanes } from './workflow-edge-routing'
 import {
@@ -283,17 +282,6 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasHandle, WorkflowCanvasProps>(
       onEdgeSelect?.(undefined)
     }, [onNodeSelect, onEdgeSelect])
 
-    const handleSelectionChange: OnSelectionChangeFunc<WorkflowFlowNode, FlowEdge> = useCallback(
-      (params) => {
-        const report = selectionToReport(params)
-        if (report) {
-          onNodeSelect?.(report.nodeId)
-          onEdgeSelect?.(report.edgeId)
-        }
-      },
-      [onNodeSelect, onEdgeSelect]
-    )
-
     return (
       <div ref={containerRef} className="relative h-full w-full bg-background">
         <ReactFlow
@@ -306,8 +294,10 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasHandle, WorkflowCanvasProps>(
           onConnect={handleConnect}
           onNodeClick={handleNodeClick}
           onEdgeClick={handleEdgeClick}
+          // No `onSelectionChange`: React Flow re-sends its one-render-stale selection whenever
+          // that callback changes identity, which ping-pongs a controlled canvas. Clicks and
+          // keyboard selection are already covered by the handlers above.
           onPaneClick={handlePaneClick}
-          onSelectionChange={handleSelectionChange}
           onInit={handleInit}
           // F4: Delete/Backspace are handled by the editor's own shortcut
           // (workflow-editor-keyboard-shortcuts.ts), which also skips text inputs and open

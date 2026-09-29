@@ -280,6 +280,18 @@ describe('useWorkflowsPageController', () => {
       expect(result.current.session.status).toBe('ready')
     })
 
+    it('selectNode(undefined) keeps a selected edge, while selecting a node clears it', () => {
+      const { result } = renderHook(() => useWorkflowsPageController())
+
+      act(() => result.current.setSelectedEdgeId('e1'))
+      act(() => result.current.selectNode(undefined))
+      expect(result.current.selectedEdgeId).toBe('e1')
+
+      act(() => result.current.selectNode('start'))
+      expect(result.current.selectedNodeId).toBe('start')
+      expect(result.current.selectedEdgeId).toBeUndefined()
+    })
+
     it('disables Run (with the no-project reason) when the active project drops out from under a still-ready session (F6)', async () => {
       const { result, rerender } = renderHook(() => useWorkflowsPageController())
       await openReadyWorkflow(result)
