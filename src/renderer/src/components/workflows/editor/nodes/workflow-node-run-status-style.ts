@@ -12,7 +12,9 @@ export function workflowNodeStatusDotClassName(
     case 'provisioning':
     case 'running':
       return 'bg-workspace-status-progress'
+    // Hollow, not filled: the review green is nearly the Completed green (N10).
     case 'waiting':
+      return 'border-2 border-workspace-status-progress bg-transparent'
     case 'unverifiable':
       return 'bg-workspace-status-review'
     case 'completed':

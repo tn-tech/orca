@@ -70,6 +70,7 @@ vi.mock('@/store/selectors', () => ({
 import { useWorkflowsPageController } from './use-workflows-page-controller'
 
 const settings = { activeRuntimeEnvironmentId: null }
+const storeState = { settings, workflowsResume: null, setWorkflowsResume: vi.fn() }
 
 function savedWorkflow(patch: Partial<Workflow> = {}): Workflow {
   return {
@@ -119,9 +120,7 @@ beforeEach(() => {
   toastMessageMock.mockReset()
   useAppStoreMock
     .mockReset()
-    .mockImplementation((selector: (state: { settings: typeof settings }) => unknown) =>
-      selector({ settings })
-    )
+    .mockImplementation((selector: (state: typeof storeState) => unknown) => selector(storeState))
   useActiveRepoMock.mockReset().mockReturnValue({ id: 'repo-1' })
   useActiveWorktreeMock.mockReset().mockReturnValue(null)
 })
@@ -266,6 +265,19 @@ describe('useWorkflowsPageController', () => {
         objective: 'Add CSV export'
       })
       expect(result.current.run.runId).toBe('run-1')
+    })
+
+    it('backToEditing drops the shown run but keeps the workflow open (F9)', async () => {
+      workflowRunStartMock.mockResolvedValue({ runId: 'run-1' })
+      const { result } = renderHook(() => useWorkflowsPageController())
+      await openReadyWorkflow(result)
+      await act(() => result.current.run.start('Add CSV export'))
+      expect(result.current.run.runId).toBe('run-1')
+
+      act(() => result.current.backToEditing())
+
+      expect(result.current.run.runId).toBeNull()
+      expect(result.current.session.status).toBe('ready')
     })
 
     it('disables Run (with the no-project reason) when the active project drops out from under a still-ready session (F6)', async () => {

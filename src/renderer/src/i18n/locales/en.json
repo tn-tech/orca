@@ -17483,7 +17483,8 @@
             "run": "Run",
             "starting": "Starting the run…",
             "objectiveRequired": "Enter an objective.",
-            "notReady": "Can't run yet."
+            "notReady": "Can't run yet.",
+            "backToEditing": "Back to editing"
           },
           "JoinBranchOutcomes": {
             "completed": "Completed",
@@ -17578,6 +17579,9 @@
             "rerunRefused": "This run can't be rerun right now.",
             "rerunWorkspaceUnavailable": "This run's workspace isn't available right now.",
             "rerunRestartsLoop": "Restarts the whole loop"
+          },
+          "RunPendingPrompts": {
+            "title": "Waiting for you"
           }
         },
         "use-workflow-editor-session": {

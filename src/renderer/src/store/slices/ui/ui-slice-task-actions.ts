@@ -30,6 +30,8 @@ export function createUiTaskActions(set: UISliceSet, get: UISliceGet): Partial<U
     taskPageData: {},
     taskResumeState: undefined,
     taskListPosition: null,
+    workflowsResume: null,
+    setWorkflowsResume: (workflowsResume) => set({ workflowsResume }),
     githubTaskDrawerWorkItem: null,
     newWorkspaceDraft: null,
     openTaskPage: (data = {}, options = {}) => {

@@ -34,6 +34,7 @@ import { useWorkflowExternalChangeWatch } from './use-workflow-external-change-w
 import { useWorkflowListState } from './use-workflow-list-state'
 import { useWorkflowProblemFocus } from './use-workflow-problem-focus'
 import { useWorkflowSourceAllowlist } from './use-workflow-source-allowlist'
+import { useWorkflowPageResume } from './use-workflow-page-resume'
 import { useWorkflowRunControls } from './use-workflow-run-controls'
 
 const HOST_VALIDATE_DEBOUNCE_MS = 400
@@ -119,6 +120,14 @@ export function useWorkflowsPageController() {
     settings,
     repoId,
     openRef: session.openRef
+  })
+
+  useWorkflowPageResume({
+    repoId,
+    openRef: session.openRef,
+    runId: run.runId,
+    open: session.open,
+    openRun: run.openRun
   })
 
   const focusProblem = useWorkflowProblemFocus({ definition, setSelectedNodeId, setSelectedEdgeId })
@@ -275,6 +284,7 @@ export function useWorkflowsPageController() {
     noActiveProjectReason,
     runDisabledReason,
     run,
+    backToEditing: clearActiveRun,
     selectedNodeId,
     selectedEdgeId,
     setSelectedNodeId,

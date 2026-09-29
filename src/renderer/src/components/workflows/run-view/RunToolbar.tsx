@@ -1,5 +1,5 @@
 import React, { useId, useState } from 'react'
-import { Play, Square } from 'lucide-react'
+import { ArrowLeft, Play, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -54,6 +54,8 @@ export type RunToolbarProps = {
   /** Rendered next to the run state while a run is active (e.g. `<RunControls />`) — in the same
    *  wrapping unit as the state label, so the two never wrap apart from each other. */
   runControls?: React.ReactNode
+  /** F9: leaves the run view for editing (the run stays in History). Shown while a run is shown. */
+  onBackToEditing?: () => void
 }
 
 /** Run view controls (US1 AS2/AS3): an objective, and either Run or the run's state plus its
@@ -69,7 +71,8 @@ export default function RunToolbar({
   stopping,
   onRun,
   onStop,
-  runControls
+  runControls,
+  onBackToEditing
 }: RunToolbarProps): React.JSX.Element {
   // Not cleared on run start/finish: keeping the typed objective around is a relaunch convenience
   // once the input reappears after the run reaches a terminal state.
@@ -125,6 +128,15 @@ export default function RunToolbar({
         </>
       )}
       {stateLabel}
+      {runState !== undefined && onBackToEditing ? (
+        <Button type="button" variant="ghost" size="sm" onClick={onBackToEditing}>
+          <ArrowLeft />
+          {translate(
+            'auto.components.workflows.run-view.RunToolbar.backToEditing',
+            'Back to editing'
+          )}
+        </Button>
+      ) : null}
       {isActive ? (
         <>
           {runControls}

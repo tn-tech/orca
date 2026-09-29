@@ -9,6 +9,7 @@ import type { TuiAgent } from '../../../../../shared/tui-agent'
 import type { LaunchSource } from '../../../../../shared/telemetry-events'
 import type { TaskSourceContext } from '../../../../../shared/task-source-context'
 import type { ExecutionHostId } from '../../../../../shared/execution-host'
+import type { WorkflowRunSource } from '../../../../../shared/workflows/workflow-run-types'
 import type { TaskResumeState, TopLevelView } from '../../../../../shared/ui-chrome-types'
 
 export type PendingSidebarWorktreeReveal = {
@@ -159,6 +160,14 @@ export type UISliceCore = {
   setTaskResumeState: (updates: Partial<TaskResumeState>) => void
   taskListPosition: { contextKey: string; page: number; scrollTop: number } | null
   setTaskListPosition: (position: UISliceCore['taskListPosition']) => void
+  /** Workflows page: the open workflow and shown run, reopened when the page remounts. */
+  workflowsResume: {
+    repoId: string
+    name: string
+    source: WorkflowRunSource
+    runId: string | null
+  } | null
+  setWorkflowsResume: (resume: UISliceCore['workflowsResume']) => void
   githubTaskDrawerWorkItem: GitHubWorkItem | null
   setGithubTaskDrawerWorkItem: (item: GitHubWorkItem | null) => void
   newWorkspaceDraft: NewWorkspaceDraft | null

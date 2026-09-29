@@ -26,6 +26,7 @@ import AttemptPanel from './run-view/AttemptPanel'
 import RunCanvasOverlay from './run-view/RunCanvasOverlay'
 import RunControls from './run-view/RunControls'
 import RunHistory from './run-view/RunHistory'
+import RunPendingPrompts from './run-view/RunPendingPrompts'
 import RunToolbar from './run-view/RunToolbar'
 import { useWorkflowRunSaveGuard } from './use-workflow-run-save-guard'
 import { useWorkflowsPageController } from './use-workflows-page-controller'
@@ -216,6 +217,7 @@ export default function WorkflowsPage(): React.JSX.Element {
                   disabledReason={runSaveGuard.busyReason ?? controller.runDisabledReason}
                   starting={run.starting}
                   onRun={runSaveGuard.requestRun}
+                  onBackToEditing={run.snapshot ? controller.backToEditing : undefined}
                   runControls={
                     <RunControls
                       runState={run.snapshot?.state}
@@ -265,6 +267,17 @@ export default function WorkflowsPage(): React.JSX.Element {
                 }
                 onDismiss={() => session.editor.dispatch({ type: 'dismiss-problem' })}
               />
+              {run.snapshot ? (
+                <RunPendingPrompts
+                  definition={session.editor.state.definition}
+                  snapshot={run.snapshot}
+                  settings={controller.settings}
+                  onSelectNode={(nodeId) => {
+                    controller.setSelectedNodeId(nodeId)
+                    controller.setSelectedEdgeId(undefined)
+                  }}
+                />
+              ) : null}
               <div className="flex min-h-0 flex-1">
                 <div className="min-w-0 flex-1">
                   <RunCanvasOverlay
