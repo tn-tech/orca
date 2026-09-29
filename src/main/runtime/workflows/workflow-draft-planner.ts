@@ -4,9 +4,9 @@
 import { z } from 'zod'
 import type { GlobalSettings } from '../../../shared/global-settings-types'
 import type { Repo } from '../../../shared/repo-types'
-import { isFolderRepo } from '../../../shared/repo-kind'
 import type { TuiAgent } from '../../../shared/tui-agent'
 import { isTuiAgentEnabled, TUI_AGENT_AUTO_PICK_ORDER } from '../../../shared/tui-agent-selection'
+import { effectiveWorkspacePolicy } from '../../../shared/workflows/workflow-workspace-policy'
 import { WorkflowFileSchema } from '../../../shared/workflows/workflow-definition-schema'
 import type { ResultContract, Workflow } from '../../../shared/workflows/workflow-definition-types'
 import { ResultContractSchema } from '../../../shared/workflows/workflow-node-schemas'
@@ -66,7 +66,7 @@ export function workflowDefinitionResultContract(): ResultContract {
 
 /** Folder workspaces have no worktree to place a run in, so they draft (and run) in place. */
 export function draftWorkspacePolicy(repo: Pick<Repo, 'kind'>): Workflow['workspacePolicy'] {
-  return isFolderRepo(repo) ? 'in-place' : 'run-workspace'
+  return effectiveWorkspacePolicy(repo, 'run-workspace')
 }
 
 function plannerSystemPrompt(plannerAgent: string, policy: Workflow['workspacePolicy']): string {

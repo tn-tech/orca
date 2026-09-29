@@ -307,6 +307,25 @@ describe('workflow rerun from a node (FR-030, US8 AS2)', () => {
     expect(h.db.listWorkflowRuns({}).runs.every((run) => !run.rerunOfRunId)).toBe(true)
   })
 
+  it('reruns a folder-repo run in place even when its snapshot saved run-workspace (FR-041)', async () => {
+    const folderRepo: Repo = { ...repo, kind: 'folder' }
+    const source = h.db.createWorkflowRun({
+      workflowName: THREE_NODE_WORKFLOW.name,
+      workflowSource: 'project',
+      workflowSnapshot: { ...THREE_NODE_WORKFLOW, workspacePolicy: 'run-workspace' },
+      workflowVersion: 'rev-1',
+      objective: 'folder',
+      repoId: folderRepo.id,
+      worktreeId: 'repo::gone'
+    })
+    h.db.transitionWorkflowRun(source.id, 'failed')
+    const rerun = await startRerun(
+      { ...deps(), resolveRepo: async () => folderRepo },
+      { runId: source.id }
+    )
+    expect(rerun.workflowSnapshot.workspacePolicy).toBe('in-place')
+  })
+
   it('starts exactly one of two overlapping reruns in the same run workspace', async () => {
     const source = await failAtThirdNode()
 

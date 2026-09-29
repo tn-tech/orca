@@ -115,6 +115,52 @@ describe('useWorkflowEditorSession', () => {
     expect(result.current.documentRevision).toBe('rev-2')
   })
 
+  it('workflow settings survive save and reopen; a cleared limit is not written (F13)', async () => {
+    const original = savedWorkflow({ concurrencyLimit: 2 })
+    workflowReadMock.mockResolvedValue({
+      definition: original,
+      raw: 'raw',
+      revision: 'rev-1',
+      problems: []
+    })
+    workflowWriteMock.mockResolvedValue({ revision: 'rev-2' })
+    const first = renderHook(() => useWorkflowEditorSession({ settings, repoId: 'repo-1' }))
+    await act(() => first.result.current.open({ name: 'wf', source: 'project' }))
+    act(() =>
+      first.result.current.editor.dispatch({
+        type: 'update-settings',
+        patch: { workspacePolicy: 'in-place', concurrencyLimit: 7 }
+      })
+    )
+    await act(() => first.result.current.save())
+    const written = workflowWriteMock.mock.calls.at(-1)?.[1].definition
+    expect(written).toMatchObject({ workspacePolicy: 'in-place', concurrencyLimit: 7 })
+
+    workflowReadMock.mockResolvedValue({
+      definition: written,
+      raw: 'raw',
+      revision: 'rev-2',
+      problems: []
+    })
+    const reopened = renderHook(() => useWorkflowEditorSession({ settings, repoId: 'repo-1' }))
+    await act(() => reopened.result.current.open({ name: 'wf', source: 'project' }))
+    expect(reopened.result.current.editor.state.definition).toMatchObject({
+      workspacePolicy: 'in-place',
+      concurrencyLimit: 7
+    })
+
+    act(() =>
+      reopened.result.current.editor.dispatch({
+        type: 'update-settings',
+        patch: { concurrencyLimit: undefined }
+      })
+    )
+    await act(() => reopened.result.current.save())
+    expect(workflowWriteMock.mock.calls.at(-1)?.[1].definition).not.toHaveProperty(
+      'concurrencyLimit'
+    )
+  })
+
   it('open surfaces the no-project reason inline instead of doing nothing (F6 fix round 1)', async () => {
     const { result } = renderHook(() => useWorkflowEditorSession({ settings, repoId: undefined }))
 

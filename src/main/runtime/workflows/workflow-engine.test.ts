@@ -173,6 +173,43 @@ describe('WorkflowEngine', () => {
     expect(engine.getSnapshot(run.id)?.state).toBe('completed')
   })
 
+  it('runs a folder repo in place even when the saved policy is run-workspace (FR-041)', async () => {
+    const engine = createEngine()
+    const folderRepo = repoFixture(workspaceRoot, { kind: 'folder' })
+    const run = await engine.startRun({
+      workflow: { ...TRIVIAL_WORKFLOW, workspacePolicy: 'run-workspace' },
+      workflowSource: 'project',
+      workflowVersion: 'v1',
+      objective: 'folder run',
+      repo: folderRepo,
+      validation: ALWAYS_SUPPORTED
+    })
+    expect(h.runtime.createManagedWorktree).not.toHaveBeenCalled()
+    expect(run.workflowSnapshot.workspacePolicy).toBe('in-place')
+  })
+
+  it('refuses a folder repo whose agent nodes ask for child workspaces, before any row', async () => {
+    const engine = createEngine()
+    const folderRepo = repoFixture(workspaceRoot, { kind: 'folder' })
+    await expect(
+      engine.startRun({
+        workflow: {
+          ...TWO_NODE_WORKFLOW,
+          workspacePolicy: 'run-workspace',
+          nodes: TWO_NODE_WORKFLOW.nodes.map((n) =>
+            n.type === 'agent' ? { ...n, workspace: 'child' } : n
+          )
+        },
+        workflowSource: 'project',
+        workflowVersion: 'v1',
+        objective: 'folder run',
+        repo: folderRepo,
+        validation: ALWAYS_SUPPORTED
+      })
+    ).rejects.toBeInstanceOf(WorkflowGraphValidationError)
+    expect(h.runtime.createManagedWorktree).not.toHaveBeenCalled()
+  })
+
   it('honors the workflow file concurrencyLimit when no override is given (FR-031)', async () => {
     const engine = createEngine()
     const run = await engine.startRun({

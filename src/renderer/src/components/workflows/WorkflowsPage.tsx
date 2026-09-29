@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { translate } from '@/i18n/i18n'
 import { useAppStore } from '@/store'
+import { isFolderRepo } from '../../../../shared/repo-kind'
 import AddNodeMenu from './editor/AddNodeMenu'
 import NodeInspector from './editor/NodeInspector'
 import UndoButton from './editor/UndoButton'
@@ -23,7 +24,6 @@ import WorkflowEditorPlaceholder from './WorkflowEditorPlaceholder'
 import WorkflowListPane from './WorkflowListPane'
 import WorkflowNameDialog from './WorkflowNameDialog'
 import { repoTrustHostKey } from './workflow-repo-trust-host'
-import { isFolderRepo } from '../../../../shared/repo-kind'
 import AttemptPanel from './run-view/AttemptPanel'
 import BackToEditingButton from './run-view/BackToEditingButton'
 import RunCanvasOverlay from './run-view/RunCanvasOverlay'
@@ -326,6 +326,7 @@ export default function WorkflowsPage(): React.JSX.Element {
                       onDeleteNode={controller.deleteNode}
                       onDeleteEdge={controller.deleteEdge}
                       onUnwrapLoop={controller.unwrapLoop}
+                      onEditLoop={controller.editLoop}
                       allowlistedSources={controller.allowlistedSources}
                       repo={controller.repoId}
                       host={repoTrustHost}

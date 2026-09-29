@@ -5,6 +5,7 @@
 // inside a Loop reruns the whole Loop from its first iteration: iteration progress and the
 // previous-iteration inputs (FR-028) live on the Loop's own attempts, not on one body node.
 import type { Repo } from '../../../shared/repo-types'
+import { withEffectiveWorkspacePolicy } from '../../../shared/workflows/workflow-workspace-policy'
 import type { Workflow } from '../../../shared/workflows/workflow-definition-types'
 import {
   ACTIVE_ATTEMPT_STATES,
@@ -165,9 +166,15 @@ export async function startRerun(
   args: { runId: string; fromNodeId?: string; startedByClient?: string }
 ): Promise<RunSnapshot> {
   const { db } = deps
-  const source = db.getWorkflowRun(args.runId)
-  if (!source) {
+  const stored = db.getWorkflowRun(args.runId)
+  if (!stored) {
     throw new Error('workflow_not_found')
+  }
+  const repo = await deps.resolveRepo(stored.repoId)
+  // FR-041: a folder repo reruns in place even if the snapshot predates the forced policy.
+  const source: RunSnapshot = {
+    ...stored,
+    workflowSnapshot: withEffectiveWorkspacePolicy(stored.workflowSnapshot, repo)
   }
   // Planner runs are throwaway and torn down; their marker must never reach a user's run.
   if (isDraftPlannerRun(source)) {
@@ -185,7 +192,6 @@ export async function startRerun(
     refuse(`Run ${source.id} has a worker that may still be running; stop it first.`, source.id)
   }
   refuseBusyWorkspace(db, source)
-  const repo = await deps.resolveRepo(source.repoId)
   await assertWorkflowRunnable(definition, repo, deps.validation)
   try {
     await resolveRunWorkspaceAccess(source, repo, deps.showManagedWorktree)

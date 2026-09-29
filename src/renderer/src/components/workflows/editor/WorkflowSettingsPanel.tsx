@@ -3,6 +3,7 @@ import { SettingsSegmentedControl } from '@/components/settings/SettingsFormCont
 import { Input } from '@/components/ui/input'
 import { translate } from '@/i18n/i18n'
 import { DEFAULT_WORKFLOW_CONCURRENCY_LIMIT } from '../../../../../shared/workflows/workflow-concurrency-default'
+import { effectiveWorkspacePolicy } from '../../../../../shared/workflows/workflow-workspace-policy'
 import type { Workflow } from '../../../../../shared/workflows/workflow-definition-types'
 import { InspectorField } from './InspectorField'
 import type { WorkflowSettingsPatch } from './workflow-settings-command'
@@ -48,7 +49,12 @@ export default function WorkflowSettingsPanel({
   }
   const parsedLimit = parseConcurrencyLimit(limitDraft)
 
-  const inPlace = definition.workspacePolicy === 'in-place'
+  // FR-041: the engine forces in-place for folder workspaces whatever the file saved.
+  const policy = effectiveWorkspacePolicy(
+    { kind: isFolderWorkspace ? 'folder' : 'git' },
+    definition.workspacePolicy
+  )
+  const inPlace = policy === 'in-place'
   const childNodeCount = inPlace
     ? definition.nodes.filter((node) => node.type === 'agent' && node.workspace === 'child').length
     : 0
@@ -73,12 +79,13 @@ export default function WorkflowSettingsPanel({
       </h2>
       <InspectorField label={policyLabel}>
         <SettingsSegmentedControl<Workflow['workspacePolicy']>
-          value={definition.workspacePolicy}
+          value={policy}
           onChange={(workspacePolicy) => onChange({ workspacePolicy })}
           ariaLabel={policyLabel}
           options={[
             {
               value: 'run-workspace',
+              disabled: isFolderWorkspace,
               label: translate(
                 'auto.components.workflows.editor.WorkflowSettingsPanel.policyRun',
                 'Run workspace'
@@ -86,6 +93,7 @@ export default function WorkflowSettingsPanel({
             },
             {
               value: 'in-place',
+              disabled: isFolderWorkspace,
               label: translate(
                 'auto.components.workflows.editor.WorkflowSettingsPanel.policyInPlace',
                 'In place'
@@ -108,7 +116,7 @@ export default function WorkflowSettingsPanel({
           <p className="text-xs text-muted-foreground">
             {translate(
               'auto.components.workflows.editor.WorkflowSettingsPanel.folderNote',
-              'This project is a folder without version control, so child workspaces are unavailable.'
+              'This project is a folder without version control, so runs always happen in place and child workspaces are unavailable.'
             )}
           </p>
         ) : null}
@@ -131,12 +139,18 @@ export default function WorkflowSettingsPanel({
       >
         <Input
           id={limitId}
-          type="number"
-          min={1}
-          step={1}
+          // Text, not number: a number input reports "" for text like "-", which would clear the limit mid-typing.
+          type="text"
+          inputMode="numeric"
           value={limitDraft}
           placeholder={String(DEFAULT_WORKFLOW_CONCURRENCY_LIMIT)}
           onChange={(event) => handleLimitInput(event.target.value)}
+          onBlur={() => {
+            // Never leave text on screen that the file doesn't hold.
+            if (!parsedLimit.ok) {
+              setLimitDraft(String(committedLimit ?? ''))
+            }
+          }}
           aria-invalid={!parsedLimit.ok}
           aria-describedby={parsedLimit.ok ? undefined : limitErrorId}
           className="h-8 w-24"

@@ -13,6 +13,7 @@ import { WorkflowGraphValidationError } from './workflow-graph-validation-error'
 import type { WorkflowRunWorkspaceAccess } from './workflow-run-node-launch'
 import type { WorkflowOrchestrationDispatcher } from './workflow-orchestration-client'
 import { WorkflowRunController, type WorkflowRunControllerRuntime } from './workflow-run-controller'
+import { withEffectiveWorkspacePolicy } from '../../../shared/workflows/workflow-workspace-policy'
 import { isHostUnreachableError, resolveRunWorkspaceAccess } from './workflow-run-host-access'
 import { WorkflowRunRecorder } from './workflow-run-recorder'
 import { assertWorkflowRunnable, type WorkflowRunValidation } from './workflow-run-validation'
@@ -92,19 +93,21 @@ export class WorkflowEngine {
     if (this.stopped) {
       throw new Error('workflow_engine_stopped')
     }
-    await assertWorkflowRunnable(input.workflow, input.repo, input.validation)
+    // FR-041: a folder repo runs in place whatever the file saved; the snapshot records what ran.
+    const workflow = withEffectiveWorkspacePolicy(input.workflow, input.repo)
+    await assertWorkflowRunnable(workflow, input.repo, input.validation)
     // Why generated here: createRunWorkspace names the worktree from the run id, and that
     // workspace must exist before the row referencing it does.
     const id = generateId('wfr')
     const workspace =
-      input.workflow.workspacePolicy === 'in-place'
+      workflow.workspacePolicy === 'in-place'
         ? resolveInPlaceWorkspace(input.repo)
         : await createRunWorkspace(
-            { id, workflowName: input.workflow.name, repoId: input.repo.id },
+            { id, workflowName: workflow.name, repoId: input.repo.id },
             this.deps.runtime,
             { skipSetup: input.skipSetup === true }
           )
-    const run = await this.insertRunRow(input, id, workspace.worktreeId)
+    const run = await this.insertRunRow({ ...input, workflow }, id, workspace.worktreeId)
     this.launch(run)
     return run
   }
