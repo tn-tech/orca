@@ -9,13 +9,14 @@ import type {
   Workflow
 } from '../../../../../shared/workflows/workflow-definition-types'
 import { InspectorField } from './InspectorField'
-import { NodeRoleDispatchFields } from './RoleDispatchFields'
+import NodeRoleFields from './NodeRoleFields'
 import { invalidChoiceIndices } from './workflow-router-choices'
 
 export type RouterNodeFieldsProps = {
   node: RouterNode
   roles: Workflow['roles']
   onChange: (node: RouterNode) => void
+  allowlistedSources?: readonly string[]
 }
 
 /** Router node settings (FR-029, data-model.md §1 RouterNode): the same role/overrides/prompt
@@ -24,10 +25,9 @@ export type RouterNodeFieldsProps = {
 export default function RouterNodeFields({
   node,
   roles,
-  onChange
+  onChange,
+  allowlistedSources
 }: RouterNodeFieldsProps): React.JSX.Element {
-  const role = node.roleId ? roles[node.roleId] : undefined
-
   // Why: choices have no id of their own; a stable per-row key keeps a row's input (and focus)
   // attached to that row when a different row is removed, instead of the array index. Lazy-
   // seeded (lazy-use-ref-ratchet.test.ts) so this isn't recomputed on every render.
@@ -59,7 +59,12 @@ export default function RouterNodeFields({
 
   return (
     <>
-      <NodeRoleDispatchFields node={node} role={role} onChange={onChange} />
+      <NodeRoleFields
+        node={node}
+        roles={roles}
+        onChange={onChange}
+        allowlistedSources={allowlistedSources}
+      />
 
       <InspectorField
         label={translate(

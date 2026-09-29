@@ -248,11 +248,21 @@ export default function NodeInspector({
           onChange={onNodeChange}
         />
       ) : node.type === 'router' ? (
-        <RouterNodeFields node={node} roles={definition.roles} onChange={onNodeChange} />
+        <RouterNodeFields
+          node={node}
+          roles={definition.roles}
+          onChange={onNodeChange}
+          allowlistedSources={allowlistedSources}
+        />
       ) : node.type === 'approval' ? (
         <ApprovalNodeFields node={node} onChange={onNodeChange} />
       ) : node.type === 'reflection' ? (
-        <ReflectionNodeFields node={node} roles={definition.roles} onChange={onNodeChange} />
+        <ReflectionNodeFields
+          node={node}
+          roles={definition.roles}
+          onChange={onNodeChange}
+          allowlistedSources={allowlistedSources}
+        />
       ) : (
         <p className="text-xs text-muted-foreground">
           {translate(

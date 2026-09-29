@@ -129,4 +129,59 @@ describe('RouterNodeFields (FR-029)', () => {
       )
     ).not.toBeInTheDocument()
   })
+
+  describe('role selection (US4 AS2)', () => {
+    const reviewer: Workflow['roles'] = {
+      reviewer: {
+        id: 'reviewer',
+        name: 'Reviewer',
+        agent: 'claude',
+        systemPrompt: 'Review carefully.',
+        skills: []
+      }
+    }
+
+    it('assigns a role from the workflow roles', () => {
+      const onChange = vi.fn()
+      render(<RouterNodeFields node={routerNode()} roles={reviewer} onChange={onChange} />)
+
+      fireEvent.click(screen.getByRole('combobox', { name: 'Role' }))
+      fireEvent.click(screen.getByRole('option', { name: 'Reviewer' }))
+
+      expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ roleId: 'reviewer' }))
+    })
+
+    it('shows the role system prompt and reverts an override to the role default', () => {
+      const onChange = vi.fn()
+      render(
+        <RouterNodeFields
+          node={routerNode({ roleId: 'reviewer', overrides: { systemPrompt: 'Be terse.' } })}
+          roles={reviewer}
+          onChange={onChange}
+        />
+      )
+
+      expect(screen.getByLabelText('System prompt')).toHaveValue('Be terse.')
+      fireEvent.click(screen.getByRole('button', { name: 'Revert System prompt to role default' }))
+
+      expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ overrides: undefined }))
+    })
+
+    it('edits the system prompt as an override', () => {
+      const onChange = vi.fn()
+      render(
+        <RouterNodeFields
+          node={routerNode({ roleId: 'reviewer' })}
+          roles={reviewer}
+          onChange={onChange}
+        />
+      )
+
+      fireEvent.change(screen.getByLabelText('System prompt'), { target: { value: 'Be brief.' } })
+
+      expect(onChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ overrides: { systemPrompt: 'Be brief.' } })
+      )
+    })
+  })
 })

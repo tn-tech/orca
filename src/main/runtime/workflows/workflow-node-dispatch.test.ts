@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentNode, Workflow } from '../../../shared/workflows/workflow-definition-types'
 import type { NodeAttemptView } from '../../../shared/workflows/workflow-run-types'
+import type { BriefNode } from './workflow-brief-builder'
 import { engineCoordinatorHandle } from './workflow-engine-principal'
 import { dispatchWorkflowNode, resolveNodeLaunch } from './workflow-node-dispatch'
 
@@ -75,6 +76,28 @@ describe('resolveNodeLaunch', () => {
       effort: 'high',
       systemPrompt: 'Implement exactly what the objective describes.'
     })
+  })
+
+  it('resolves router and reflection nodes from their role exactly like an agent node', () => {
+    const agentLaunch = resolveNodeLaunch({ ...baseNode, roleId: 'implementer' }, roles)
+    const router: BriefNode = {
+      id: 'r',
+      type: 'router',
+      title: 'R',
+      prompt: 'p',
+      choices: ['a', 'b'],
+      roleId: 'implementer'
+    }
+    const reflection: BriefNode = {
+      id: 'f',
+      type: 'reflection',
+      title: 'F',
+      prompt: 'p',
+      roleId: 'implementer'
+    }
+
+    expect(resolveNodeLaunch(router, roles)).toEqual(agentLaunch)
+    expect(resolveNodeLaunch(reflection, roles)).toEqual(agentLaunch)
   })
 
   it('lets node overrides win field-by-field over the role (FR-017)', () => {

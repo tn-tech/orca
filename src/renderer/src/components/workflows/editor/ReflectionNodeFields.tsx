@@ -3,12 +3,13 @@ import type {
   ReflectionNode,
   Workflow
 } from '../../../../../shared/workflows/workflow-definition-types'
-import { NodeRoleDispatchFields } from './RoleDispatchFields'
+import NodeRoleFields from './NodeRoleFields'
 
 export type ReflectionNodeFieldsProps = {
   node: ReflectionNode
   roles: Workflow['roles']
   onChange: (node: ReflectionNode) => void
+  allowlistedSources?: readonly string[]
 }
 
 /** Reflection node settings (US7, FR-034, data-model.md §1 `roleDispatchFields`): the same
@@ -18,8 +19,15 @@ export type ReflectionNodeFieldsProps = {
 export default function ReflectionNodeFields({
   node,
   roles,
-  onChange
+  onChange,
+  allowlistedSources
 }: ReflectionNodeFieldsProps): React.JSX.Element {
-  const role = node.roleId ? roles[node.roleId] : undefined
-  return <NodeRoleDispatchFields node={node} role={role} onChange={onChange} />
+  return (
+    <NodeRoleFields
+      node={node}
+      roles={roles}
+      onChange={onChange}
+      allowlistedSources={allowlistedSources}
+    />
+  )
 }
